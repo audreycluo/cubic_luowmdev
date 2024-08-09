@@ -1,6 +1,6 @@
 .DS_Store
 # logs directory
-./logs
+logs/
 
 # History files
 .Rhistory
