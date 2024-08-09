@@ -1,0 +1,990 @@
+---
+title: "Main Figures"
+author: "Audrey Luo"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+
+library(cowplot)
+library(data.table)
+library(dplyr)
+library(ggplot2)
+library(ggpubr)
+library(grid)
+library(gridExtra)
+library(gratia) 
+library(kableExtra)
+library(mgcv)
+library(RColorBrewer)
+library(stringr)
+library(tidyr)
+
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE, include = TRUE) 
+
+font_size <- 14
+theme_set(theme_classic(base_family = "sans",base_size = font_size))
+line_size <- 1
+point_size <- 2
+
+input_root <- "/cbica/projects/luo_wm_dev/input"
+output_root <- "/cbica/projects/luo_wm_dev/output"
+```
+
+
+# Tract Names and Orientations
+Note that I used an older version of pyAFQ here, so I had to flip some tracts to ensure consistent orientations. I will rerun tract profiles using most updated pyAFQ once newest qsiprep is released.  
+
+
+|Abbrev | Full Name                              | Node 0        | Node 99         | Need to flip? | Final Orientation            |
+|-------|----------------------------------------|---------------|-----------------|---------------|------------------------------|
+| ATR   | anterior thalamic radiation            | A (Frontal)   | P (Thalamus)    | 0             | A - P (Frontal - Thalamus)   |
+| CGC   | cingulum cinguluate                    | P             | A               | 1             | A - P                        |
+| IFO   | inferior fronto-occipital fasciculus   | P (Occipital) | A (Frontal)     | 1             | A - P (Frontal - Occipital)  |
+| ILF   | inferior longitudinal fasciculus       | P (Occipital) | A (Temporal)    | 1             | A - P (Temporal - Occipital) |
+| SLF   | superior longitudinal fasciculus       | A             | P               | 0             | A - P                        |
+| ARC   | arcuate                                | A (Frontal)   | P (Temporal)    | 0             | A - P (Frontal - Temporal)   |
+| UNC   | uncinate fasciculus                    | P (Temporal)  | A (Frontal)     | 1             | A - P (Frontal - Temporal)   |
+| FA    | forceps minor                          | R             | L               | 0             | R - L                        |
+| FP    | forceps major                          | R             | L               | 0             | R - L                        |
+| pARC  | posterior arcuate                      | S             | I               | 0             | S - I                        |
+| CST   | corticospinal                          | I (Brainstem) | S (Motor cortex)| 1             | S - I (Motor - Brainstem)    |
+| VOF   | vertical occipital fasciculus          | S             | I               | 0             | S - I                        |
+
+```{r load tract profiles, cache=TRUE}
+cohortfile_HCPD <- read.csv(sprintf("%1$s/%2$s/tract_profiles/cohortfiles/dti_fa/dti_fa_cohortfile.csv", output_root, "HCPD"))
+cohortfile_HCPD <- cohortfile_HCPD %>% rename(subjectID=sub) %>% select(subjectID, age, sex, mean_fd)
+
+cohortfile_HBN <- read.csv(sprintf("%1$s/%2$s/tract_profiles/cohortfiles/dti_fa/dti_fa_cohortfile.csv", output_root, "HBN"))
+cohortfile_HBN <- cohortfile_HBN %>% rename(subjectID=sub) %>% select(subjectID, age, sex, mean_fd)
+
+#all_subjects_HCPD <- fread(sprintf("%1$s/%2$s/%2$s_tractprofiles/all_subjects/collated_tract_profiles.tsv", input_root, "HCPD"))
+#all_subjects_HBN <- fread(sprintf("%1$s/%2$s/%2$s_tractprofiles/all_subjects/collated_tract_profiles.tsv", input_root, "HBN"))
+
+all_subjects_HCPD <- fread("/Users/audluo/Desktop/temp_code/HCPD/collated_tract_profiles.tsv")
+all_subjects_HBN <- fread("/Users/audluo/Desktop/temp_code/HBN/collated_tract_profiles.tsv")
+ 
+# fix tract IDs and tract orientations
+fix_orientations <- function(df) {
+   
+  df$tractID <- gsub("Fronto.occipital", "Fronto-occipital", df$tractID)
+  df$tract_hemi <- gsub("Fronto.occipital", "Fronto-occipital", df$tract_hemi)
+  
+  # fix orientations - for old version of pyAFQ
+  df <- df %>% group_by(tractID) %>% mutate(nodeID = ifelse(tractID %in% c("Cingulum Cingulate", "Inferior Fronto-occipital Fasciculus", "Inferior Longitudinal Fasciculus", "Uncinate Fasciculus", "Corticospinal Tract"), max(nodeID) - nodeID, nodeID))
+
+  # label main orientation
+  df <- df %>% 
+  mutate(main_orientation = case_when(
+    tractID %in% c("Anterior Thalamic Radiation", "Cingulum Cingulate", "Inferior Fronto-occipital Fasciculus",
+                   "Inferior Longitudinal Fasciculus", "Superior Longitudinal Fasciculus") ~ "AP",
+    tractID %in% c("Arcuate Fasciculus", "Uncinate Fasciculus") ~ "AP_frontal_temporal",
+    tractID %in% c("Forceps Minor", "Forceps Major") ~ "RL",
+    tractID %in% c("Corticospinal Tract", "Posterior Arcuate","Vertical Occipital Fasciculus") ~ "SI",
+    TRUE ~ NA_character_
+  ))
+
+  df$main_orientation <- as.factor(df$main_orientation)
+  return(df)
+}
+
+  
+  
+tractprofiles_HCPD <- fix_orientations(all_subjects_HCPD)
+tractprofiles_HBN <- fix_orientations(all_subjects_HBN)
+ 
+ 
+#write.table(tractprofiles_HCPD, sprintf("%1$s/%2$s/%2$s_tractprofiles/all_subjects/collated_tract_profiles_%2$s_reoriented.tsv", input_root, "HCPD"))
+#write.table(tractprofiles_HBN, sprintf("%1$s/%2$s/%2$s_tractprofiles/all_subjects/collated_tract_profiles_%2$s_reoriented.tsv", input_root, "HBN"))
+
+```
+
+
+# 1. Mean diffusivity varies along white matter tracts in youth. 
+```{r functions for visualizing baseline tract profiles}
+# function for plotting tractprofiles mean and se FA/MD
+plot_mean_se <- function(tract, scalar, custom_color1, custom_color2) {
+  df_profiles1 <- get(paste0(scalar, "_summary_HCPD"))
+  df_profiles2 <- get(paste0(scalar, "_summary_HBN"))
+  
+  df_profiles <- rbind(df_profiles1,df_profiles2)
+  df <- df_profiles %>% filter(tractID == tract)
+   
+  if(str_detect(tract, "Forceps")) {
+    plot <- ggplot(data = df, aes(x = nodeID, y = mean_scalar)) +
+    geom_ribbon(data = df, aes(x = nodeID , ymin = ymin ,ymax = ymax, fill = Dataset), alpha = .3) + 
+    geom_line(data = df, aes(x = nodeID, y = mean_scalar, color = Dataset),size = 1) +
+    scale_fill_manual(values = c("HCPD" = custom_color1, "HBN" = custom_color2)) +
+    scale_color_manual(values = c("HCPD" = custom_color1, "HBN" = custom_color2)) +
+    theme(legend.position = "none",
+          axis.title.x = element_blank(),
+          axis.title.y = element_blank(),
+          plot.title = element_text(size=14, hjust=0.5)) + labs(title = tract)
+    
+  } else {
+    plot <- ggplot(data = df, aes(x = nodeID, y = mean_scalar, linetype = hemi)) +
+    geom_ribbon(data = df, aes(x = nodeID , ymin = ymin ,ymax = ymax, fill = Dataset), alpha = .3) + 
+    geom_line(data = df, aes(x = nodeID, y = mean_scalar, color = Dataset),size = 1) +
+      guides(linetype = guide_legend("Hemi",override.aes = list(fill = "white"))) + 
+    scale_fill_manual(values = c("HCPD" = custom_color1, "HBN" = custom_color2)) +
+    scale_color_manual(values = c("HCPD" = custom_color1, "HBN" = custom_color2)) +
+    theme(legend.position = "none",
+          axis.title.x = element_blank(),
+          axis.title.y = element_blank(),
+          plot.title = element_text(size=14, hjust=0.5)) + labs(title = tract)
+  }
+  return(plot)
+}
+
+
+arrange_by_orientation <- function(list_figures, age_effect_type) {
+  
+  
+  AP_plots <- ggarrange(list_figures$`Anterior Thalamic Radiation`, 
+                           list_figures$`Cingulum Cingulate`, 
+                           list_figures$`Inferior Fronto-occipital Fasciculus`, 
+                           list_figures$`Inferior Longitudinal Fasciculus`, 
+                           list_figures$`Superior Longitudinal Fasciculus`, ncol=5, nrow = 1)
+  AP_plots_final <- annotate_figure(AP_plots, top = text_grob("Anterior - Posterior", 
+                 color = "black", face = "bold", size = 14))
+  
+  
+  AP_frontotemp_plots <- ggarrange(list_figures$`Arcuate Fasciculus`,
+                                      list_figures$`Uncinate Fasciculus`, ncol=2, nrow = 1)
+  AP_frontotemp_plots_final <- annotate_figure(AP_frontotemp_plots, top = text_grob("Anterior - Posterior (Frontal - Temporal)", 
+                 color = "black", face = "bold", size = 14))
+  
+   
+  RL_plots <- ggarrange(list_figures$`Forceps Major`, list_figures$`Forceps Minor`, 
+                           ncol=2, nrow = 1)
+  RL_plots_final <- annotate_figure(RL_plots, top = text_grob("Right - Left", 
+                 color = "black", face = "bold", size = 14))
+  
+  
+  SI_plots <- ggarrange(list_figures$`Corticospinal Tract`, list_figures$`Posterior Arcuate`, 
+                           list_figures$`Vertical Occipital Fasciculus`, common.legend=TRUE, legend=c("right"),
+                           ncol=3, nrow = 1)
+  SI_plots_final <- annotate_figure(SI_plots, top = text_grob("Superior - Inferior", 
+                 color = "black", face = "bold", size = 14))
+  
+  
+  tractprofiles_plot <- ggarrange(AP_plots_final, ggarrange(AP_frontotemp_plots_final, RL_plots_final, ncol = 2), SI_plots_final, nrow = 3)
+  
+  tractprofiles_plot_final <- annotate_figure(tractprofiles_plot, top = text_grob(age_effect_type, 
+               color = "black", face = "italic", size = 18))
+   return(tractprofiles_plot_final)
+}
+```
+
+
+
+## Mean MD across subjects
+```{r mean sd dti_md, fig.width = 15, fig.height = 10}
+dti_md_HCPD <- tractprofiles_HCPD %>% select(-dti_fa) 
+sqrt_n_HCPD <- length(unique(dti_md_HCPD$subjectID))
+dti_md_summary_HCPD <- dti_md_HCPD %>% 
+  group_by(tractID, tract_hemi, nodeID, hemi) %>% 
+  summarise(mean_scalar = mean(dti_md, na.rm=T),
+            sd = sd(dti_md, na.rm=T),
+            se = sd/sqrt_n_HCPD,
+            ymin = mean_scalar - sd, # change this to se if want to plot +/- 1 SE
+            ymax = mean_scalar + sd)  
+dti_md_summary_HCPD <- dti_md_summary_HCPD %>% mutate(Dataset = "HCPD")
+
+
+dti_md_HBN <- tractprofiles_HBN %>% select(-dti_fa) 
+sqrt_n_HBN <- length(unique(dti_md_HBN$subjectID))
+dti_md_summary_HBN <- dti_md_HBN %>% 
+  group_by(tractID, tract_hemi, nodeID, hemi) %>% 
+  summarise(mean_scalar = mean(dti_md, na.rm=T),
+            sd = sd(dti_md, na.rm=T),
+            se = sd/sqrt_n_HBN,
+            ymin = mean_scalar - sd,
+            ymax = mean_scalar + sd)  
+dti_md_summary_HBN <- dti_md_summary_HBN %>% mutate(Dataset = "HBN")
+
+# plot
+mean_se_dti_md <- lapply(unique(tractprofiles_HCPD$tractID), plot_mean_se, scalar="dti_md", custom_color1 = "#6bd4e0", custom_color2 = "#fea489")
+
+#
+names(mean_se_dti_md) <- unique(tractprofiles_HCPD$tractID)
+
+# arrange by AP, AP_frontal_temporal, RL (forceps), and SI
+x.grob <- textGrob("Position on Tract (Node ID)", 
+                   gp=gpar(col="black", fontsize=14))
+y.grob <- textGrob("Mean Diffusivity", 
+                   gp=gpar(col="black", fontsize=14), rot=90)
+
+space.grob <- textGrob(" ", 
+                   gp=gpar(col="black", fontsize=28), rot=90)
+
+# arrange by AP, AP_frontal_temporal, RL (forceps), and SI
+tractprofiles_md_mean_final <- arrange_by_orientation(mean_se_dti_md, "Mean +/- 1 SD")
+grid.arrange(arrangeGrob(tractprofiles_md_mean_final, left = y.grob, bottom = x.grob, right = space.grob))
+ 
+#ggsave("/Users/audluo/PennLINC/luowm_local/output/tract_profiles_testing/both_datasets/tract_profiles_dti_md_mean_sd.png", grid.arrange(arrangeGrob(tractprofiles_md_mean_final, left = y.grob, bottom = x.grob, right = space.grob)), width = 15, height = 10, units = "in")
+
+
+```
+
+# 2. Tracts exhibit distinct mean diffusivity profiles
+```{r md profile boxplots, fig.height = 6, fig.width=10}
+# filter for central nodes
+tractprofiles_HCPD <- tractprofiles_HCPD %>% mutate(Dataset="HCPD")
+  
+tractprofiles_HBN <- tractprofiles_HBN %>% mutate(Dataset="HBN")
+  
+central_tract_profiles_HCPD <- tractprofiles_HCPD %>% filter(nodeID > 39 & nodeID < 60)
+mycolors <- colorRampPalette(paletteer::paletteer_d("PNWColors::Sailboat"))(12)
+
+HCPD_boxplots <- central_tract_profiles_HCPD %>%
+  ggplot(aes(x = reorder(tractID, dti_md, fun = mean), y=dti_md, fill=tractID)) +
+    geom_boxplot(aes(color = tractID, fill = tractID), alpha=0.6) +
+    scale_fill_manual(values = mycolors) + 
+    scale_color_manual(values = mycolors) + 
+    theme(
+      legend.position="none",
+      plot.title = element_text(size=14,hjust=0.5),
+      axis.text.x = element_text(angle=45, hjust=0.95, size=10),
+      axis.title.y = element_blank()
+    ) +
+    ggtitle("HCP-D (N = 568)") +
+    xlab("") + ylim(0.0001, 0.001)
+
+
+central_tract_profiles <- tractprofiles_HBN %>% filter(nodeID > 39 & nodeID < 60)
+mycolors <- colorRampPalette(paletteer::paletteer_d("PNWColors::Sailboat"))(12)
+ 
+HBN_boxplots <- central_tract_profiles %>%
+  ggplot(aes(x = reorder(tractID, dti_md, fun = mean), y=dti_md, fill=tractID)) +
+    geom_boxplot(aes(color = tractID, fill = tractID), alpha=0.6) +
+    scale_fill_manual(values = mycolors) + 
+    scale_color_manual(values = mycolors) + 
+    theme(
+      legend.position="none",
+      plot.title = element_text(size=14, hjust=0.5),
+      axis.text.x = element_text(angle=45, hjust=0.95, size=10),
+      axis.title.y = element_blank()
+
+    ) +
+    ggtitle("HBN (N = 1216)") +
+    xlab("")  + ylim(0.0001, 0.001)
+
+ 
+ 
+ 
+y.grob <- textGrob("Mean Diffusivity", 
+                   gp=gpar(col="black", fontsize=14), rot=90)
+
+ 
+# arrange by AP, AP_frontal_temporal, RL (forceps), and SI
+boxplots_final <- ggarrange(HCPD_boxplots, HBN_boxplots, ncol=2)
+grid.arrange(arrangeGrob(boxplots_final, left = y.grob))
+ 
+
+#ggsave("/Users/audluo/PennLINC/luowm_local/output/tract_profiles_testing/both_datasets/tract_profiles_md_boxplot.png", grid.arrange(arrangeGrob(boxplots_final, left = y.grob)), width = 10, height = 6, units = "in")
+
+
+```
+# 3. Developmental change in mean diffusivity varies along tracts
+```{r functions for loading age effect}
+
+fix_tract_orientations <- function(df) {
+  # flip tracts
+  to_reorient <- df %>%
+    group_by(tractID) %>%
+    mutate(nodeID = ifelse(tractID %in% c("Cingulum Cingulate", "Inferior Fronto-occipital Fasciculus", "Inferior Longitudinal Fasciculus", "Uncinate Fasciculus", "Corticospinal Tract"), max(nodeID) - nodeID, nodeID))
+  
+  # label main orientation
+  reoriented <- to_reorient %>% 
+    mutate(main_orientation = case_when(
+      tractID %in% c("Anterior Thalamic Radiation", "Cingulum Cingulate", "Inferior Fronto-occipital Fasciculus",
+                     "Inferior Longitudinal Fasciculus", "Superior Longitudinal Fasciculus") ~ "AP",
+      tractID %in% c("Arcuate Fasciculus", "Uncinate Fasciculus") ~ "AP_frontal_temporal",
+      tractID %in% c("Forceps Minor", "Forceps Major") ~ "RL",
+      tractID %in% c("Corticospinal Tract", "Posterior Arcuate","Vertical Occipital Fasciculus") ~ "SI",
+      TRUE ~ NA_character_
+    ))
+  
+  reoriented$main_orientation <- as.factor(reoriented$main_orientation)
+  
+  return(reoriented)
+}
+
+
+# need this for the tractIDs/nodeIDs ordering
+format_covbat <- function(scalar) {
+  df <- readRDS(sprintf("/cbica/projects/luo_wm_dev/input/%1$s/%1$s_tractprofiles/all_subjects/collated_tract_profiles_%2$s_covbat.RData", "HCPD", scalar))
+  df <- df %>% pivot_longer(cols = -subjectID, names_to = "tract_node")
+  df <- df %>% 
+    mutate(tract_hemi = gsub("_[0-9]+", "", tract_node)) %>% 
+    mutate(nodeID = str_extract(tract_node, "[0-9]+")) %>%
+    mutate(tractID = gsub("_", " ", gsub("Left_|Right_", "", tract_hemi))) %>%
+    mutate(hemi = str_extract(tract_hemi, "Left|Right"))
+  df$nodeID <- as.numeric(df$nodeID)
+  df$subjectID <- as.factor(df$subjectID)
+  df <- df %>% select(-tract_node)
+  df$tractID <- gsub("Fronto.occipital", "Fronto-occipital", df$tractID)
+  df$tract_hemi <- gsub("Fronto.occipital", "Fronto-occipital", df$tract_hemi)
+  names(df)[which(names(df) == "value")] <- paste0("dti_", scalar)
+  
+  return(df)
+}
+
+all_subjects_covbat_fa <- format_covbat("fa")
+all_subjects_covbat_fa <- all_subjects_covbat_fa %>% filter(subjectID == "sub-0968878") 
+  
+load_nodewise_ageeffects <- function(dataset) {
+  all_subjects <- get(paste0("all_subjects_", dataset))
+  # load nodewise GAM results for dti_fa and dti_md
+  gam_age_md <- read.csv(sprintf("/cbica/projects/luo_wm_dev/output/%1$s/tract_profiles/GAM/dti_md/GAMresults.dti_md.age.csv", dataset))
+  gam_age_md <- gam_age_md %>% select(-X)
+   
+  # determine correct age effect sign for delta adjusted Rsq using equivalent linear model
+  # load linear models
+  lm_age_md <- read.csv(sprintf("/cbica/projects/luo_wm_dev/output/%1$s/tract_profiles/GAM/dti_md/LinearModelresults.dti_md.age.csv", dataset))
+   
+  # take absolute value of delta adj rsq  
+  gam_age_md$s_age.delta.adj.rsq_signed <- abs(gam_age_md$s_age.delta.adj.rsq) 
+   
+  # apply the sign of linear model age estimate (t-value) to GAM delta adj rsq
+  gam_age_md$s_age.delta.adj.rsq_signed <- gam_age_md$s_age.delta.adj.rsq_signed * ifelse(lm_age_md$age.estimate >= 0, 1, -1)
+   
+  # How many nodes have significant age effect after FDR?
+  md_significant_count <- length(which(gam_age_md$s_age.p.value.fdr < 0.05))
+   
+  total_nodes = 2200
+   
+  print(paste0("Nodewise GAMs - dti_md: ", md_significant_count, " nodes ", round(md_significant_count / total_nodes * 100, 2), "% with significant age effect after FDR correction"))
+  
+   
+  # Add tractID and nodeID to gam_age_md
+  gam_age_md$tractID <- all_subjects_covbat_fa$tractID[c(1:2200)]
+  gam_age_md$tract_hemi <- all_subjects_covbat_fa$tract_hemi[c(1:2200)]
+  gam_age_md$hemi <- all_subjects_covbat_fa$hemi[c(1:2200)]
+  gam_age_md$nodeID <- all_subjects_covbat_fa$nodeID[c(1:2200)]
+  
+  # Fix tract orientations for all age effect df's  
+  gam_age_md <- fix_tract_orientations(gam_age_md)
+  gam_age_md <- gam_age_md %>% mutate(tract_node_noHemi = paste0(tractID, "_", nodeID))
+  gam_age_md <- gam_age_md %>% mutate(Dataset = dataset)
+   
+  gam_age_md_bilat <- gam_age_md %>% group_by(tract_node_noHemi) %>% summarise(s_age.delta.adj.rsq_signed = mean(s_age.delta.adj.rsq_signed))
+  gam_age_md_bilat <- gam_age_md_bilat %>% mutate(tractID = gsub("_[0-9]+", "",tract_node_noHemi))
+  
+  gam_age_md_bilat <- gam_age_md_bilat %>% mutate(nodeID = str_extract(tract_node_noHemi, "[0-9]+"))
+  gam_age_md_bilat$nodeID <- as.integer(gam_age_md_bilat$nodeID)
+  gam_age_md_bilat <- gam_age_md_bilat %>% arrange(tractID, nodeID)
+  
+  #write.csv(gam_age_md_bilat, sprintf("/cbica/projects/luo_wm_dev/output/%1$s/tract_profiles/GAM/dti_md/GAM_bilateral_signedresults.dti_md.age.csv", dataset))
+  
+  return(list(gam_age_md, gam_age_md_bilat))
+   
+}
+
+
+```
+
+
+```{r functions for plotting age effect}
+ 
+# function for plotting age effect
+plot_age_effect <- function(tract, age_effect_df1, age_effect_df2, custom_color1, custom_color2) {
+  df1 <- age_effect_df1 %>% filter(tractID == tract)
+  df2 <- age_effect_df2 %>% filter(tractID == tract)
+
+  
+  # NA out color/fill aes if adj rsq = 0 or if p-value doesn't survive FDR correction (makes the color gray)
+  includes_zero1 <- which(df1$s_age.delta.adj.rsq_signed==0 | df1$s_age.p.value.fdr > 0.05)
+  includes_zero2 <- which(df2$s_age.delta.adj.rsq_signed==0 | df1$s_age.p.value.fdr > 0.05)
+  
+  if(str_detect(tract, "Forceps")) {
+    df1$tract_hemi[includes_zero1] <- NA
+    df1$tract_hemi[includes_zero2] <- NA
+    df <- rbind(df1, df2)
+    plot <- ggplot(data = df, aes(x = nodeID, y = s_age.delta.adj.rsq_signed, colour = Dataset, fill = Dataset)) +
+      geom_point(size=2, alpha = 0.6) + 
+      scale_colour_manual(values = c("HCPD" = custom_color1, "HBN" = custom_color2), na.value = "grey50") +
+      scale_fill_manual(values = c("HCPD" = custom_color1, "HBN" = custom_color2), na.value = "grey50") + 
+      #scale_shape_manual(values = c(1,21))
+      theme(legend.position = "none",
+            axis.title.x = element_blank(),
+            axis.title.y = element_blank(),
+            plot.title = element_text(size=14, hjust=0.5)) + labs(title = tract)
+    } else {
+      df1$tract_hemi[includes_zero1] <- NA
+      df1$tract_hemi[includes_zero2] <- NA
+      df <- rbind(df1, df2)
+      plot <- ggplot(data = df, aes(x = nodeID, y = s_age.delta.adj.rsq_signed, colour = Dataset, fill = Dataset, shape = hemi)) +
+      geom_point(size=2, alpha = 0.8) + 
+      scale_colour_manual(values = c("HCPD" = custom_color1, "HBN" = custom_color2), na.value = "grey50") +
+      scale_fill_manual(values = c("HCPD" = custom_color1, "HBN" = custom_color2), na.value = "grey50") +
+      scale_shape_manual(values = c(19,1)) + guides(shape = guide_legend("Hemi")) + 
+      theme(legend.position = "none",
+            axis.title.x = element_blank(),
+            axis.title.y = element_blank(),
+            plot.title = element_text(size=14, hjust=0.5)) + labs(title = tract)
+    }
+    
+  return(plot)
+}
+
+```
+
+ 
+
+```{r load age effects, cache=TRUE}
+gam_age_md_HCPD <- load_nodewise_ageeffects("HCPD")
+gam_age_md_bilat_HCPD <- gam_age_md_HCPD[[2]]
+gam_age_md_HCPD <- gam_age_md_HCPD[[1]]
+
+
+gam_age_md_HBN <- load_nodewise_ageeffects("HBN")
+gam_age_md_bilat_HBN <- gam_age_md_HBN[[2]]
+gam_age_md_HBN <- gam_age_md_HBN[[1]]
+
+
+
+gam_age_md_HCPD <- gam_age_md_HCPD %>% mutate(bundle_name = case_when(
+      tract_hemi == "Left_Anterior_Thalamic_Radiation" ~ "ATRL",
+      tract_hemi == "Right_Anterior_Thalamic_Radiation" ~ "ATRR",
+      tract_hemi == "Left_Cingulum_Cingulate" ~ "CGCL",
+      tract_hemi == "Right_Cingulum_Cingulate" ~ "CGCR",
+      tract_hemi == "Left_Corticospinal_Tract" ~ "CSTL" ,
+      tract_hemi == "Right_Corticospinal_Tract" ~ "CSTR" ,
+      tract_hemi == "Left_Inferior_Fronto-occipital_Fasciculus" ~ "IFOL",
+      tract_hemi == "Right_Inferior_Fronto-occipital_Fasciculus" ~ "IFOR",
+      tract_hemi == "Left_Inferior_Longitudinal_Fasciculus" ~ "ILFL",
+      tract_hemi == "Right_Inferior_Longitudinal_Fasciculus" ~ "ILFR",
+      tract_hemi == "Left_Superior_Longitudinal_Fasciculus" ~ "SLFL",
+      tract_hemi == "Right_Superior_Longitudinal_Fasciculus" ~ "SLFR",
+      tract_hemi == "Left_Arcuate_Fasciculus" ~ "ARCL",
+      tract_hemi == "Right_Arcuate_Fasciculus" ~ "ARCR",
+      tract_hemi == "Left_Uncinate_Fasciculus" ~ "UNCL",
+      tract_hemi == "Right_Uncinate_Fasciculus" ~ "UNCR",
+      tract_hemi == "Forceps_Minor" ~ "FA",
+      tract_hemi == "Forceps_Major" ~ "FP",
+      tract_hemi == "Left_Posterior_Arcuate" ~ "pARCL",
+      tract_hemi == "Right_Posterior_Arcuate" ~ "pARCR",
+      tract_hemi == "Left_Vertical_Occipital_Fasciculus" ~ "VOFL",
+      tract_hemi == "Right_Vertical_Occipital_Fasciculus" ~ "VOFR",
+      TRUE ~ tract_hemi
+    ))
+
+gam_age_md_HBN <- gam_age_md_HBN %>% mutate(bundle_name = case_when(
+      tract_hemi == "Left_Anterior_Thalamic_Radiation" ~ "ATRL",
+      tract_hemi == "Right_Anterior_Thalamic_Radiation" ~ "ATRR",
+      tract_hemi == "Left_Cingulum_Cingulate" ~ "CGCL",
+      tract_hemi == "Right_Cingulum_Cingulate" ~ "CGCR",
+      tract_hemi == "Left_Corticospinal_Tract" ~ "CSTL" ,
+      tract_hemi == "Right_Corticospinal_Tract" ~ "CSTR" ,
+      tract_hemi == "Left_Inferior_Fronto-occipital_Fasciculus" ~ "IFOL",
+      tract_hemi == "Right_Inferior_Fronto-occipital_Fasciculus" ~ "IFOR",
+      tract_hemi == "Left_Inferior_Longitudinal_Fasciculus" ~ "ILFL",
+      tract_hemi == "Right_Inferior_Longitudinal_Fasciculus" ~ "ILFR",
+      tract_hemi == "Left_Superior_Longitudinal_Fasciculus" ~ "SLFL",
+      tract_hemi == "Right_Superior_Longitudinal_Fasciculus" ~ "SLFR",
+      tract_hemi == "Left_Arcuate_Fasciculus" ~ "ARCL",
+      tract_hemi == "Right_Arcuate_Fasciculus" ~ "ARCR",
+      tract_hemi == "Left_Uncinate_Fasciculus" ~ "UNCL",
+      tract_hemi == "Right_Uncinate_Fasciculus" ~ "UNCR",
+      tract_hemi == "Forceps_Minor" ~ "FA",
+      tract_hemi == "Forceps_Major" ~ "FP",
+      tract_hemi == "Left_Posterior_Arcuate" ~ "pARCL",
+      tract_hemi == "Right_Posterior_Arcuate" ~ "pARCR",
+      tract_hemi == "Left_Vertical_Occipital_Fasciculus" ~ "VOFL",
+      tract_hemi == "Right_Vertical_Occipital_Fasciculus" ~ "VOFR",
+      TRUE ~ tract_hemi
+    ))
+
+#write.csv(gam_age_md_HCPD, sprintf("%1$s/%2$s/tract_profiles/GAM/dti_md/GAMresults.dti_md.age_plotbundles.csv", output_root, "HCPD"))
+#write.csv(gam_age_md_HBN, sprintf("%1$s/%2$s/tract_profiles/GAM/dti_md/GAMresults.dti_md.age_plotbundles.csv", output_root, "HBN"))
+ 
+gam_age_md_HCPD <- read.csv("/Users/audluo/Desktop/temp_code/HCPD/GAMresults.dti_md.age_plotbundles.csv")
+gam_age_md_HBN <- read.csv("/Users/audluo/Desktop/temp_code/HBN/GAMresults.dti_md.age_plotbundles.csv")
+
+
+gam_age_md_bilat_HCPD <- read.csv("/Users/audluo/Desktop/temp_code/HCPD/GAM_bilateral_signedresults.dti_md.age.csv")
+gam_age_md_bilat_HBN <- read.csv("/Users/audluo/Desktop/temp_code/HBN/GAM_bilateral_signedresults.dti_md.age.csv")
+```
+
+
+```{r md nodeID vs. delta adj rsq, fig.width=16, fig.height=10}
+# plot
+age_rsq_md_plots <- lapply(unique(gam_age_md_HBN$tractID), plot_age_effect, age_effect_df1 = gam_age_md_HCPD, 
+                           age_effect_df2 = gam_age_md_HBN,
+                           custom_color1 = "#6bd4e0", custom_color2 = "#fea489")
+names(age_rsq_md_plots) <- unique(gam_age_md_HBN$tractID)
+ 
+# arrange by AP, AP_frontal_temporal, RL (forceps), and SI
+x.grob <- textGrob("Position on Tract (Node ID)", 
+                     gp=gpar(col="black", fontsize=14))
+y.grob <- textGrob(expression("Age Effect ("*Delta*"Adjusted R"^2*")"), 
+                   gp=gpar(col="black", fontsize=14), rot=90)
+
+
+space.grob <- textGrob(" ", 
+                     gp=gpar(col="black", fontsize=14), rot=90)
+age_rsq_md_plots_final <- arrange_by_orientation(age_rsq_md_plots, "Age Effect of Mean Diffusivity Along Tracts") 
+grid.arrange(arrangeGrob(age_rsq_md_plots_final, left = y.grob, bottom = x.grob, right = space.grob))
+
+#ggsave("/Users/audluo/PennLINC/luowm_local/output/tract_profiles_testing/both_datasets/age_effect_rsq_md.png", grid.arrange(arrangeGrob(age_rsq_md_plots_final, left = y.grob, bottom = x.grob, right = space.grob)), width = 16, height = 10, units = "in")
+```
+
+# 4. Gradients of microstructural white matter development replicate in two large-scale datasets.
+
+```{r nodewise GAMs zero centered smooths}
+make_smooths <- function(dataset) {
+  cohortfile <- get(paste0("cohortfile_", dataset))
+  tract_profiles <- get(paste0("tractprofiles_", dataset))
+  
+  cohortfile <- cohortfile %>% select(subjectID, age, sex, mean_fd)
+  gam_df <- merge(tract_profiles, cohortfile, by="subjectID")
+  gam_df <- gam_df %>% mutate(tract_node = paste0(tract_hemi, "_", nodeID))
+  gam_df$sex <- as.factor(gam_df$sex)
+   
+  # create df with column tract_node and another column (dti_metric) that contains the values (nrow = N * n_tract_nodes)
+  # md
+  nodewise_gam_md <- gam_df %>% select(dti_md, age, sex, mean_fd, tract_node)
+  nodewise_smoothfits_md <- nodewise_gam_md %>% group_by(tract_node) %>% 
+    do(fit = smooth_estimates(gam(dti_md ~ s(age,k=3,fx=F),data=.))) %>% unnest(fit)
+  nodewise_smoothfits_md <- nodewise_smoothfits_md %>% mutate(tractID = gsub("Left |Right ", "", gsub("_", " ", gsub("_[0-9]+", "", tract_node)))) %>% 
+    mutate(nodeID = str_extract(tract_node, "[0-9]+")) %>%
+     mutate(hemi = str_extract(tract_node, "Left|Right"))
+  orientations <- tract_profiles[,c("tractID", "main_orientation")]
+  orientations <- orientations[!duplicated(orientations),]
+  nodewise_smoothfits_md <- merge(nodewise_smoothfits_md,  orientations, by = "tractID")
+  return(nodewise_smoothfits_md)
+   
+}
+
+  
+```
+
+```{r function plot zero centered dev traj tract ends}
+ 
+plot_nodes_zeroed <- function(tract, df, scalar, ylim1, ylim2) {
+  df$nodeID <- as.numeric(df$nodeID)
+  if (str_detect(tract, "Inferior")) {
+    plot <- df %>% filter(tractID == tract) %>%  
+      group_by(tract_node) %>%
+      ggplot(aes(x = age, y = est, group = tract_node)) +
+      geom_line(aes(colour = nodeID), size = 0.8, alpha = 0.6) + 
+      theme_classic() +                         
+      theme(text=element_text(size=16),
+            axis.text.x = element_text(size=16),
+            axis.text.y = element_text(size=16),
+            legend.position = "none",
+            plot.title = element_text(hjust=0.5, size = 18),
+            plot.margin = unit(c(0.2, 0.2, 0.2, -1), "cm"))  + 
+      paletteer::scale_colour_paletteer_c("grDevices::RdYlBu", direction=-1) +
+      labs(x="", y="", title=tract, colour="Position on Tract (Node ID)") + ylim(ylim1, ylim2)  
+    
+  } else {
+    plot <- df %>% filter(tractID == tract) %>% 
+      group_by(tract_node) %>%
+      ggplot(aes(x = age, y = est, group = tract_node)) +
+      geom_line(aes(colour = nodeID), size = 0.8, alpha = 0.6) + 
+      theme_classic() +                         
+      theme(text=element_text(size=16),
+            axis.text.x = element_text(size=16),
+            axis.text.y = element_text(size=16),
+            legend.position = "none",
+            plot.title = element_text(hjust=0.5, size = 18)) + 
+      paletteer::scale_colour_paletteer_c("grDevices::RdYlBu", direction=-1) +
+      labs(x="", y="", title=tract, colour="Position on Tract (Node ID)") + ylim(ylim1, ylim2)  
+  }
+   
+   return(plot)
+}
+ 
+
+arrange_by_orientation_traj <- function(list_figures, dataset) {
+  
+  
+  AP_plots <- ggarrange(list_figures$`Anterior Thalamic Radiation`, 
+                           list_figures$`Cingulum Cingulate`, 
+                           list_figures$`Inferior Fronto-occipital Fasciculus`, 
+                           list_figures$`Inferior Longitudinal Fasciculus`, 
+                           list_figures$`Superior Longitudinal Fasciculus`, ncol=5, nrow = 1)
+  AP_plots_final <- annotate_figure(AP_plots, top = text_grob("Anterior - Posterior", 
+                 color = "black", face = "bold", size = 20))
+  
+  
+  AP_frontotemp_plots <- ggarrange(list_figures$`Arcuate Fasciculus`,
+                                      list_figures$`Uncinate Fasciculus`, ncol=2, nrow = 1)
+  AP_frontotemp_plots_final <- annotate_figure(AP_frontotemp_plots, top = text_grob("Anterior - Posterior (Frontal - Temporal)", 
+                 color = "black", face = "bold", size = 20))
+  
+   
+  RL_plots <- ggarrange(list_figures$`Forceps Major`, list_figures$`Forceps Minor`, 
+                           ncol=2, nrow = 1)
+  RL_plots_final <- annotate_figure(RL_plots, top = text_grob("Right - Left", 
+                 color = "black", face = "bold", size = 20))
+  
+  
+  SI_plots <- ggarrange(list_figures$`Corticospinal Tract`, list_figures$`Posterior Arcuate`, 
+                           list_figures$`Vertical Occipital Fasciculus`, common.legend=TRUE, legend=c("right"),
+                           ncol=3, nrow = 1)
+  SI_plots_final <- annotate_figure(SI_plots, top = text_grob("Superior - Inferior", 
+                 color = "black", face = "bold", size = 20))
+  
+  
+  tractprofiles_plot <- ggarrange(AP_plots_final, ggarrange(AP_frontotemp_plots_final, RL_plots_final, ncol = 2), SI_plots_final, nrow = 3)
+  
+  tractprofiles_plot_final <- annotate_figure(tractprofiles_plot, top = text_grob(dataset, 
+               color = "black", size = 32))
+   return(tractprofiles_plot_final)
+}
+
+```
+
+
+
+```{r plot md nodewise dev traj zero centered all, fig.height=20, fig.width=18}
+ 
+nodewise_smoothfits_md_HCPD <- make_smooths("HCPD")
+nodewise_smoothfits_md_HBN <- make_smooths("HBN")
+
+devtraj_zeroed_md_HCPD <- lapply(unique(nodewise_smoothfits_md_HCPD$tractID), plot_nodes_zeroed, df = nodewise_smoothfits_md_HCPD, scalar = "MD", -0.00008, 0.00007) 
+names(devtraj_zeroed_md_HCPD) <- unique(nodewise_smoothfits_md_HCPD$tractID)
+devtraj_zeroed_md_plots_HCPD <- arrange_by_orientation_traj(devtraj_zeroed_md_HCPD, "HCP-D")  
+ 
+devtraj_zeroed_md_HBN <- lapply(unique(nodewise_smoothfits_md_HBN$tractID), plot_nodes_zeroed, df = nodewise_smoothfits_md_HBN, scalar = "MD", -0.00008, 0.00007) 
+names(devtraj_zeroed_md_HBN) <- unique(nodewise_smoothfits_md_HBN$tractID)
+devtraj_zeroed_md_plots_HBN <- arrange_by_orientation_traj(devtraj_zeroed_md_HBN, "HBN")  
+ 
+
+title <- arrangeGrob(zeroGrob(), title, 
+                    widths = unit(1, 'npc'), 
+                    heights = unit(c(2, 1), c('cm', 'npc')),
+                    as.table = FALSE)
+grid.arrange(gg1, gg2, top = title)
+
+x.grob <- textGrob("Age (years) \n", gp=gpar(col="black", fontsize=18))
+y.grob <- textGrob("Zero-centered Mean Diffusivity", 
+                   gp=gpar(col="black", fontsize=18), rot=90)
+
+space.grob <- textGrob(" ", 
+                     gp=gpar(col="black", fontsize=24), rot=90)
+
+
+grid.arrange(arrangeGrob(devtraj_zeroed_md_plots_HCPD, left = y.grob, bottom = x.grob, right = space.grob))
+grid.arrange(arrangeGrob(devtraj_zeroed_md_plots_HBN, left = y.grob, bottom = x.grob, right = space.grob))
+
+
+ggsave("/Users/audluo/PennLINC/luowm_local/output/tract_profiles_testing/both_datasets/devtraj_zeroed_md_HCPD.png", grid.arrange(arrangeGrob(devtraj_zeroed_md_plots_HCPD, left = y.grob, bottom = x.grob, right = space.grob)), width = 18, height = 20, units = "in")
+
+ggsave("/Users/audluo/PennLINC/luowm_local/output/tract_profiles_testing/both_datasets/devtraj_zeroed_md_HBN.png", grid.arrange(arrangeGrob(devtraj_zeroed_md_plots_HBN, left = y.grob, bottom = x.grob, right = space.grob)), width = 18, height = 20, units = "in")
+ 
+```
+
+
+
+```{r function to load dist to cortex}
+
+load_bilat_distances <- function(dataset) {
+  bilat_gm_dist <- read.csv(sprintf("/cbica/projects/luo_wm_dev/output/%1$s/tract_profiles/all_subjects/across_subjects_bilateral_distances_to_gm.csv",dataset))
+  gam_age_md_bilat <- get(paste0("gam_age_md_bilat_", dataset))
+
+  bilat_gm_dist <- bilat_gm_dist %>% mutate(
+      
+      tractID = case_when(
+        bundle_name == "ATR" ~ "Anterior Thalamic Radiation",
+        bundle_name == "CGC" ~ "Cingulum Cingulate",
+        bundle_name == "CST" ~ "Corticospinal Tract",
+        bundle_name == "IFO" ~ "Inferior Fronto-occipital Fasciculus",
+        bundle_name == "ILF" ~ "Inferior Longitudinal Fasciculus",
+        bundle_name == "SLF" ~ "Superior Longitudinal Fasciculus",
+        bundle_name == "ARC" ~ "Arcuate Fasciculus",
+        bundle_name == "UNC" ~ "Uncinate Fasciculus",
+        bundle_name == "FA" ~ "Forceps Minor",
+        bundle_name == "FP" ~ "Forceps Major",
+        bundle_name == "pARC" ~ "Posterior Arcuate",
+        bundle_name == "VOF" ~ "Vertical Occipital Fasciculus",
+        TRUE ~ bundle_name
+      )
+    )
+  bilat_gm_dist <- bilat_gm_dist %>% relocate(tractID)
+  bilat_gm_dist <- bilat_gm_dist[,-2]
+  
+  
+  bilat_gm_dist_long <- bilat_gm_dist %>% pivot_longer(names_to="dist_to_gm", cols = names(bilat_gm_dist)[c(2:101)])
+  bilat_gm_dist_long <- bilat_gm_dist_long %>% mutate(tract_node_noHemi = paste0(tractID, "_", gsub("_dist", "", dist_to_gm)))
+  bilat_gm_dist_long$tract_node_noHemi <- gsub("_node", "", bilat_gm_dist_long$tract_node_noHemi)
+   
+  bilat_gm_dist_long$nodeID <- gsub("_dist", "", bilat_gm_dist_long$dist_to_gm)
+  bilat_gm_dist_long$nodeID <- gsub("node_", "", bilat_gm_dist_long$nodeID)
+  bilat_gm_dist_long$nodeID <- as.numeric(bilat_gm_dist_long$nodeID)
+  
+  bilat_gm_dist_long <- fix_tract_orientations(bilat_gm_dist_long)
+  bilat_gm_dist_long <- bilat_gm_dist_long %>% mutate(tract_node_noHemi = paste0(tractID, "_",nodeID))
+  
+  
+  bilat_gm_dist_toplot <- merge(bilat_gm_dist_long, gam_age_md_bilat, by = "tract_node_noHemi")
+  bilat_gm_dist_toplot <- bilat_gm_dist_toplot %>% select(-tractID.y, -nodeID.y) %>% rename(tractID = tractID.x,
+                                                                                            nodeID = nodeID.x)
+  
+  bilat_gm_dist_toplot <- bilat_gm_dist_toplot %>% select(-dist_to_gm) %>% rename(dist_to_gm = value)  
+  bilat_gm_dist_toplot <- bilat_gm_dist_toplot %>% arrange(tractID, nodeID)
+  return(bilat_gm_dist_toplot)
+}
+ 
+bilat_gm_dist_toplot_HCPD <- load_bilat_distances("HCPD")
+bilat_gm_dist_toplot_HCPD <- bilat_gm_dist_toplot_HCPD %>% mutate(Dataset = "HCPD")
+bilat_gm_dist_toplot_HBN <- load_bilat_distances("HBN")
+bilat_gm_dist_toplot_HBN <- bilat_gm_dist_toplot_HBN %>% mutate(Dataset = "HBN")
+
+```
+
+
+
+```{r functions for block shuffle}
+
+  
+block_shuffle <- function(tract_profile, num_blocks) {
+  # Divide the tract_profile into approximately equal blocks
+  block_size <- floor(length(tract_profile) / num_blocks)
+  remainder <- length(tract_profile) %% num_blocks
+  
+  blocks <- list()
+  start <- 1
+  for (i in 1:num_blocks) {
+    end <- start + block_size + ifelse(i <= remainder, 1, 0) - 1
+    blocks[[i]] <- tract_profile[start:end]
+    start <- end + 1
+  }
+  
+  # Randomly shuffle the blocks
+  blocks <- sample(blocks)
+  
+  # Reconstruct the shuffled tract_profile
+  shuffled_tract_profile <- unlist(blocks)
+  return(shuffled_tract_profile)
+}
+
+ 
+block_shuffle_correlations <- function(tract_profile_map1, map2, num_blocks, rep) {
+  correlations <- numeric(rep)
+  for (i in 1:rep) {
+    s <- block_shuffle(tract_profile_map1, num_blocks)
+    cor <- cor.test(s, map2)$estimate
+    correlations[i] <- cor
+  }
+  #write.csv(correlations, paste0(blockshuffle_dir, "/", tract, "_blockshuffle_corrs.csv"), row.names=F)
+  return(correlations)
+}
+
+
+nonparp <- function(stat, dist) {
+  more_extreme <- sum(abs(dist) >= abs(stat))
+  p_value <- more_extreme / length(dist)
+  return(p_value)
+}
+
+
+block_shuffle_wrapper <- function(tract, num_blocks, rep, dataset) {
+  gam_age_md <- get(paste0("gam_age_md_bilat_", dataset))
+  age_effects <- gam_age_md %>% filter(str_detect(tract, tractID)) %>% select(s_age.delta.adj.rsq_signed)
+  gm_dist <- bilat_gm_dist_toplot %>% filter(tractID==tract) 
+  gm_dist <- gm_dist$dist_to_gm
+  
+  # make block shuffle surrogate
+  null <- block_shuffle_correlations(age_effects$s_age.delta.adj.rsq_signed, gm_dist, num_blocks, rep) 
+  stat <- cor.test(age_effects$s_age.delta.adj.rsq_signed, gm_dist)$estimate
+  pval <- nonparp(stat, null)
+  df <- data.frame(value = null)
+  df <- df %>% mutate(tractID = tract) %>% mutate(dataset=dataset) %>% 
+    mutate(stat = stat, pval=pval)  
+  
+  return(df)
+}
+```
+
+
+ 
+```{r numblocks 20,fig.height=10,fig.width=20}
+
+block_shuffle20_HCPD <- lapply(unique(gam_age_md_bilat_HCPD$tractID), block_shuffle_wrapper, num_blocks = 20, rep=10000, dataset="HCPD")
+names(block_shuffle20_HCPD) <- unique(gam_age_md_bilat_HCPD$tractID)
+
+block_shuffle20_HBN <- lapply(unique(gam_age_md_bilat_HBN$tractID), block_shuffle_wrapper, num_blocks = 20, rep=10000, dataset="HBN")
+names(block_shuffle20_HBN) <- unique(gam_age_md_bilat_HBN$tractID)
+
+# get fdr corrected, permuted pvalues
+pvals_HCPD <- bind_rows(block_shuffle20_HCPD)
+pvals_HCPD <- pvals_HCPD %>% select(-value)
+pvals_HCPD <- pvals_HCPD[!duplicated(pvals_HCPD),]
+pvals_HCPD <- data.frame(t(p.adjust(pvals_HCPD$pval, method=c("fdr"))))
+names(pvals_HCPD) <- names(block_shuffle20_HCPD)
+
+pvals_HBN <- bind_rows(block_shuffle20_HBN)
+pvals_HBN <- pvals_HBN %>% select(-value)
+pvals_HBN <- pvals_HBN[!duplicated(pvals_HBN),]
+pvals_HBN <- data.frame(t(p.adjust(pvals_HBN$pval, method=c("fdr"))))
+names(pvals_HBN) <- names(block_shuffle20_HBN)
+
+plot_nulls <- function(tract, custom_color1, custom_color2) {
+  block_shuffle20 <- rbind(block_shuffle20_HCPD[[tract]], block_shuffle20_HBN[[tract]])
+  #stat_HCPD <- unique(block_shuffle20$stat[which(block_shuffle20$dataset == "HCPD")])
+  #stat_HBN <- unique(block_shuffle20$stat[which(block_shuffle20$dataset == "HBN")])
+  
+  pval_HCPD <- round(pvals_HCPD[[tract]], 2)
+  pval_HBN <- round(pvals_HBN[[tract]], 2)
+ 
+  plot <- ggplot(block_shuffle20, aes(x = value, colour = dataset, fill = dataset)) +
+    geom_histogram(alpha = 0.7) +
+    scale_fill_manual(values = c("HCPD" = custom_color1, "HBN" = custom_color2)) +
+     scale_color_manual(values = c("HCPD" = custom_color1, "HBN" = custom_color2)) + 
+    geom_segment(aes(x=stat, xend = stat, y = 0, yend = 1900, color = dataset, group=dataset), size = 2) + 
+     annotate("text", x=-0.6, y=900, label = substitute(atop(italic(p)[FDR] == pval_value), list(pval_value = pval_HBN)), hjust=0.5, vjust= -0.5, size=8, colour="#e07d5f") +
+    annotate("text", x=-0.6, y=500, label = substitute(atop(italic(p)[FDR] == pval_value), list(pval_value = pval_HCPD)), hjust=0.5, vjust= -0.5, size=8, colour="#38becd") + 
+    theme_classic() + 
+    theme(legend.position = "none" 
+          )+ 
+  coord_cartesian(ylim = c(0, 2000), xlim=c(-1,1.15)) + xlab("Pearson Correlation")  
+  
+  return(plot)
+ 
+}
+# arrange by AP, AP_frontal_temporal, RL (forceps), and SI
+x.grob <- textGrob("Spatial Autocorrelation Preserving Null Distribution of Pearson Correlations", 
+                   gp=gpar(col="black", fontsize=14))
+y.grob <- textGrob("Frequency", 
+                   gp=gpar(col="black", fontsize=14), rot=90)
+
+space.grob <- textGrob(" ", 
+                   gp=gpar(col="black", fontsize=28), rot=90)
+
+block_shuffle_nulls <- lapply(unique(gam_age_md_bilat_HCPD$tractID), plot_nulls, custom_color1 = "#6bd4e0", custom_color2 = "#fea489")
+names(block_shuffle_nulls) <- unique(gam_age_md_bilat_HCPD$tractID)
+ 
+#block_shuffle20_plots_final <- arrange_by_orientation(block_shuffle_nulls, "Distance to Cortex vs. Age Effect")
+#grid.arrange(arrangeGrob(block_shuffle20_plots_final, left = y.grob, bottom = x.grob, right = space.grob))
+```
+
+
+
+
+```{r, fig.height=20, fig.width=23}
+plot_dist_to_gm <- function(tract, age_effect_df1, age_effect_df2, custom_color1, custom_color2) {
+  df1 <- age_effect_df1 %>% filter(tractID == tract) %>% arrange(nodeID) # HCPD
+  df2 <- age_effect_df2 %>% filter(tractID == tract) %>% arrange(nodeID)  # HBN
+  df <- rbind(df1, df2)    
+  if (str_detect(tract, "Inferior")) {
+    plot <- ggplot(data = df, aes(x = dist_to_gm, y = s_age.delta.adj.rsq_signed, colour = Dataset, fill = Dataset)) +
+    geom_point(shape = 21, size=3, alpha = 0.8) + 
+      geom_smooth(data = df, method='lm', se=TRUE, aes(fill=Dataset), alpha = 0.3) + 
+     scale_fill_manual(values = c("HCPD" = custom_color1, "HBN" = custom_color2)) +
+     scale_color_manual(values = c("HCPD" = custom_color1, "HBN" = custom_color2)) + theme_classic() + 
+      stat_cor(method = "pearson", aes(label = ..r.label.., color = Dataset), size = 8, label.x.npc = 0.6,label.y.npc = 0.2) + 
+    theme(legend.position = "none", legend.text=element_text(size=16), legend.title=element_text(size=16),
+         # axis.title.y = element_blank(),
+          axis.text.x = element_text(size=16),
+          axis.text.y = element_text(size=16),
+          plot.title = element_text(size=16, hjust=0.5),
+          plot.margin = unit(c(0.2, 0.2, 0.2, -0.8), "cm")) + labs(title = tract) + xlab("Distance to Cortex (mm)")
+  
+  } else if (str_detect(tract, "Anterior Thalamic")){
+    plot <- ggplot(data = df, aes(x = dist_to_gm, y = s_age.delta.adj.rsq_signed, colour = Dataset, fill = Dataset)) +
+    geom_point(shape = 21, size=3, alpha = 0.8) + 
+      geom_smooth(data = df, method='lm', se=TRUE, aes(fill=Dataset), alpha = 0.3) + 
+     scale_fill_manual(values = c("HCPD" = custom_color1, "HBN" = custom_color2)) +
+     scale_color_manual(values = c("HCPD" = custom_color1, "HBN" = custom_color2)) + theme_classic() + 
+      stat_cor(method = "pearson", aes(label = ..r.label.., color = Dataset), size = 8, label.x.npc = 0.01,label.y.npc = 1) + 
+    theme(legend.position = "none", legend.text=element_text(size=16), legend.title=element_text(size=16),
+          #axis.title.y = element_blank(),
+          axis.text.x = element_text(size=16),
+          axis.text.y = element_text(size=16),
+          plot.title = element_text(size=16, hjust=0.5)) + labs(title = tract) + xlab("Distance to Cortex (mm)")
+  
+  }else {
+     plot <- ggplot(data = df, aes(x = dist_to_gm, y = s_age.delta.adj.rsq_signed, colour = Dataset, fill = Dataset)) +
+    geom_point(shape = 21, size=3, alpha = 0.8) + 
+   geom_smooth(data = df, method='lm', se=TRUE, aes(fill=Dataset), alpha = 0.3) + 
+       stat_cor(method = "pearson", aes(label = ..r.label.., color = Dataset), size = 8,  label.x.npc = 0.55,label.y.npc = 0.2) + 
+     scale_fill_manual(values = c("HCPD" = custom_color1, "HBN" = custom_color2)) +
+     scale_color_manual(values = c("HCPD" = custom_color1, "HBN" = custom_color2)) + theme_classic() + 
+    theme(legend.position = "none", legend.text=element_text(size=16),legend.title=element_text(size=16),
+          #axis.title.y = element_blank(),
+          axis.text.x = element_text(size=16),
+          axis.text.y = element_text(size=16),
+          plot.title = element_text(size=16, hjust=0.5)) + labs(title = tract) + xlab("Distance to Cortex (mm)")
+  }
+  
+   return(plot)
+
+}
+
+
+
+arrange_by_orientation_nulls <- function(list_figures, list_figures_nulls, title) {
+  
+  
+  AP_plots <- ggarrange(list_figures$`Anterior Thalamic Radiation` + ylab(expression("Age Effect ("*Delta*"Adjusted R"^2*")")), 
+                           list_figures$`Cingulum Cingulate` + theme(axis.title.y = element_blank()), 
+                           list_figures$`Inferior Fronto-occipital Fasciculus`+ theme(axis.title.y = element_blank()), 
+                           list_figures$`Inferior Longitudinal Fasciculus`+ theme(axis.title.y = element_blank()), 
+                           list_figures$`Superior Longitudinal Fasciculus`+ theme(axis.title.y = element_blank()), 
+  
+                        list_figures_nulls$`Anterior Thalamic Radiation`+ ylab("Frequency"), 
+                        list_figures_nulls$`Cingulum Cingulate`+ theme(axis.title.y = element_blank()), 
+                        list_figures_nulls$`Inferior Fronto-occipital Fasciculus`+ theme(axis.title.y = element_blank()), 
+                        list_figures_nulls$`Inferior Longitudinal Fasciculus`+ theme(axis.title.y = element_blank()),
+                        list_figures_nulls$`Superior Longitudinal Fasciculus`+ theme(axis.title.y = element_blank()),
+                        ncol=5, nrow = 2, heights = c(1, 0.7))
+  AP_plots_final <- annotate_figure(AP_plots, top = text_grob("Anterior - Posterior", 
+                 color = "black", face = "bold", size = 16))
+  
+ 
+  AP_frontotemp_plots <- ggarrange(list_figures$`Arcuate Fasciculus` + ylab(expression("Age Effect ("*Delta*"Adjusted R"^2*")")),
+                                   list_figures$`Uncinate Fasciculus`+ theme(axis.title.y = element_blank()), 
+                                   list_figures_nulls$`Arcuate Fasciculus`+ ylab("Frequency"),
+                                   list_figures_nulls$`Uncinate Fasciculus`+ theme(axis.title.y = element_blank()), ncol=2, nrow = 2, heights = c(1, 0.7))
+  AP_frontotemp_plots_final <- annotate_figure(AP_frontotemp_plots, top = text_grob("Anterior - Posterior (Frontal - Temporal)", 
+                 color = "black", face = "bold", size = 16))
+ 
+   
+  RL_plots <- ggarrange(list_figures$`Forceps Major`+ theme(axis.title.y = element_blank()), 
+                        list_figures$`Forceps Minor`+ theme(axis.title.y = element_blank()), 
+                        list_figures_nulls$`Forceps Major`+ theme(axis.title.y = element_blank()), 
+                        list_figures_nulls$`Forceps Minor`+ theme(axis.title.y = element_blank()), 
+                           ncol=2, nrow = 2, heights = c(1, 0.7))
+  RL_plots_final <- annotate_figure(RL_plots, top = text_grob("Right - Left", 
+                 color = "black", face = "bold", size = 16))
+  
+  
+  SI_plots <- ggarrange(list_figures$`Corticospinal Tract` + ylab(expression("Age Effect ("*Delta*"Adjusted R"^2*")")), list_figures$`Posterior Arcuate`+ theme(axis.title.y = element_blank()), 
+                        list_figures$`Vertical Occipital Fasciculus`+ theme(axis.title.y = element_blank()), 
+                        list_figures_nulls$`Corticospinal Tract` + ylab("Frequency"), 
+                        list_figures_nulls$`Posterior Arcuate`+ theme(axis.title.y = element_blank()), 
+                        list_figures_nulls$`Vertical Occipital Fasciculus`+ theme(axis.title.y = element_blank()), common.legend=TRUE, legend=c("right"),
+                           ncol=3, nrow = 2, heights = c(1, 0.7))
+  SI_plots_final <- annotate_figure(SI_plots, top = text_grob("Superior - Inferior", 
+                 color = "black", face = "bold", size = 16))
+  
+  
+  tractprofiles_plot <- ggarrange(AP_plots_final, ggarrange(AP_frontotemp_plots_final, RL_plots_final, ncol = 2), SI_plots_final, nrow = 3) + bgcolor("white")     
+  
+  tractprofiles_plot_final <- annotate_figure(tractprofiles_plot, top = text_grob(title, 
+               color = "black", face = "italic", size = 20)) + bgcolor("white")     
+   return(tractprofiles_plot_final)
+}
+
+dist_plot <- lapply(unique(bilat_gm_dist_toplot_HCPD$tractID), plot_dist_to_gm, 
+                    age_effect_df1 = bilat_gm_dist_toplot_HCPD, 
+                    age_effect_df2 = bilat_gm_dist_toplot_HBN, 
+                    custom_color1 = "#6bd4e0", custom_color2 = "#fea489")
+names(dist_plot) <- unique(bilat_gm_dist_toplot_HCPD$tractID)
+
+ 
+dist_plot_oriented_nonulls <- arrange_by_orientation(dist_plot,"Association Between Geodesic Distance to Cortex and Age Effect")
+
+dist_plot_oriented <- arrange_by_orientation_nulls(dist_plot, block_shuffle_nulls, "Association Between Geodesic Distance to Cortex and Age Effect")
+
+
+ggsave("/Users/audluo/PennLINC/luowm_local/output/tract_profiles_testing/both_datasets/dist_to_cortex.png", dist_plot_oriented, 
+       width = 23, height = 20, units = "in")
+
+ 
+```

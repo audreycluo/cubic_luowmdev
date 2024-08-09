@@ -1,0 +1,258 @@
+---
+title: "Compare Datasets"
+author: "Audrey Luo"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(cowplot)
+library(data.table)
+library(dplyr)
+library(ggplot2)
+library(ggpubr)
+library(grid)
+library(gridExtra)
+library(gratia)
+library(kableExtra)
+library(mgcv)
+library(RColorBrewer)
+library(stringr)
+library(tidyr)
+
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE, include = TRUE) 
+
+```
+
+
+
+```{r load files}
+# HCPD
+HCPD_tract_profiles <- fread("/cbica/projects/luo_wm_dev/input/HCPD/HCPD_tractprofiles/all_subjects/collated_tract_profiles_reoriented.tsv")
+HCPD_adj_rsq_fa <- read.csv("/cbica/projects/luo_wm_dev/output/HCPD/tract_profiles/GAM/dti_fa/GAMresults.dti_fa.age_reoriented.csv")
+HCPD_adj_rsq_md <- read.csv("/cbica/projects/luo_wm_dev/output/HCPD/tract_profiles/GAM/dti_md/GAMresults.dti_md.age_reoriented.csv")
+HCPD_pc_fa <- readRDS("/cbica/projects/luo_wm_dev/output/HCPD/tract_profiles/GAM/dti_fa/posterior_percentchange/HCPD_posterior_percentchange_reoriented.RData")
+HCPD_pc_md <- readRDS("/cbica/projects/luo_wm_dev/output/HCPD/tract_profiles/GAM/dti_md/posterior_percentchange/HCPD_posterior_percentchange_reoriented.RData")
+HCPD_norm_pc_fa <- readRDS("/cbica/projects/luo_wm_dev/output/HCPD/tract_profiles/GAM/dti_fa/posterior_percentchange/HCPD_posterior_percentchange_normalized_reoriented.RData")
+HCPD_norm_pc_md <- readRDS("/cbica/projects/luo_wm_dev/output/HCPD/tract_profiles/GAM/dti_md/posterior_percentchange/HCPD_posterior_percentchange_normalized_reoriented.RData")
+ 
+# HBN
+HBN_tract_profiles <- fread("/cbica/projects/luo_wm_dev/input/HBN/HBN_tractprofiles/all_subjects/collated_tract_profiles_reoriented.tsv")
+HBN_adj_rsq_fa <- read.csv("/cbica/projects/luo_wm_dev/output/HBN/tract_profiles/GAM/dti_fa/GAMresults.dti_fa.age_reoriented.csv")
+HBN_adj_rsq_md <- read.csv("/cbica/projects/luo_wm_dev/output/HBN/tract_profiles/GAM/dti_md/GAMresults.dti_md.age_reoriented.csv")
+HBN_pc_fa <- readRDS("/cbica/projects/luo_wm_dev/output/HBN/tract_profiles/GAM/dti_fa/posterior_percentchange/HBN_posterior_percentchange_reoriented.RData")
+HBN_pc_md <- readRDS("/cbica/projects/luo_wm_dev/output/HBN/tract_profiles/GAM/dti_md/posterior_percentchange/HBN_posterior_percentchange_reoriented.RData")
+HBN_norm_pc_fa <- readRDS("/cbica/projects/luo_wm_dev/output/HBN/tract_profiles/GAM/dti_fa/posterior_percentchange/HBN_posterior_percentchange_normalized_reoriented.RData")
+HBN_norm_pc_md <- readRDS("/cbica/projects/luo_wm_dev/output/HBN/tract_profiles/GAM/dti_md/posterior_percentchange/HBN_posterior_percentchange_normalized_reoriented.RData")
+ 
+```
+
+
+```{r plotting functions}
+plot_datasets <- function(tract, df, custom_color, custom_color_rh=NULL, var_name) {
+  df <- df %>% filter(tractID == tract)
+  HCPD_var <- paste0("HCPD_", var_name)
+  HBN_var <- paste0("HBN_", var_name)
+  if(is.null(custom_color_rh)) {
+    plot <- ggplot(data = df, aes_string(x = HCPD_var, y = HBN_var)) + stat_cor(data = df, method="pearson", aes_string(x = HCPD_var, y = HBN_var)) +
+    geom_point(color = custom_color) +
+    theme(legend.position = "none",
+          axis.title.x = element_blank(),
+          axis.title.y = element_blank()) + stat_cor(method="pearson")
+    
+  } else {
+    plot <- ggplot(data = df, aes_string(x = HCPD_var, y = HBN_var)) + stat_cor(data = df, method="pearson", aes_string(x = HCPD_var, y = HBN_var)) + 
+    geom_point(data = df, aes_string(x = HCPD_var, y = HBN_var, color = "hemi"),size = 1) +
+    scale_fill_manual(values = c("Left" = custom_color, "Right" = custom_color_rh)) +
+    scale_color_manual(values = c("Left" = custom_color, "Right" = custom_color_rh)) +
+    theme(legend.position = "none",
+          axis.title.x = element_blank(),
+          axis.title.y = element_blank(),
+          plot.title = element_text(size=14, hjust=0.5)) + labs(title = tract) 
+  }
+  return(plot)
+}
+
+
+
+arrange_by_orientation <- function(list_figures, age_effect_type) {
+  
+  
+  AP_plots <- ggarrange(list_figures$`Anterior Thalamic Radiation`, 
+                           list_figures$`Cingulum Cingulate`, 
+                           list_figures$`Inferior Fronto-occipital Fasciculus`, 
+                           list_figures$`Inferior Longitudinal Fasciculus`, 
+                           list_figures$`Superior Longitudinal Fasciculus`, ncol=5, nrow = 1)
+  AP_plots_final <- annotate_figure(AP_plots, top = text_grob("Anterior - Posterior", 
+                 color = "black", face = "bold", size = 14))
+  
+  
+  AP_frontotemp_plots <- ggarrange(list_figures$`Arcuate Fasciculus`,
+                                      list_figures$`Uncinate Fasciculus`, ncol=2, nrow = 1)
+  AP_frontotemp_plots_final <- annotate_figure(AP_frontotemp_plots, top = text_grob("Anterior - Posterior (Frontal - Temporal)", 
+                 color = "black", face = "bold", size = 14))
+  
+   
+  RL_plots <- ggarrange(list_figures$`Forceps Minor`, 
+                           list_figures$`Forceps Major`,
+                           ncol=2, nrow = 1)
+  RL_plots_final <- annotate_figure(RL_plots, top = text_grob("Right - Left", 
+                 color = "black", face = "bold", size = 14))
+  
+  
+  SI_plots <- ggarrange(list_figures$`Posterior Arcuate`, 
+                           list_figures$`Corticospinal Tract`,
+                           list_figures$`Vertical Occipital Fasciculus`, common.legend=TRUE, legend=c("right"),
+                           ncol=3, nrow = 1)
+  SI_plots_final <- annotate_figure(SI_plots, top = text_grob("Superior - Inferior", 
+                 color = "black", face = "bold", size = 14))
+  
+  
+  tractprofiles_plot <- ggarrange(AP_plots_final, ggarrange(AP_frontotemp_plots_final, RL_plots_final, ncol = 2), SI_plots_final, nrow = 3)
+  
+  tractprofiles_plot_final <- annotate_figure(tractprofiles_plot, top = text_grob(age_effect_type, 
+               color = "black", face = "italic", size = 18))
+   return(tractprofiles_plot_final)
+}
+
+```
+
+# Spatial correlation of tract profiles
+```{r spatial corr tract profiles, fig.width=16, fig.height=10}
+HCPD_tract_profiles_fa_summ <- HCPD_tract_profiles %>% select(-dti_md) %>% group_by(tractID, tract_hemi, nodeID, hemi) %>% 
+  summarise(mean_scalar = mean(dti_fa, na.rm=T)) 
+HCPD_tract_profiles_md_summ <- HCPD_tract_profiles %>% select(-dti_fa) %>% group_by(tractID, tract_hemi, nodeID, hemi) %>% 
+  summarise(mean_scalar = mean(dti_md, na.rm=T))
+
+HBN_tract_profiles_fa_summ <- HBN_tract_profiles %>% select(-dti_md) %>% group_by(tractID, tract_hemi, nodeID, hemi) %>% 
+  summarise(mean_scalar = mean(dti_fa, na.rm=T)) 
+HBN_tract_profiles_md_summ <- HBN_tract_profiles %>% select(-dti_fa) %>% group_by(tractID, tract_hemi, nodeID, hemi) %>% 
+  summarise(mean_scalar = mean(dti_md, na.rm=T))
+ 
+
+tract_profiles_fa_summ <- data.frame(cbind(HCPD_tract_profiles_fa_summ, HBN_tract_profiles_fa_summ$mean_scalar))  
+names(tract_profiles_fa_summ)[c(5:6)] <- c("HCPD_mean_scalar","HBN_mean_scalar")
+
+
+tract_profiles_md_summ <- data.frame(cbind(HCPD_tract_profiles_md_summ, HBN_tract_profiles_md_summ$mean_scalar))  
+names(tract_profiles_md_summ)[c(5:6)] <- c("HCPD_mean_scalar","HBN_mean_scalar")
+
+
+cor.test(HCPD_tract_profiles_fa_summ$mean_scalar, HBN_tract_profiles_fa_summ$mean_scalar)
+cor.test(HCPD_tract_profiles_md_summ$mean_scalar, HBN_tract_profiles_md_summ$mean_scalar)
+ 
+
+tract_profiles_fa_plot <- lapply(unique(tract_profiles_fa_summ$tractID), plot_datasets, df = tract_profiles_fa_summ, var_name = "mean_scalar", custom_color = "#831D69FF", custom_color_rh = "#FA9BAC")
+names(tract_profiles_fa_plot) <- unique(tract_profiles_fa_summ$tractID)
+
+tract_profiles_md_plot <- lapply(unique(tract_profiles_md_summ$tractID), plot_datasets, df = tract_profiles_md_summ, var_name = "mean_scalar", custom_color = "#831D69FF", custom_color_rh = "#FA9BAC")
+names(tract_profiles_md_plot) <- unique(tract_profiles_md_summ$tractID)
+
+
+x.grob <- textGrob("HCPD", 
+                     gp=gpar(col="black", fontsize=14))
+y.grob <- textGrob("HBN", 
+                   gp=gpar(col="black", fontsize=14), rot=90)
+
+space.grob <- textGrob(" ", 
+                     gp=gpar(col="black", fontsize=14), rot=90)
+  
+ 
+
+tract_profiles_fa_plot_final <- arrange_by_orientation(tract_profiles_fa_plot, "Mean FA") 
+
+tract_profiles_md_plot_final <- arrange_by_orientation(tract_profiles_md_plot, "Mean MD") 
+
+grid.arrange(arrangeGrob(tract_profiles_fa_plot_final, left = y.grob, bottom = x.grob, right = space.grob))
+grid.arrange(arrangeGrob(tract_profiles_md_plot_final, left = y.grob, bottom = x.grob, right = space.grob))
+
+ 
+```
+
+
+# Spatial correlation of age effects
+## Delta adjusted rsq
+```{r spatial corr tract profiles, fig.width=16, fig.height=10}
+
+ 
+adj_rsq_fa_summ <- data.frame(cbind(HCPD_adj_rsq_fa, HBN_adj_rsq_fa$s_age.delta.adj.rsq_signed)) %>% 
+  rename(HBN_s_age.delta.adj.rsq_signed = HBN_adj_rsq_fa.s_age.delta.adj.rsq_signed,
+         HCPD_s_age.delta.adj.rsq_signed = s_age.delta.adj.rsq_signed)
+ 
+adj_rsq_md_summ <- data.frame(cbind(HCPD_adj_rsq_md, HBN_adj_rsq_md$s_age.delta.adj.rsq_signed)) %>% 
+  rename(HBN_s_age.delta.adj.rsq_signed = HBN_adj_rsq_md.s_age.delta.adj.rsq_signed,
+         HCPD_s_age.delta.adj.rsq_signed = s_age.delta.adj.rsq_signed)
+
+adj_rsq_fa_plot <- lapply(unique(HCPD_adj_rsq_fa$tractID), plot_datasets, df = adj_rsq_fa_summ, var_name = "s_age.delta.adj.rsq_signed", custom_color = "#831D69FF", custom_color_rh = "#FA9BAC")
+names(adj_rsq_fa_plot) <- unique(HCPD_adj_rsq_fa$tractID)
+
+adj_rsq_md_plot <- lapply(unique(HCPD_adj_rsq_md$tractID), plot_datasets, df = adj_rsq_md_summ, var_name = "s_age.delta.adj.rsq_signed", custom_color = "#831D69FF", custom_color_rh = "#FA9BAC")
+names(adj_rsq_md_plot) <- unique(HCPD_adj_rsq_md$tractID)
+ 
+ 
+
+adj_rsq_fa_plot_final <- arrange_by_orientation(adj_rsq_fa_plot, "FA Delta Adjusted Rsq") 
+adj_rsq_md_plot_final <- arrange_by_orientation(adj_rsq_md_plot, "MD Delta Adjusted Rsq") 
+
+grid.arrange(arrangeGrob(adj_rsq_fa_plot_final, left = y.grob, bottom = x.grob, right = space.grob))
+grid.arrange(arrangeGrob(adj_rsq_md_plot_final, left = y.grob, bottom = x.grob, right = space.grob))
+```
+
+
+## Posterior percent change
+```{r spatial corr tract profiles, fig.width=16, fig.height=10}
+
+cor.test(HCPD_pc_fa$median_percent_change, HBN_pc_fa$median_percent_change)
+cor.test(HCPD_pc_md$median_percent_change, HBN_pc_md$median_percent_change)
+ 
+pc_fa_summ <- data.frame(cbind(HCPD_pc_fa, HBN_pc_fa$median_percent_change)) %>% 
+  rename(HBN_median_percent_change = ...11,
+         HCPD_median_percent_change = median_percent_change)
+ 
+pc_md_summ <- data.frame(cbind(HCPD_pc_md, HBN_pc_md$median_percent_change)) %>% 
+  rename(HBN_median_percent_change = ...11,
+         HCPD_median_percent_change = median_percent_change)
+
+pc_fa_plot <- lapply(unique(HCPD_pc_fa$tractID), plot_datasets, df = pc_fa_summ, var_name = "median_percent_change", custom_color = "#831D69FF", custom_color_rh = "#FA9BAC")
+names(pc_fa_plot) <- unique(HCPD_pc_fa$tractID)
+
+pc_md_plot <- lapply(unique(HCPD_pc_md$tractID), plot_datasets, df = pc_md_summ, var_name = "median_percent_change", custom_color = "#831D69FF", custom_color_rh = "#FA9BAC")
+names(pc_md_plot) <- unique(HCPD_pc_md$tractID)
+ 
+
+
+pc_fa_plot_final <- arrange_by_orientation(pc_fa_plot, "FA Percent Change") 
+pc_md_plot_final <- arrange_by_orientation(pc_md_plot, "MD Percent Change") 
+
+grid.arrange(arrangeGrob(pc_fa_plot_final, left = y.grob, bottom = x.grob, right = space.grob))
+grid.arrange(arrangeGrob(pc_md_plot_final, left = y.grob, bottom = x.grob, right = space.grob))
+
+```
+
+## Normalized posterior percent change
+```{r spatial corr tract profiles, fig.width=16, fig.height=10}
+
+cor.test(HCPD_norm_pc_fa$median_percent_change, HBN_norm_pc_fa$median_percent_change)
+cor.test(HCPD_norm_pc_md$median_percent_change, HBN_norm_pc_md$median_percent_change)
+ 
+norm_pc_fa_summ <- data.frame(cbind(HCPD_norm_pc_fa, HBN_norm_pc_fa$median_percent_change)) %>% 
+  rename(HBN_median_percent_change = ...11,
+         HCPD_median_percent_change = median_percent_change)
+ 
+norm_pc_md_summ <- data.frame(cbind(HCPD_norm_pc_md, HBN_norm_pc_md$median_percent_change)) %>% 
+  rename(HBN_median_percent_change = ...11,
+         HCPD_median_percent_change = median_percent_change)
+
+norm_pc_fa_plot <- lapply(unique(HCPD_norm_pc_fa$tractID), plot_datasets, df = norm_pc_fa_summ, var_name = "median_percent_change", custom_color = "#831D69FF", custom_color_rh = "#FA9BAC")
+names(norm_pc_fa_plot) <- unique(HCPD_norm_pc_fa$tractID)
+
+norm_pc_md_plot <- lapply(unique(HCPD_norm_pc_md$tractID), plot_datasets, df = norm_pc_md_summ, var_name = "median_percent_change", custom_color = "#831D69FF", custom_color_rh = "#FA9BAC")
+names(norm_pc_md_plot) <- unique(HCPD_norm_pc_md$tractID)
+ 
+
+norm_pc_fa_plot_final <- arrange_by_orientation(norm_pc_fa_plot, "FA Normalized Percent Change") 
+norm_pc_md_plot_final <- arrange_by_orientation(norm_pc_md_plot, "MD Normalized Percent Change") 
+
+grid.arrange(arrangeGrob(norm_pc_fa_plot_final, left = y.grob, bottom = x.grob, right = space.grob))
+grid.arrange(arrangeGrob(norm_pc_md_plot_final, left = y.grob, bottom = x.grob, right = space.grob))
+
+```

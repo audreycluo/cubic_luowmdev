@@ -1,0 +1,2 @@
+﻿dataset ,data_root, outputs_root,demographics_file, qc_file,tract_profiles_data_root,tract_profiles_outputs_root
+ PNC,/cbica/projects/luo_wm_dev/input/PNC,/cbica/projects/luo_wm_dev/output/PNC/superficialWM,/cbica/projects/luo_wm_dev/input/PNC/sample_selection_files/PNC_WMDev_FinalSampleDemographics_N1153_age8to22.csv,/cbica/projects/luo_wm_dev/input/PNC/sample_selection_filesPNC_WMDev_FinalSampleQCMetrics_N1153_age8to22.csv,/cbica/projects/luo_wm_dev/input/PNC/PNC_tractprofiles,/cbica/projects/luo_wm_dev/output/PNC/tract_profiles

@@ -1,0 +1,49 @@
+---
+title: "Untitled"
+author: "Audrey Luo"
+date: "2024-05-22"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(ComBatFamily)
+library(data.table)
+library(dplyr)
+library(mgcv)
+library(rjson)
+library(stringr)
+library(tidyr)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r cars}
+config_data <- fromJSON(file=sprintf("/cbica/projects/luo_wm_dev/code/tract_profiles/config/config_%1$s.json", dataset))
+demographics <- read.csv(config_data$demographics_file)
+qc_file <- read.csv(config_data$qc_file)
+demographics <- merge(demographics, qc_file, by = "sub")
+demographics$sex <- gsub("F", "Female", demographics$sex)
+demographics$sex <- gsub("M", "Male", demographics$sex)
+
+data_root <- config_data$tract_profiles_data_root
+```
+
+
+```{r}
+md_covbat <- readRDS(sprintf("%1$s/all_subjects/collated_tract_profiles_md_covbat.RData", data_root))
+
+x
+```
+
+
+```{r}
+x <- read.csv("/cbica/projects/luo_wm_dev/input/HCPD/HCPD_tractprofiles/sub-0392649/sub-0392649_tract_profiles_dti_fa.csv")
+y <- read.csv("/cbica/projects/luo_wm_dev/input/HCPD/HCPD_tractprofiles/sub-0392649/sub-0392649_tract_profiles_dti_fa_nocovbat.csv")
+  
+  
+```
+

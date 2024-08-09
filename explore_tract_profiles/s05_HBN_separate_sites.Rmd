@@ -1,0 +1,331 @@
+---
+title: "HBN - check sites"
+author: "Audrey Luo"
+output: 
+  html_document:
+    highlight: haddock
+    code_folding: hide
+    number_sections: no
+    theme: lumen
+    toc: yes
+    toc_depth: 4
+    toc_float: yes
+  pdf_document:
+    number_sections: no
+    toc: yes
+    toc_depth: '4'
+  word_document:
+    toc: yes
+    toc_depth: '4'
+urlcolor: blue
+editor_options: 
+  chunk_output_type: inline
+---
+
+```{r setup, include=FALSE}
+
+library(cowplot)
+library(data.table)
+library(dplyr)
+library(ggplot2)
+library(ggpubr)
+library(grid)
+library(gridExtra)
+library(gratia)
+library(kableExtra)
+library(mgcv)
+library(RColorBrewer)
+library(stringr)
+library(tidyr)
+
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE, include = TRUE) 
+
+font_size <- 14
+theme_set(theme_classic(base_family = "sans",base_size = font_size))
+line_size <- 0.5
+point_size <- 2
+```
+
+```{r load tract profiles, cache=TRUE}
+cohortfile <- read.csv("/cbica/projects/luo_wm_dev/output/HBN/tract_profiles/cohortfiles/dti_fa/dti_fa_cohortfile.csv")
+all_subjects <- fread("/cbica/projects/luo_wm_dev/input/HBN/HBN_tractprofiles/all_subjects/collated_tract_profiles.tsv")
+all_subjects_covbat <- readRDS("/cbica/projects/luo_wm_dev/input/HBN/HBN_tractprofiles/all_subjects/collated_tract_profiles_md_covbat.RData")
+demographics <- read.csv("/cbica/projects/luo_wm_dev/input/HBN/sample_selection_files/HBN_WMDev_FinalSampleDemographics_N1216_age5to22.csv")
+demographics <- demographics %>% select(sub, site)
+ 
+all_subjects <- all_subjects %>%
+  mutate(
+    hemi = ifelse(grepl("_L", tractID), "Left", "Right"),
+    tractID = gsub("_[LR]", "", tractID),
+    tractID = case_when(
+      tractID == "ATR" ~ "Anterior Thalamic Radiation",
+      tractID == "CGC" ~ "Cingulum Cingulate",
+      tractID == "CST" ~ "Corticospinal Tract",
+      tractID == "IFO" ~ "Inferior Fronto-occipital Fasciculus",
+      tractID == "ILF" ~ "Inferior Longitudinal Fasciculus",
+      tractID == "SLF" ~ "Superior Longitudinal Fasciculus",
+      tractID == "ARC" ~ "Arcuate Fasciculus",
+      tractID == "UNC" ~ "Uncinate Fasciculus",
+      tractID == "FA" ~ "Forceps Minor",
+      tractID == "FP" ~ "Forceps Major",
+      tractID == "pARC" ~ "Posterior Arcuate",
+      tractID == "VOF" ~ "Vertical Occipital Fasciculus",
+      TRUE ~ tractID
+    ),
+    tract_hemi = paste(hemi, tractID),
+    tract_hemi = gsub("Right Forceps", "Forceps", tract_hemi),
+    tract_hemi = str_replace_all(tract_hemi, " ", "_")
+  )
+
+
+all_subjects$hemi[all_subjects$tract_hemi == "Forceps_Minor" | all_subjects$tract_hemi == "Forceps_Major"] <- NA
+all_subjects$subjectID <- as.factor(all_subjects$subjectID)
+
+cohortfile <- merge(cohortfile, demographics)
+cohortfile <- cohortfile %>% rename(subjectID=sub) %>% select(subjectID, age, sex, mean_fd, site)
+
+```
+
+```{r reformat covbat dataframe}
+
+all_subjects_covbat <- all_subjects_covbat %>% pivot_longer(cols = -subjectID, names_to = "tract_node")
+all_subjects_covbat <- all_subjects_covbat %>% rename(dti_md = value) %>%
+  mutate(tract_hemi = gsub("_[0-9]+", "", tract_node)) %>% 
+  mutate(nodeID = str_extract(tract_node, "[0-9]+")) %>%
+  mutate(tractID = gsub("_", " ", gsub("Left_|Right_", "", tract_hemi))) %>%
+  mutate(hemi = str_extract(tract_hemi, "Left|Right"))
+all_subjects_covbat$nodeID <- as.numeric(all_subjects_covbat$nodeID)
+all_subjects_covbat$subjectID <- as.factor(all_subjects_covbat$subjectID)
+all_subjects_covbat <- all_subjects_covbat %>% select(-tract_node)
+ 
+all_subjects_covbat$tractID <- gsub("Fronto.occipital", "Fronto-occipital", all_subjects_covbat$tractID)
+```
+
+# Tract Names and Orientations
+ 
+```{r fix tract orientations}
+
+# fix tract orientations
+tract_profiles <- all_subjects %>%
+  group_by(tractID) %>%
+  mutate(nodeID = ifelse(tractID %in% c("Cingulum Cingulate", "Inferior Fronto-occipital Fasciculus", "Inferior Longitudinal Fasciculus", "Uncinate Fasciculus", "Corticospinal Tract"), max(nodeID) - nodeID, nodeID))
+
+# label main orientation
+tract_profiles <- tract_profiles %>% 
+  mutate(main_orientation = case_when(
+    tractID %in% c("Anterior Thalamic Radiation", "Cingulum Cingulate", "Inferior Fronto-occipital Fasciculus",
+                   "Inferior Longitudinal Fasciculus", "Superior Longitudinal Fasciculus") ~ "AP",
+    tractID %in% c("Arcuate Fasciculus", "Uncinate Fasciculus") ~ "AP_frontal_temporal",
+    tractID %in% c("Forceps Minor", "Forceps Major") ~ "RL",
+    tractID %in% c("Corticospinal Tract", "Posterior Arcuate","Vertical Occipital Fasciculus") ~ "SI",
+    TRUE ~ NA_character_
+  ))
+
+tract_profiles$main_orientation <- as.factor(tract_profiles$main_orientation)
+
+tract_profiles <- merge(tract_profiles, cohortfile)
+
+#write.table(tract_profiles, "/cbica/projects/luo_wm_dev/input/HBN/HBN_tractprofiles/all_subjects/collated_tract_profiles_reoriented.tsv")
+
+
+# fix tract orientations
+tract_profiles_covbat <- all_subjects_covbat %>%
+  group_by(tractID) %>%
+  mutate(nodeID = ifelse(tractID %in% c("Cingulum Cingulate", "Inferior Fronto-occipital Fasciculus", "Inferior Longitudinal Fasciculus", "Uncinate Fasciculus", "Corticospinal Tract"), max(nodeID) - nodeID, nodeID))
+
+# label main orientation
+tract_profiles_covbat <- tract_profiles_covbat %>% 
+  mutate(main_orientation = case_when(
+    tractID %in% c("Anterior Thalamic Radiation", "Cingulum Cingulate", "Inferior Fronto-occipital Fasciculus",
+                   "Inferior Longitudinal Fasciculus", "Superior Longitudinal Fasciculus") ~ "AP",
+    tractID %in% c("Arcuate Fasciculus", "Uncinate Fasciculus") ~ "AP_frontal_temporal",
+    tractID %in% c("Forceps Minor", "Forceps Major") ~ "RL",
+    tractID %in% c("Corticospinal Tract", "Posterior Arcuate","Vertical Occipital Fasciculus") ~ "SI",
+    TRUE ~ NA_character_
+  ))
+
+tract_profiles_covbat$main_orientation <- as.factor(tract_profiles_covbat$main_orientation)
+
+tract_profiles_covbat <- merge(tract_profiles_covbat, cohortfile)
+
+#write.table(tract_profiles_covbat, "/cbica/projects/luo_wm_dev/input/HBN/HBN_tractprofiles/all_subjects/collated_tract_profiles_covbat_reoriented_covbat.tsv")
+```
+
+# 1. Tract profiles
+```{r functions for fitting gams and visualizing tract profiles}
+
+# function for plotting tractprofiles mean and sd FA/MD
+plot_mean_by_site <- function(tract, scalar) {
+  df_profiles <- get(paste0("tract_profiles_", scalar, "_summary"))
+  df <- df_profiles %>% filter(tractID == tract)
+  
+  if(str_detect(tract, "Forceps")) {
+    plot <- ggplot(data = df, aes(x = nodeID, y = mean_scalar, group = site)) +
+    geom_ribbon(data = df, aes(x = nodeID , ymin = ymin , ymax = ymax, fill = site), alpha = .5, linetype = 0) + 
+    geom_line(data = df, aes(x = nodeID, y = mean_scalar, color = site), size = 1) +
+    theme(legend.position = "none",
+          axis.title.x = element_blank(),
+          axis.title.y = element_blank())
+    
+  } else {
+    plot <- ggplot(data = df, aes(x = nodeID, y = mean_scalar, group = site)) +
+    geom_ribbon(data = df, aes(x = nodeID , ymin = ymin , ymax = ymax, fill = site), alpha = .5, linetype = 0) + 
+    geom_line(data = df, aes(x = nodeID, y = mean_scalar, color = site),size = 1) +
+    theme(legend.position = "none",
+          axis.title.x = element_blank(),
+          axis.title.y = element_blank(),
+          plot.title = element_text(size=14, hjust=0.5)) + labs(title = tract)
+  }
+  return(plot)
+}
+
+ 
+
+arrange_by_orientation <- function(list_figures, age_effect_type) {
+  
+  AP_plots <- ggarrange(list_figures$`Anterior Thalamic Radiation`, 
+                           list_figures$`Cingulum Cingulate`, 
+                           list_figures$`Inferior Fronto-occipital Fasciculus`, 
+                           list_figures$`Inferior Longitudinal Fasciculus`, 
+                           list_figures$`Superior Longitudinal Fasciculus`, ncol=5, nrow = 1)
+  AP_plots_final <- annotate_figure(AP_plots, top = text_grob("Anterior - Posterior", 
+                 color = "black", face = "bold", size = 14))
+  
+  
+  AP_frontotemp_plots <- ggarrange(list_figures$`Arcuate Fasciculus`,
+                                      list_figures$`Uncinate Fasciculus`, ncol=2, nrow = 1)
+  AP_frontotemp_plots_final <- annotate_figure(AP_frontotemp_plots, top = text_grob("Anterior - Posterior (Frontal - Temporal)", 
+                 color = "black", face = "bold", size = 14))
+  
+   
+  RL_plots <- ggarrange(list_figures$`Forceps Major`, list_figures$`Forceps Minor`, 
+                           ncol=2, nrow = 1)
+  RL_plots_final <- annotate_figure(RL_plots, top = text_grob("Right - Left", 
+                 color = "black", face = "bold", size = 14))
+  
+  
+  SI_plots <- ggarrange(list_figures$`Corticospinal Tract`, list_figures$`Posterior Arcuate`, 
+                           list_figures$`Vertical Occipital Fasciculus`, common.legend=TRUE, legend=c("right"),
+                           ncol=3, nrow = 1)
+  SI_plots_final <- annotate_figure(SI_plots, top = text_grob("Superior - Inferior", 
+                 color = "black", face = "bold", size = 14))
+  
+  
+  tractprofiles_plot <- ggarrange(AP_plots_final, ggarrange(AP_frontotemp_plots_final, RL_plots_final, ncol = 2), SI_plots_final, nrow = 3)
+  
+  tractprofiles_plot_final <- annotate_figure(tractprofiles_plot, top = text_grob(age_effect_type, 
+               color = "black", face = "italic", size = 18))
+   return(tractprofiles_plot_final)
+}
+
+```
+
+## Fractional Anisotropy
+Mean FA across subjects
+```{r mean sd dti_fa, fig.width = 15, fig.height = 10}
+tract_profiles_fa <- tract_profiles %>% select(-dti_md) 
+tract_profiles_fa_summary <- tract_profiles_fa %>% 
+  group_by(tractID, nodeID, site) %>% 
+  summarise(mean_scalar = mean(dti_fa, na.rm=T),
+            sd = sd(dti_fa, na.rm=T),
+            ymin = mean_scalar - sd,
+            ymax = mean_scalar + sd)  
+
+# plot
+mean_sd_fa <- lapply(unique(tract_profiles$tractID), plot_mean_by_site, scalar="fa")
+names(mean_sd_fa) <- unique(tract_profiles$tractID)
+
+# arrange by AP, AP_frontal_temporal, RL (forceps), and SI
+x.grob <- textGrob("Position on Tract (Node ID)", 
+                   gp=gpar(col="black", fontsize=14))
+y.grob <- textGrob("Fractional Anisotropy", 
+                   gp=gpar(col="black", fontsize=14), rot=90)
+
+space.grob <- textGrob(" ", 
+                   gp=gpar(col="black", fontsize=28), rot=90)
+
+tractprofiles_fa_mean_final <- arrange_by_orientation(mean_sd_fa, "Mean +/- 1 SD")
+grid.arrange(arrangeGrob(tractprofiles_fa_mean_final, left = y.grob, bottom = x.grob, right = space.grob))
+
+ggsave("/Users/audluo/PennLINC/luowm_local/output/tract_profiles_testing/HBN/tract_profiles_fa_sites.png", grid.arrange(arrangeGrob(tractprofiles_fa_mean_final, left = y.grob, bottom = x.grob, right = space.grob)), width = 15, height = 10, units = "in")
+
+```
+  
+
+## Mean Diffusivity
+Mean MD across subjects
+```{r mean sd dti_md, fig.width = 15, fig.height = 10}
+tract_profiles_dti_md <- tract_profiles %>% select(-dti_fa) 
+sqrt_n <- length(unique(tract_profiles_dti_md$subjectID))
+tract_profiles_dti_md_summary <- tract_profiles_dti_md %>% 
+  group_by(tractID, nodeID, site) %>% 
+  summarise(mean_scalar = mean(dti_md, na.rm=T),
+            sd = sd(dti_md, na.rm=T),
+            #se = sd/sqrt_n,
+            #ymin = mean_scalar - se,
+            #ymax = mean_scalar + se,
+            ymin = mean_scalar - sd,
+            ymax = mean_scalar + sd)  
+
+# plot
+mean_sd_dti_md <- lapply(unique(tract_profiles$tractID), plot_mean_by_site, scalar="dti_md")
+names(mean_sd_dti_md) <- unique(tract_profiles$tractID)
+
+# arrange by AP, AP_frontal_temporal, RL (forceps), and SI
+x.grob <- textGrob("Position on Tract (Node ID)", 
+                   gp=gpar(col="black", fontsize=14))
+y.grob <- textGrob("Mean Diffusivity", 
+                   gp=gpar(col="black", fontsize=14), rot=90)
+
+space.grob <- textGrob(" ", 
+                   gp=gpar(col="black", fontsize=28), rot=90)
+
+# arrange by AP, AP_frontal_temporal, RL (forceps), and SI
+tractprofiles_md_mean_final <- arrange_by_orientation(mean_sd_dti_md, "Mean +/- 1 SD")
+grid.arrange(arrangeGrob(tractprofiles_md_mean_final, left = y.grob, bottom = x.grob, right = space.grob))
+
+
+ggsave("/Users/audluo/PennLINC/luowm_local/output/tract_profiles_testing/HBN/tract_profiles_dti_md_sites.png", grid.arrange(arrangeGrob(tractprofiles_md_mean_final, left = y.grob, bottom = x.grob, right = space.grob)), width = 15, height = 10, units = "in")
+
+
+```
+
+ 
+ 
+Mean MD across subjects - harmonized
+```{r mean sd dti_md, fig.width = 15, fig.height = 10}
+tract_profiles_dti_md <- tract_profiles_covbat 
+sqrt_n <- length(unique(tract_profiles_dti_md$subjectID))
+tract_profiles_dti_md_summary <- tract_profiles_dti_md %>% 
+  group_by(tractID, nodeID, site) %>% 
+  summarise(mean_scalar = mean(dti_md, na.rm=T),
+            sd = sd(dti_md, na.rm=T),
+            #se = sd/sqrt_n,
+            #ymin = mean_scalar - se,
+            #ymax = mean_scalar + se,
+            ymin = mean_scalar - sd,
+            ymax = mean_scalar + sd)  
+
+# plot
+mean_sd_dti_md <- lapply(unique(tract_profiles_covbat$tractID), plot_mean_by_site, scalar="dti_md")
+names(mean_sd_dti_md) <- unique(tract_profiles_covbat$tractID)
+ 
+
+# arrange by AP, AP_frontal_temporal, RL (forceps), and SI
+x.grob <- textGrob("Position on Tract (Node ID)", 
+                   gp=gpar(col="black", fontsize=14))
+y.grob <- textGrob("Mean Diffusivity", 
+                   gp=gpar(col="black", fontsize=14), rot=90)
+
+space.grob <- textGrob(" ", 
+                   gp=gpar(col="black", fontsize=28), rot=90)
+
+# arrange by AP, AP_frontal_temporal, RL (forceps), and SI
+tractprofiles_md_mean_final <- arrange_by_orientation(mean_sd_dti_md, "Mean +/- 1 SD")
+grid.arrange(arrangeGrob(tractprofiles_md_mean_final, left = y.grob, bottom = x.grob, right = space.grob))
+
+
+#ggsave("/Users/audluo/PennLINC/luowm_local/output/tract_profiles_testing/HBN/tract_profiles_dti_md_sites_harmonized.png", grid.arrange(arrangeGrob(tractprofiles_md_mean_final, left = y.grob, bottom = x.grob, right = space.grob)), width = 15, height = 10, units = "in")
+
+
+```

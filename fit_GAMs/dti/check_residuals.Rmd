@@ -1,0 +1,308 @@
+---
+title: "Check residuals"
+author: "Audrey Luo"
+output: 
+  html_document:
+    highlight: haddock
+    code_folding: hide
+    number_sections: no
+    theme: lumen
+    toc: yes
+    toc_depth: 4
+    toc_float: yes
+  pdf_document:
+    number_sections: no
+    toc: yes
+    toc_depth: '4'
+  word_document:
+    toc: yes
+    toc_depth: '4'
+urlcolor: blue
+editor_options: 
+  chunk_output_type: inline
+---
+
+```{r setup, include=FALSE}
+
+library(cowplot)
+library(data.table)
+library(dplyr)
+library(ggplot2)
+library(ggpubr)
+library(grid)
+library(gridExtra)
+library(gratia)
+library(kableExtra)
+library(mgcv)
+library(RColorBrewer)
+library(stringr)
+library(tidyr)
+
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE, include = TRUE) 
+
+font_size <- 18
+theme_set(theme_minimal(base_family = "sans",base_size = font_size))
+line_size <- 0.5
+point_size <- 2
+```
+
+
+```{r load tract profiles, cache=TRUE}
+cohortfile <- read.csv("/cbica/projects/luo_wm_dev/output/HCPD/tract_profiles/cohortfiles/dti_fa/dti_fa_cohortfile.csv")
+cohortfile <- cohortfile %>% rename(subjectID=sub) %>% select(subjectID, age, sex, mean_fd)
+
+tract_profiles <- fread("/cbica/projects/luo_wm_dev/input/HCPD/HCPD_tractprofiles/all_subjects/collated_tract_profiles_HCPD_reoriented.tsv")
+
+cohortfile <- cohortfile %>% select(subjectID, age, sex, mean_fd)
+gam_df <- merge(tract_profiles, cohortfile, by="subjectID")
+gam_df <- gam_df %>% mutate(tract_node = paste0(tract_hemi, "_", nodeID))
+gam_df$sex <- as.factor(gam_df$sex)
+```
+
+```{r take subset of 75 subjects, cache=TRUE}
+subjects <- read.table("/cbica/projects/luo_wm_dev/input/HCPD/subject_list/HCPD_subject_list_N569.txt")
+subjects <- subjects %>% setNames("subjectID")
+subject_subset <- subjects$subjectID[c(1:75)]
+gam_df <- gam_df %>% filter(subjectID %in% subject_subset) # fit GAMs on a subset of 75 participants
+```
+
+```{r function for fitting tractwise gam}
+
+fit_tractwise_gamm_re <- function(tract_name, scalar) {
+  df <- gam_df %>% filter(tract_hemi == tract_name)
+  df$subjectID <- as.factor(df$subjectID)
+  te_gam <- gamm(as.formula(sprintf("%s ~ 
+  s(age, k = 3, fx = T, bs = 'cr') + 
+  s(nodeID, k = 24, fx = F, bs = 'cr') + 
+                                  ti(age, nodeID, k=c(3, 24), fx = F) + sex + mean_fd", scalar)), random = list(subjectID=~1), data = df) 
+  
+  print(summary(te_gam$gam))
+  print(k.check(te_gam$gam))
+  print(paste(tract_name, "done"))
+ 
+  
+  return(te_gam)  # return the model object 
+}
+
+
+fit_tractwise_gam_re <- function(tract_name, scalar) {
+  df <- gam_df %>% filter(tract_hemi == tract_name)
+  df$subjectID <- as.factor(df$subjectID)
+  te_gam <- gam(as.formula(sprintf("%s ~ 
+  s(age, k = 3, fx = T, bs = 'cr') + 
+  s(nodeID, k = 24, fx = F, bs = 'cr') + 
+  ti(age, nodeID, k=c(3, 24), fx = F) + 
+  sex + mean_fd + s(subjectID, bs = 're')", scalar)), data = df) 
+  
+  print(summary(te_gam))
+  print(k.check(te_gam))
+  print(paste(tract_name, "done"))
+  
+  
+  return(te_gam)  # return the model object 
+}
+
+#fit_tractwise_bam <- function(tract_name, scalar) {
+ # df <- gam_df %>% filter(tract_hemi == tract_name)
+ # df$subjectID <- as.factor(df$subjectID)
+ # te_gam <- bam(as.formula(sprintf("%s ~ 
+ # s(age, k = 3, fx = T, bs = 'cr') + 
+ # s(nodeID, k = 24, fx = F, bs = 'cr') + 
+ # ti(age, nodeID, k=c(3, 24), fx = F) +  
+ # s(nodeID, by = subjectID) + sex + mean_fd", scalar)), data = df, method = "fREML", discrete = TRUE) 
+  
+  #print(summary(te_gam))
+  #print(k.check(te_gam))
+  #print(paste(tract_name, "done"))
+ 
+  
+  #return(te_gam)  # return the model object 
+#}
+
+# 3) Using bam and using separate smooth function for subjectID
+#`bam(dti_md ~ s(age, k = 3, fx = T, bs = 'cr') + s(nodeID, k = 24, fx = F, bs = 'cr') + ti(age, nodeID, k=c(3, 24), fx = F) + sex + mean_fd + s(nodeID, by = subjectID), data = df, method = "fREML", discrete = TRUE)`
+
+fit_tractwise_bam <- function(tract_name, scalar) {
+  df <- gam_df %>% filter(tract_hemi == tract_name)
+  df$subjectID <- as.factor(df$subjectID)
+  te_gam <- bam(as.formula(sprintf("%s ~ 
+  s(age, k = 3, fx = T, bs = 'cr') + 
+  s(nodeID, k = 24, fx = F, bs = 'cr', by = subjectID) + 
+  ti(age, nodeID, k=c(3, 24), fx = F) + 
+  + s(subjectID, bs = 're') + sex + mean_fd", scalar)), data = df, method = "fREML", discrete = TRUE) 
+  
+  print(summary(te_gam))
+  print(k.check(te_gam))
+  print(paste(tract_name, "done"))
+ 
+  
+  return(te_gam)  # return the model object 
+}
+
+
+fit_tractwise_bam_test <- function(tract_name, scalar) {
+  df <- gam_df %>% filter(tract_hemi == tract_name)
+  df$subjectID <- as.factor(df$subjectID)
+  te_gam <- bam(as.formula(sprintf("%s ~ 
+  s(age, k = 3, fx = T, bs = 'cr') + 
+  s(nodeID, k = 24, fx = F, bs = 'cr') + 
+  ti(age, nodeID, k=c(3, 24), fx = F) + 
+  + s(subjectID, bs = 're') + sex + mean_fd", scalar)), data = df, method = "fREML", discrete = TRUE) 
+  
+  print(summary(te_gam))
+  print(k.check(te_gam))
+  print(paste(tract_name, "done"))
+ 
+  
+  return(te_gam)  # return the model object 
+}
+
+
+
+```
+
+
+```{r fit gams, eval=FALSE}
+tractwise_gamm_re <- lapply(unique(gam_df$tract_hemi), fit_tractwise_gamm_re, scalar="dti_md")
+names(tractwise_gamm_re) <- unique(gam_df$tract_hemi)
+saveRDS(tractwise_gamm_re, "/cbica/projects/luo_wm_dev/output/HCPD/tract_profiles/GAM/dti_md/check_resid_tractwise_gamm_re.RData")
+
+tractwise_gam_re <- lapply(unique(gam_df$tract_hemi), fit_tractwise_gam_re, scalar="dti_md")
+names(tractwise_gam_re) <- unique(gam_df$tract_hemi)
+saveRDS(tractwise_gam_re, "/cbica/projects/luo_wm_dev/output/HCPD/tract_profiles/GAM/dti_md/check_resid_tractwise_gam_re.RData")
+
+#tractwise_bam <- lapply(unique(gam_df$tract_hemi), fit_tractwise_bam, scalar="dti_md")
+#names(tractwise_bam) <- unique(gam_df$tract_hemi)
+#saveRDS(tractwise_bam, "/cbica/projects/luo_wm_dev/output/HCPD/tract_profiles/GAM/dti_md/check_resid_tractwise_bam.RData")
+
+
+tractwise_bam <- lapply(unique(gam_df$tract_hemi), fit_tractwise_bam, scalar="dti_md")
+names(tractwise_bam) <- unique(gam_df$tract_hemi)
+saveRDS(tractwise_bam, "/cbica/projects/luo_wm_dev/output/HCPD/tract_profiles/GAM/dti_md/check_resid_tractwise_bam2.RData")
+
+
+tractwise_bam_test <- lapply(unique(gam_df$tract_hemi), fit_tractwise_bam_test, scalar="dti_md")
+names(tractwise_bam_test) <- unique(gam_df$tract_hemi)
+saveRDS(tractwise_bam_test, "/cbica/projects/luo_wm_dev/output/HCPD/tract_profiles/GAM/dti_md/check_resid_tractwise_bam_test.RData")
+```
+
+ 
+```{r load gam models, cache = TRUE, cache.lazy = FALSE}
+tractwise_gamm_re <- readRDS("/cbica/projects/luo_wm_dev/output/HCPD/tract_profiles/GAM/dti_md/check_resid_tractwise_gamm_re.RData")
+tractwise_gam_re <- readRDS("/cbica/projects/luo_wm_dev/output/HCPD/tract_profiles/GAM/dti_md/check_resid_tractwise_gam_re.RData")
+#tractwise_bam <- readRDS("/cbica/projects/luo_wm_dev/output/HCPD/tract_profiles/GAM/dti_md/check_resid_tractwise_gam_smooth.RData")
+
+tractwise_bam <- readRDS("/cbica/projects/luo_wm_dev/output/HCPD/tract_profiles/GAM/dti_md/check_resid_tractwise_bam2.RData")
+
+```
+
+
+I fit 3 tractwise models on a subset of HCP-D (full sample = 569; subsetted sample = 75 that represents the full age range)
+ 
+ 
+1) Using gam with subjectID as a random effect:
+`gam(dti_md ~ s(age, k = 3, fx = T, bs = 'cr') + s(nodeID, k = 24, fx = F, bs = 'cr') + ti(age, nodeID, k=c(3, 24), fx = F) + sex + mean_fd + s(subjectID, bs = 're'), data = df)`
+
+2) Using gamm and having subjectID as a random effect (gamm relies on lme, I believe):
+`gamm(dti_md ~ s(age, k = 3, fx = T, bs = 'cr') + s(nodeID, k = 24, fx = F, bs = 'cr') + ti(age, nodeID, k=c(3, 24), fx = F) + sex + mean_fd, random = list(subjectID=~1), data = df)`s
+
+3) Using bam and using separate smooth function for subjectID but with k=24
+`bam(dti_md ~ s(age, k = 3, fx = T, bs = 'cr') + s(nodeID, k = 24, fx = F, bs = 'cr', by = subjectID) + ti(age, nodeID, k=c(3, 24), fx = F) + s(subjectID, bs = 're') + sex + mean_fd, data = df, method = "fREML", discrete = TRUE)`
+
+
+```{r function for comparing residuals}
+
+plot_compare_residuals <- function(tract, num_subjects) { 
+  gam_df_toplot <- gam_df %>% filter(tract_hemi == tract)
+  
+  # Extract residuals for each model
+  gam_df_toplot$residuals_gam <- resid(tractwise_gam_re[[tract]])
+  gam_df_toplot$residuals_gamm <- resid(tractwise_gamm_re[[tract]]$gam)
+  gam_df_toplot$residuals_bam <- resid(tractwise_bam[[tract]])
+   
+  subjects_to_plot <- subject_subset[c(1:num_subjects)]
+    
+  # Plot residuals for each model
+  gam_plot <- ggplot(gam_df_toplot[gam_df_toplot$subjectID %in% subjects_to_plot, ], aes(x = nodeID, y = residuals_gam, color = factor(subjectID))) +
+    geom_line() + theme(plot.title = element_text(hjust=0.5, size = 16, face="bold"), 
+                        axis.title.x = element_blank(), 
+                        axis.title.y = element_blank()) + 
+    labs(title = "Raw Residual Curves from Model 1 \ngam: s(age, k = 3, fx = T, bs = 'cr') + \ns(nodeID, k = 24, fx = F, bs = 'cr') + \nti(age, nodeID, k=c(3, 24), fx = F) + \ns(subjectID, bs = 're') + sex + mean_fd", x = "Node ID", y = "Residuals")  
+  
+  gamm_plot <- ggplot(gam_df_toplot[gam_df_toplot$subjectID %in% subjects_to_plot, ], aes(x = nodeID, y = residuals_gamm, color = factor(subjectID))) +
+    geom_line() + theme(plot.title = element_text(hjust=0.5, size = 16, face="bold"),
+                        axis.title.x = element_blank(), 
+                        axis.title.y = element_blank()) + 
+    labs(title = "Raw Residual Curves from Model 2 \ngamm: s(age, k = 3, fx = T, bs = 'cr') + \ns(nodeID, k = 24, fx = F, bs = 'cr') + \nti(age, nodeID, k=c(3, 24), fx = F) + sex + mean_fd, \nrandom = list(subjectID=~1)", x = "Node ID", y = "Residuals")  
+  
+  # Plot smooth residuals from the new approach
+  bam_plot <- ggplot(gam_df_toplot[gam_df_toplot$subjectID %in% subjects_to_plot, ], aes(x = nodeID, y = residuals_bam, color = factor(subjectID))) +
+    geom_line() + theme(plot.title = element_text(hjust=0.5, size = 16, face = "bold"),
+                        axis.title.x = element_blank(), 
+                        axis.title.y = element_blank()) + 
+    labs(title = "Smooth Residual Fit from Model 3 \nbam: s(age, k = 3, fx = T, bs = 'cr') + \ns(nodeID, k = 24, fx = F, bs = 'cr', by = subjectID) + \nti(age, nodeID, k=c(3, 24), fx = F) + \ns(subjectID, bs = 're') + sex + mean_fd", x = "Node ID", y = "Residuals")  
+  
+  
+  
+  x.grob <- textGrob("Position on Tract (Node ID)", 
+                   gp=gpar(col="black", fontsize=16))
+  y.grob <- textGrob("Residuals", 
+                   gp=gpar(col="black", fontsize=16), rot=90)
+  
+  z.grob <- textGrob(tract, 
+                   gp=gpar(col="black", fontsize=20))
+  
+  plots <- ggarrange(gam_plot, gamm_plot, bam_plot, ncol=3, common.legend=T, legend = "right") 
+   
+
+  return(grid.arrange(arrangeGrob(plots, left = y.grob, bottom = x.grob, top = z.grob)))
+}
+
+```
+
+# Residual plots for each type of model for each tract (showing 5 subjects only)
+```{r, fig.width=18, fig.height=5}
+tracts <- unique(gam_df$tract_hemi)
+tracts <- tracts[-c(which(tracts=="Forceps_Major"))]
+lapply(tracts, plot_compare_residuals, 5)
+```
+ 
+
+# Residual plots for each type of model for each tract (showing 15 subjects)
+```{r, fig.width=17, fig.height=6}
+lapply(tracts, plot_compare_residuals, 15)
+
+```
+
+# ACF plots for each type of model 
+```{r, fig.height=3, fig.width=10}
+
+plot_compare_acf <- function(tract) {
+  # Define the layout: 2 rows (1 for title, 1 for plots), 3 columns for plots
+layout(matrix(c(1, 1, 1, 2, 3, 4), ncol = 3, byrow = TRUE), heights = c(1, 4))
+
+# Plot the title
+par(mar = c(0, 0, 1, 0))  # Set margins for the title
+plot.new()
+text(0.5, 0.5, tract, cex = 2, font = 2)
+
+# Reset margins and set up for 1 row, 3 columns for the plots
+par(mar = c(5, 4, 4, 2) + 0.1)
+#par(mar = c(4, 4, 2, 1))
+
+# Plot the ACFs
+acf(resid(tractwise_gam_re[[tract]], type = "response"), main = paste0("Model 1 \ngam: s(subjectID, bs = 're')"))
+acf(resid(tractwise_gamm_re[[tract]]$gam, type = "response"), main = paste0("Model 2 \ngamm: random = list(subjectID=~1)"))
+acf(resid(tractwise_bam[[tract]], type = "response"), main = paste0("Model 3 \nbam: s(nodeID, k=24, by = subjectID) + \n s(subjectID, bs='re')"))
+ 
+}
+ 
+ 
+```
+
+
+```{r, fig.height=3, fig.width=8}
+lapply(unique(gam_df$tract_hemi), plot_compare_acf)
+```
+
+ 

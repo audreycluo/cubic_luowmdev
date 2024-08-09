@@ -1,0 +1,404 @@
+---
+title: "Check residuals"
+author: "Audrey Luo"
+output: 
+  html_document:
+    highlight: haddock
+    code_folding: hide
+    number_sections: no
+    theme: lumen
+    toc: yes
+    toc_depth: 4
+    toc_float: yes
+  pdf_document:
+    number_sections: no
+    toc: yes
+    toc_depth: '4'
+  word_document:
+    toc: yes
+    toc_depth: '4'
+urlcolor: blue
+editor_options: 
+  chunk_output_type: inline
+---
+
+```{r setup, include=FALSE}
+
+library(cowplot)
+library(data.table)
+library(dplyr)
+library(ggplot2)
+library(ggpubr)
+library(grid)
+library(gridExtra)
+library(gratia)
+library(kableExtra)
+library(mgcv)
+library(RColorBrewer)
+library(stringr)
+library(tidyr)
+
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE, include = TRUE) 
+
+font_size <- 18
+theme_set(theme_minimal(base_family = "sans",base_size = font_size))
+line_size <- 0.5
+point_size <- 2
+```
+
+
+```{r load tract profiles, cache=TRUE}
+cohortfile <- read.csv("/cbica/projects/luo_wm_dev/output/HCPD/tract_profiles/cohortfiles/dti_fa/dti_fa_cohortfile.csv")
+cohortfile <- cohortfile %>% rename(subjectID=sub) %>% select(subjectID, age, sex, mean_fd)
+
+tract_profiles <- fread("/cbica/projects/luo_wm_dev/input/HCPD/HCPD_tractprofiles/all_subjects/collated_tract_profiles_HCPD_reoriented.tsv")
+
+cohortfile <- cohortfile %>% select(subjectID, age, sex, mean_fd)
+gam_df <- merge(tract_profiles, cohortfile, by="subjectID")
+gam_df <- gam_df %>% mutate(tract_node = paste0(tract_hemi, "_", nodeID))
+gam_df$sex <- as.factor(gam_df$sex)
+```
+
+```{r take subset of 75 subjects, cache=TRUE}
+subjects <- read.table("/cbica/projects/luo_wm_dev/input/HCPD/subject_list/HCPD_subject_list_N569.txt")
+subjects <- subjects %>% setNames("subjectID")
+subject_subset <- subjects$subjectID[c(1:75)]
+gam_df <- gam_df %>% filter(subjectID %in% subject_subset) # fit GAMs on a subset of 75 participants
+```
+
+```{r functions}
+# fit tractwise gams
+fit_tractwise_gam_re <- function(tract_name, scalar) {
+  df <- gam_df %>% filter(tract_hemi == tract_name)
+  df$subjectID <- as.factor(df$subjectID)
+  te_gam <- gam(as.formula(sprintf("%s ~ 
+  s(age, k = 3, fx = T, bs = 'cr') + 
+  s(nodeID, k = 24, fx = F, bs = 'cr') + 
+  ti(age, nodeID, k=c(3, 24), fx = F) + 
+  sex + mean_fd + s(subjectID, bs = 're')", scalar)), data = df) 
+  
+  print(summary(te_gam))
+  print(k.check(te_gam))
+  print(paste(tract_name, "done"))
+  
+  
+  return(te_gam)  # return the model object 
+}
+
+
+
+
+fit_tractwise_bam_no_re <- function(tract_name, scalar) {
+  df <- gam_df %>% filter(tract_hemi == tract_name)
+  df$subjectID <- as.factor(df$subjectID)
+  te_gam <- bam(as.formula(sprintf("%s ~ 
+  s(age, k = 3, fx = T, bs = 'cr') + 
+  s(nodeID, k = 24, fx = F, bs = 'cr', by = subjectID) + 
+  ti(age, nodeID, k=c(3, 24), fx = F) + 
+  sex + mean_fd", scalar)), data = df, method = "fREML", discrete = TRUE) 
+  
+  print(summary(te_gam))
+  print(k.check(te_gam))
+  print(paste(tract_name, "done"))
+  
+  return(te_gam)  # return the model object 
+} 
+
+
+fit_tractwise_bam <- function(tract_name, scalar) {
+  df <- gam_df %>% filter(tract_hemi == tract_name)
+  df$subjectID <- as.factor(df$subjectID)
+  te_gam <- bam(as.formula(sprintf("%s ~ 
+  s(age, k = 3, fx = T, bs = 'cr') + 
+  s(nodeID, k = 24, fx = F, bs = 'cr', by = subjectID) + 
+  ti(age, nodeID, k=c(3, 24), fx = F) + 
+  + s(subjectID, bs = 're') + sex + mean_fd", scalar)), data = df, method = "fREML", discrete = TRUE) 
+  
+  print(summary(te_gam))
+  print(k.check(te_gam))
+  print(paste(tract_name, "done"))
+ 
+  
+  return(te_gam)  # return the model object 
+}
+ 
+
+
+# comparing residuals and generating plots
+plot_compare_residuals <- function(tract, num_subjects, model_number) { 
+  gam_df_toplot <- gam_df %>% filter(tract_hemi == tract)
+  if(model_number == 1) {
+    gam_df_toplot$residuals_gam_re <- resid(tractwise_gam_re[[tract]])
+    subjects_to_plot <- subject_subset[c(1:num_subjects)]
+    plot <- ggplot(gam_df_toplot[gam_df_toplot$subjectID %in% subjects_to_plot, ],
+                       aes(x = nodeID, y = residuals_gam_re, color = factor(subjectID))) +
+      geom_line() + theme(legend.position = "none",
+                        plot.title = element_text(hjust=0.5, size = 12),
+                        axis.title.x = element_blank(), 
+                        axis.title.y = element_blank()) + 
+    labs(title = gsub("_", " ", tract))  
+    
+  } else if (model_number == 2) {
+    gam_df_toplot$residuals_bam_no_re <- resid(tractwise_bam_no_re[[tract]])
+    subjects_to_plot <- subject_subset[c(1:num_subjects)]
+    plot <- ggplot(gam_df_toplot[gam_df_toplot$subjectID %in% subjects_to_plot, ],
+                       aes(x = nodeID, y = residuals_bam_no_re, color = factor(subjectID))) +
+      geom_line() + theme(legend.position = "none",
+                        plot.title = element_text(hjust=0.5, size = 12),
+                        axis.title.x = element_blank(), 
+                        axis.title.y = element_blank()) + 
+    labs(title = gsub("_", " ", tract))  
+  
+  } else if (model_number == 3) {
+    gam_df_toplot$residuals_bam <- resid(tractwise_bam[[tract]])
+    subjects_to_plot <- subject_subset[c(1:num_subjects)]
+    plot <- ggplot(gam_df_toplot[gam_df_toplot$subjectID %in% subjects_to_plot, ],
+                       aes(x = nodeID, y = residuals_bam, color = factor(subjectID))) +
+      geom_line() + theme(legend.position = "none",
+                        plot.title = element_text(hjust=0.5, size = 12),
+                        axis.title.x = element_blank(), 
+                        axis.title.y = element_blank()) + 
+    labs(title = gsub("_", " ", tract))  
+  }
+  
+  return(plot)
+}
+
+arrange_tracts_hemis <- function(list_figures, text) {
+  
+  ATR_plots <- ggarrange(list_figures$Left_Anterior_Thalamic_Radiation, list_figures$Right_Anterior_Thalamic_Radiation, nrow = 2)
+  
+  AP_plots <- ggarrange(list_figures$Left_Cingulum_Cingulate, 
+                           list_figures$`Left_Inferior_Fronto-occipital_Fasciculus`, 
+                           list_figures$Left_Inferior_Longitudinal_Fasciculus, 
+                           list_figures$Left_Superior_Longitudinal_Fasciculus, 
+                           list_figures$Right_Cingulum_Cingulate, 
+                           list_figures$`Right_Inferior_Fronto-occipital_Fasciculus`, 
+                           list_figures$Right_Inferior_Longitudinal_Fasciculus, 
+                           list_figures$Right_Superior_Longitudinal_Fasciculus, ncol=4, nrow = 2)
+  
+  AP_ATR_plots <- ggarrange(ATR_plots, AP_plots, ncol=2, widths = c(1,4)) 
+  AP_plots_final <- annotate_figure(AP_ATR_plots, top = text_grob("Anterior - Posterior", 
+                 color = "black", face = "bold", size = 12))
+  
+  
+  AP_frontotemp_plots <- ggarrange(list_figures$Left_Arcuate_Fasciculus, list_figures$Left_Uncinate_Fasciculus,
+                                   list_figures$Right_Arcuate_Fasciculus, list_figures$Right_Uncinate_Fasciculus, ncol=2, nrow = 2)
+  AP_frontotemp_plots_final <- annotate_figure(AP_frontotemp_plots, top = text_grob("Anterior - Posterior (Frontal - Temporal)", 
+                 color = "black", face = "bold", size = 12))
+  
+   
+  RL_plots <- ggarrange(list_figures$Forceps_Major, list_figures$Forceps_Minor, 
+                           ncol=2, nrow = 1)
+  RL_plots_final <- annotate_figure(RL_plots, top = text_grob("Right - Left", 
+                 color = "black", face = "bold", size = 12))
+  
+  CST_plots <- ggarrange(list_figures$Left_Corticospinal_Tract,list_figures$Right_Corticospinal_Tract, ncol=1, nrow = 2)
+  SI_plots <- ggarrange(list_figures$Left_Posterior_Arcuate, 
+                        list_figures$Left_Vertical_Occipital_Fasciculus, 
+                        list_figures$Right_Posterior_Arcuate, 
+                        list_figures$Right_Vertical_Occipital_Fasciculus, common.legend=TRUE, legend=c("right"), ncol=2, nrow = 2)
+  
+  SI_CST_plots <- ggarrange(CST_plots, SI_plots, widths = c(1, 2))
+  SI_plots_final <- annotate_figure(SI_CST_plots, top = text_grob("Superior - Inferior", 
+                 color = "black", face = "bold", size = 12))
+  
+  
+  tractprofiles_plot <- ggarrange(AP_plots_final, ggarrange(AP_frontotemp_plots_final, RL_plots_final, ncol = 2), SI_plots_final, nrow = 3) + bgcolor("white")    
+  
+  tractprofiles_plot_final <- annotate_figure(tractprofiles_plot, top = text_grob(text, 
+               color = "black", face = "italic", size = 18))
+  
+  return(tractprofiles_plot_final)
+}
+```
+
+
+```{r fit gams, eval=FALSE}
+tractwise_gam_re <- lapply(unique(gam_df$tract_hemi), fit_tractwise_gam_re, scalar="dti_md")
+names(tractwise_gam_re) <- unique(gam_df$tract_hemi)
+saveRDS(tractwise_gam_re, "/cbica/projects/luo_wm_dev/output/HCPD/tract_profiles/GAM/dti_md/check_resid_tractwise_gam_re.RData")
+
+tractwise_bam_no_re <- lapply(unique(gam_df$tract_hemi), fit_tractwise_bam_no_re, scalar="dti_md")
+names(tractwise_bam_no_re) <- unique(gam_df$tract_hemi)
+saveRDS(tractwise_bam_no_re, "/cbica/projects/luo_wm_dev/output/HCPD/tract_profiles/GAM/dti_md/check_resid_tractwise_bam_no_re.RData")
+ 
+tractwise_bam <- lapply(unique(gam_df$tract_hemi), fit_tractwise_bam, scalar="dti_md")
+names(tractwise_bam) <- unique(gam_df$tract_hemi)
+saveRDS(tractwise_bam, "/cbica/projects/luo_wm_dev/output/HCPD/tract_profiles/GAM/dti_md/check_resid_tractwise_bam2.RData")
+
+```
+
+ 
+```{r load gam models, cache = TRUE, cache.lazy = FALSE}
+
+tractwise_gam_re <- readRDS("/cbica/projects/luo_wm_dev/output/HCPD/tract_profiles/GAM/dti_md/check_resid_tractwise_gam_re.RData")
+tractwise_bam <- readRDS("/cbica/projects/luo_wm_dev/output/HCPD/tract_profiles/GAM/dti_md/check_resid_tractwise_bam2.RData")
+
+```
+
+
+I fit 3 tractwise models on a subset of HCP-D (full sample = 569; subsetted sample = 75 that represents the full age range)
+spoiler: Model 3 is the best.
+
+1) Model 1: include a simple nodeID smooth and subjectID as a random intercept (most similar to GAM used in Tractable)
+`gam(dti_md ~ s(age, k = 3, fx = T, bs = 'cr') + s(nodeID, k = 24, fx = F, bs = 'cr') + ti(age, nodeID, k=c(3, 24), fx = F) + sex + mean_fd + s(subjectID, bs = 're'), data = df)`
+
+2) Model 2: include `by = subjectID` in the nodeID smooth but NO random intercept for subject ID
+`bam(dti_md ~ s(age, k = 3, fx = T, bs = 'cr') + s(nodeID, k = 24, fx = F, bs = 'cr', by = subjectID) + ti(age, nodeID, k=c(3, 24), fx = F) + sex + mean_fd, data = df, method = "fREML", discrete = TRUE)`
+
+ 
+3) Model 3: include `by = subjectID` in the nodeID smooth and subjectID as a random intercept 
+`bam(dti_md ~ s(age, k = 3, fx = T, bs = 'cr') + s(nodeID, k = 24, fx = F, bs = 'cr', by = subjectID) + ti(age, nodeID, k=c(3, 24), fx = F) + s(subjectID, bs = 're') + sex + mean_fd, data = df, method = "fREML", discrete = TRUE)`
+
+# Residual plots for Model 1 for each tract (showing 15 subjects only)
+- seeing some curved residuals: model may capture the trend of some data points better than others
+- not quite centered around zero
+```{r residual plot model 1, fig.width=17, fig.height=20}
+tracts <- unique(gam_df$tract_hemi)
+
+x.grob <- textGrob("Position on Tract (Node ID)", 
+                 gp=gpar(col="black", fontsize=16))
+y.grob <- textGrob("Residuals", 
+                 gp=gpar(col="black", fontsize=16), rot=90)
+
+space.grob <- textGrob(" ", 
+                   gp=gpar(col="black", fontsize=28), rot=90)
+
+
+plot_15_subs <- lapply(tracts, plot_compare_residuals, 15, model_number = 1)
+names(plot_15_subs) <- tracts
+ 
+
+plot_15_subs_final <- arrange_tracts_hemis(plot_15_subs, "Raw Residual Curves from Model 1: \n s(age, k = 3, fx = T, bs = 'cr') + \ns(nodeID, k = 24, fx = F, bs = 'cr') + \nti(age, nodeID, k=c(3, 24), fx = F) + \ns(subjectID, bs = 're') + sex + mean_fd")
+grid.arrange(arrangeGrob(plot_15_subs_final, left = y.grob, bottom = x.grob, right = space.grob))
+```
+# Residual plots for Model 2 for each tract (showing 15 subjects only)
+- seeing flat squiggles centered around zero - good!
+- from Jeff: "Only thing I notice is that the boundaries often have sharp oscillations — but that’s a pretty minor issue due to how the smoother is implemented, and definitely not an easy fix. I’d say if y’all’re happy with these fits they should work." 
+```{r residual plot model 2, fig.width=17, fig.height=20}
+tracts <- unique(gam_df$tract_hemi)
+
+  
+x.grob <- textGrob("Position on Tract (Node ID)", 
+                 gp=gpar(col="black", fontsize=16))
+y.grob <- textGrob("Residuals", 
+                 gp=gpar(col="black", fontsize=16), rot=90)
+
+space.grob <- textGrob(" ", 
+                   gp=gpar(col="black", fontsize=28), rot=90)
+
+
+plot_15_subs <- lapply(tracts, plot_compare_residuals, 15, model_number = 2)
+names(plot_15_subs) <- tracts
+ 
+
+plot_15_subs_final <- arrange_tracts_hemis(plot_15_subs, "Smooth Residual Fit from Model 2: \n s(age, k = 3, fx = T, bs = 'cr') + \ns(nodeID, k = 24, fx = F, bs = 'cr', by = subjectID) + \nti(age, nodeID, k=c(3, 24), fx = F) + \nsex + mean_fd")
+grid.arrange(arrangeGrob(plot_15_subs_final, left = y.grob, bottom = x.grob, right = space.grob))
+```
+
+# Residual plots for Model 3 for each tract (showing 15 subjects only)
+- seeing flat squiggles centered around zero - good!
+- from Jeff: "Only thing I notice is that the boundaries often have sharp oscillations — but that’s a pretty minor issue due to how the smoother is implemented, and definitely not an easy fix. I’d say if y’all’re happy with these fits they should work." 
+```{r residual plot model 3, fig.width=17, fig.height=20}
+tracts <- unique(gam_df$tract_hemi)
+
+  
+x.grob <- textGrob("Position on Tract (Node ID)", 
+                 gp=gpar(col="black", fontsize=16))
+y.grob <- textGrob("Residuals", 
+                 gp=gpar(col="black", fontsize=16), rot=90)
+
+space.grob <- textGrob(" ", 
+                   gp=gpar(col="black", fontsize=28), rot=90)
+
+
+plot_15_subs <- lapply(tracts, plot_compare_residuals, 15, model_number = 3)
+names(plot_15_subs) <- tracts
+ 
+
+plot_15_subs_final <- arrange_tracts_hemis(plot_15_subs, "Smooth Residual Fit from Model 3: \n s(age, k = 3, fx = T, bs = 'cr') + \ns(nodeID, k = 24, fx = F, bs = 'cr', by = subjectID) + \nti(age, nodeID, k=c(3, 24), fx = F) + \ns(subjectID, bs = 're') + sex + mean_fd")
+grid.arrange(arrangeGrob(plot_15_subs_final, left = y.grob, bottom = x.grob, right = space.grob))
+```
+ 
+ 
+
+# ACF plots for each type of model 
+ 
+
+```{r acf function}
+plot_compare_acf <- function(tract_list, ncols = 5, model_number) {
+  num_plots <- length(tract_list)
+  nrows <- 5
+  
+  par(mfrow = c(nrows, ncols))  # Set up the grid layout
+  
+  for (i in 1:num_plots) {
+    tract <- tract_list[i]
+    if(model_number == 1) {
+      acf(resid(tractwise_gam_re[[tract]], type = "response"), main = paste0(tract))
+    } else if (model_number == 2) {
+      acf(resid(tractwise_bam_no_re[[tract]], type = "response"), main = paste0(tract))
+    } else if (model_number == 3) {
+      acf(resid(tractwise_bam[[tract]], type = "response"), main = paste0(tract))
+    }
+  }
+  par(mfrow = c(1, 1))   
+}
+```
+
+## Model 1
+- ACFs are pretty high for a pretty long lag time
+```{r model 1 acf, fig.height=15, fig.width=15}
+plot_compare_acf(unique(gam_df$tract_hemi), model_number = 1)
+```
+
+## Model 2
+- ACF appears to decrease, looks much better than model 1
+```{r model 2 acf, fig.height=15, fig.width=15}
+plot_compare_acf(unique(gam_df$tract_hemi), model_number = 2)
+```
+
+## Model 3
+- ACF appears to decrease, looks much better than model 1
+```{r model 3 acf, fig.height=15, fig.width=15}
+plot_compare_acf(unique(gam_df$tract_hemi), model_number = 3)
+```
+ 
+ 
+```{r test, eval = F, include = F, echo=F}
+plot_compare_acf <- function(tract_list, output_file, ncols = 5, file_type = "pdf") {
+  num_plots <- length(tract_list)
+  nrows <- 5
+  
+  # Set up the plot device
+  if (file_type == "pdf") {
+    pdf(output_file)
+  } else if (file_type == "png") {
+    png(output_file, width = 1200, height = 800, res = 150)
+  } else {
+    stop("Unsupported file type. Choose 'pdf' or 'png'.")
+  }
+  
+  par(mfrow = c(nrows, ncols))  # Set up the grid layout
+  
+  
+  for (i in 1:num_plots) {
+    tract <- tract_list[i]
+    acf(resid(tractwise_bam[[tract]], type = "response"), main = paste0(tract))
+   
+  }
+  
+  #par(mfrow = c(1, 1))  # Reset to default single plot layout
+  dev.off()  # Close the plot device
+}
+
+
+# Example usage to save plots to a PDF
+plot_compare_acf(tract_list = unique(gam_df$tract_hemi),
+                 output_file = "/Users/audluo/PennLINC/luowm_local/output/tract_profiles_testing/both_datasets/acf_plots.pdf",
+                 ncols = 5,
+                 file_type = "pdf")
+```
+ 
+ 

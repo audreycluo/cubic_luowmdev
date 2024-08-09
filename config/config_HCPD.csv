@@ -1,0 +1,2 @@
+﻿dataset ,data_root, outputs_root,tract_profiles_data_root,tract_profiles_outputs_root,demographics_file,qc_file
+ HCPD,/cbica/projects/luo_wm_dev/input/HCPD,/cbica/projects/luo_wm_dev/output/HCPD/tract_profiles,/cbica/projects/luo_wm_dev/input/HCPD/HCPD_tractprofiles,/cbica/projects/luo_wm_dev/output/HCPD/tract_profiles,/cbica/projects/luo_wm_dev/input/HCPD/sample_selection_files/HCPD_WMDev_TempSampleDemographics_N568_age8to22.csv,/cbica/projects/luo_wm_dev/input/HCPD/sample_selection_files/HCPD_WMDev_TempSampleQCMetrics_N568_age8to22.csv

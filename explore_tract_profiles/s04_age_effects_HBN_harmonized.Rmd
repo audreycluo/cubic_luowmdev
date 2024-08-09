@@ -1,0 +1,2299 @@
+---
+title: "HBN Tract Profiles"
+author: "Audrey Luo"
+output: 
+  html_document:
+    highlight: haddock
+    code_folding: hide
+    number_sections: no
+    theme: lumen
+    toc: yes
+    toc_depth: 4
+    toc_float: yes
+  pdf_document:
+    number_sections: no
+    toc: yes
+    toc_depth: '4'
+  word_document:
+    toc: yes
+    toc_depth: '4'
+urlcolor: blue
+editor_options: 
+  chunk_output_type: inline
+---
+
+```{r setup, include=FALSE}
+
+library(cowplot)
+library(data.table)
+library(dplyr)
+library(ggplot2)
+library(ggpubr)
+library(grid)
+library(gridExtra)
+library(gratia)
+library(kableExtra)
+library(mgcv)
+library(RColorBrewer)
+library(stringr)
+library(tidyr)
+
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE, include = TRUE) 
+
+font_size <- 14
+theme_set(theme_classic(base_family = "sans",base_size = font_size))
+line_size <- 0.5
+point_size <- 2
+```
+
+```{r load tract profiles, cache=TRUE}
+cohortfile <- read.csv("/cbica/projects/luo_wm_dev/output/HBN/tract_profiles/cohortfiles/dti_fa/dti_fa_cohortfile.csv")
+all_subjects <- readRDS("/cbica/projects/luo_wm_dev/input/HBN/HBN_tractprofiles/all_subjects/collated_tract_profiles_md_covbat.RData")
+ 
+ 
+all_subjects <- all_subjects %>%
+  mutate(
+    hemi = ifelse(grepl("_L", tractID), "Left", "Right"),
+    tractID = gsub("_[LR]", "", tractID),
+    tractID = case_when(
+      tractID == "ATR" ~ "Anterior Thalamic Radiation",
+      tractID == "CGC" ~ "Cingulum Cingulate",
+      tractID == "CST" ~ "Corticospinal Tract",
+      tractID == "IFO" ~ "Inferior Fronto-occipital Fasciculus",
+      tractID == "ILF" ~ "Inferior Longitudinal Fasciculus",
+      tractID == "SLF" ~ "Superior Longitudinal Fasciculus",
+      tractID == "ARC" ~ "Arcuate Fasciculus",
+      tractID == "UNC" ~ "Uncinate Fasciculus",
+      tractID == "FA" ~ "Forceps Minor",
+      tractID == "FP" ~ "Forceps Major",
+      tractID == "pARC" ~ "Posterior Arcuate",
+      tractID == "VOF" ~ "Vertical Occipital Fasciculus",
+      TRUE ~ tractID
+    ),
+    tract_hemi = paste(hemi, tractID),
+    tract_hemi = gsub("Right Forceps", "Forceps", tract_hemi),
+    tract_hemi = str_replace_all(tract_hemi, " ", "_")
+  )
+
+
+all_subjects$hemi[all_subjects$tract_hemi == "Forceps_Minor" | all_subjects$tract_hemi == "Forceps_Major"] <- NA
+all_subjects$subjectID <- as.factor(all_subjects$subjectID)
+ 
+cohortfile <- cohortfile %>% rename(subjectID=sub) %>% select(subjectID, age, sex, mean_fd)
+```
+
+# Tract Names and Orientations
+Note that I used an older version of pyAFQ here, so I had to flip some tracts to ensure consistent orientations. I will rerun tract profiles using most updated pyAFQ once newest qsiprep is released.  
+
+
+|Abbrev | Full Name                              | Node 0        | Node 99         | Need to flip? | Final Orientation            |
+|-------|----------------------------------------|---------------|-----------------|---------------|------------------------------|
+| ATR   | anterior thalamic radiation            | A (Frontal)   | P (Thalamus)    | 0             | A - P (Frontal - Thalamus)   |
+| CGC   | cingulum cinguluate                    | P             | A               | 1             | A - P                        |
+| IFO   | inferior fronto-occipital fasciculus   | P (Occipital) | A (Frontal)     | 1             | A - P (Frontal - Occipital)  |
+| ILF   | inferior longitudinal fasciculus       | P (Occipital) | A (Temporal)    | 1             | A - P (Temporal - Occipital) |
+| SLF   | superior longitudinal fasciculus       | A             | P               | 0             | A - P                        |
+| ARC   | arcuate                                | A (Frontal)   | P (Temporal)    | 0             | A - P (Frontal - Temporal)   |
+| UNC   | uncinate fasciculus                    | P (Temporal)  | A (Frontal)     | 1             | A - P (Frontal - Temporal)   |
+| FA    | forceps minor                          | R             | L               | 0             | R - L                        |
+| FP    | forceps major                          | R             | L               | 0             | R - L                        |
+| pARC  | posterior arcuate                      | S             | I               | 0             | S - I                        |
+| CST   | corticospinal                          | I (Brainstem) | S (Motor cortex)| 1             | S - I (Motor - Brainstem)    |
+| VOF   | vertical occipital fasciculus          | S             | I               | 0             | S - I                        |
+ 
+```{r fix tract orientations}
+
+# fix tract orientations
+tract_profiles <- all_subjects %>%
+  group_by(tractID) %>%
+  mutate(nodeID = ifelse(tractID %in% c("Cingulum Cingulate", "Inferior Fronto-occipital Fasciculus", "Inferior Longitudinal Fasciculus", "Uncinate Fasciculus", "Corticospinal Tract"), max(nodeID) - nodeID, nodeID))
+
+# label main orientation
+tract_profiles <- tract_profiles %>% 
+  mutate(main_orientation = case_when(
+    tractID %in% c("Anterior Thalamic Radiation", "Cingulum Cingulate", "Inferior Fronto-occipital Fasciculus",
+                   "Inferior Longitudinal Fasciculus", "Superior Longitudinal Fasciculus") ~ "AP",
+    tractID %in% c("Arcuate Fasciculus", "Uncinate Fasciculus") ~ "AP_frontal_temporal",
+    tractID %in% c("Forceps Minor", "Forceps Major") ~ "RL",
+    tractID %in% c("Corticospinal Tract", "Posterior Arcuate","Vertical Occipital Fasciculus") ~ "SI",
+    TRUE ~ NA_character_
+  ))
+
+tract_profiles$main_orientation <- as.factor(tract_profiles$main_orientation)
+
+
+#write.table(tract_profiles, "/cbica/projects/luo_wm_dev/input/HBN/HBN_tractprofiles/all_subjects/collated_tract_profiles_reoriented.tsv")
+
+```
+
+# 1. Tract profiles
+```{r functions for fitting gams and visualizing tract profiles}
+
+# Func to visualize GAM model outputs
+# adapted from https://github.com/bart-larsen/GAMM-Tutorial/blob/master/GAMM_tutorial.Rmd
+visualize_model_hemis <- function(modobj, modobj_rh = NULL, both_hemis = F, smooth_var, int_var, group_var, plabels = NULL,check_diagnostics = F,derivative_plot = F, custom_color, custom_color_rh = NULL) { # modobj corresponds to lh if plotting both hemispheres 
+  
+  this_font_size = font_size*1.25
+  
+  if (both_hemis == T) { # if want to plot model for left and right tract
+    if (is.null(modobj_rh)) {
+      stop("Please provide models for both hemispheres")
+    } 
+    if (any(class(modobj)=="gam")) {
+      model_lh <- modobj
+      model_rh <- modobj_rh
+    } else if (class(modobj$gam)=="gam") {
+      model_lh <- modobj$gam
+      model_rh <- modobj_rh$gam
+    } else {
+      stop("Can't find a gam object to plot")
+    }
+    
+    s_lh <- summary(model_lh)
+    s_rh <- summary(model_rh)
+  
+    ## Generate custom line plot
+    np <- 100 #number of predicted values - originally 100000 but we're doing only 100 discrete nodes...
+    df_lh <- model_lh$model
+    df_lh <- df_lh %>% mutate(hemi = "Left")
+    df_rh <- model_rh$model
+    df_rh <- df_rh %>% mutate(hemi = "Right")
+    
+    theseVars <- attr(model_lh$terms,"term.labels") # vars are identical for lh and rh
+    varClasses <- attr(model_lh$terms,"dataClasses")
+    thisResp <- as.character(model_lh$terms[[2]])
+     
+    # No interaction variable, just produce a single line plot
+    thisPred_lh <- data.frame(init = rep(0,np))
+    thisPred_rh <- data.frame(init = rep(0,np))
+    
+    # lh
+    for (v in c(1:length(theseVars))) { 
+      thisVar_lh <- theseVars[[v]]
+      thisClass_lh <- varClasses[thisVar_lh]
+      if (thisVar_lh == smooth_var) {
+        thisPred_lh[,smooth_var] = seq(min(df_lh[,smooth_var],na.rm = T),max(df_lh[,smooth_var],na.rm = T), length.out = np)
+      } else {
+        switch (thisClass_lh,
+            "numeric" = {thisPred_lh[,thisVar] = median(df_lh[,thisVar])},
+            "factor" = {thisPred_lh[,thisVar] = levels(df_lh[,thisVar])[[1]]},
+            "ordered" = {thisPred_lh[,thisVar] = levels(df_lh[,thisVar])[[1]]}
+              )
+      }
+    }
+    pred_lh <- thisPred_lh %>% select(-init)
+    p_lh <-data.frame(predict(model_lh,pred_lh,se.fit = T))
+    pred_lh <- cbind(pred_lh,p_lh)
+    pred_lh$selo <- pred_lh$fit - 2*pred_lh$se.fit
+    pred_lh$sehi <- pred_lh$fit + 2*pred_lh$se.fit
+    pred_lh[,group_var] = NA
+    pred_lh[,thisResp] = 1
+    pred_lh <- pred_lh %>% mutate(hemi = "Left")
+     
+    # rh
+    for (v in c(1:length(theseVars))) { 
+      thisVar_rh <- theseVars[[v]]
+      thisClass_rh <- varClasses[thisVar_rh]
+      if (thisVar_rh == smooth_var) {
+        thisPred_rh[,smooth_var] = seq(min(df_rh[,smooth_var],na.rm = T),max(df_rh[,smooth_var],na.rm = T), length.out = np)
+      } else {
+        switch (thisClass_rh,
+            "numeric" = {thisPred_rh[,thisVar] = median(df_rh[,thisVar])},
+            "factor" = {thisPred_rh[,thisVar] = levels(df_rh[,thisVar])[[1]]},
+            "ordered" = {thisPred_rh[,thisVar] = levels(df_rh)[[1]]}
+              )
+      }
+    }
+    pred_rh <- thisPred_rh %>% select(-init)
+    p_rh <-data.frame(predict(model_rh,pred_rh,se.fit = T))
+    pred_rh <- cbind(pred_rh,p_rh)
+    pred_rh$selo <- pred_rh$fit - 2*pred_rh$se.fit
+    pred_rh$sehi <- pred_rh$fit + 2*pred_rh$se.fit
+    pred_rh[,group_var] = NA
+    pred_rh[,thisResp] = 1
+    pred_rh <- pred_rh %>% mutate(hemi = "Right")
+    
+    df <- rbind(df_lh, df_rh)
+    df$hemi <- as.factor(df$hemi)
+    pred <- rbind(pred_lh, pred_rh)
+    pred$hemi <- as.factor(pred$hemi)
+    
+    p1 <- ggplot(data = df, aes_string(x = smooth_var,y = thisResp, group = "hemi")) +
+    geom_ribbon(data = pred,aes_string(x = smooth_var , ymin = "selo",ymax = "sehi", fill = "hemi"),alpha = .5, linetype = 0) + 
+    geom_line(data = pred,aes_string(x = smooth_var, y = "fit", color = "hemi"),size = line_size) +
+    scale_fill_manual(values = c("Left" = custom_color, "Right" = custom_color_rh)) +
+    scale_color_manual(values = c("Left" = custom_color, "Right" = custom_color_rh)) +
+    labs(title = plabels) +
+    theme(legend.position = "none",
+          axis.title.x = element_blank(),
+          axis.title.y = element_blank()) # will add labels after plotting all models together
+ 
+  } else {
+    if (any(class(modobj)=="gam")) {
+      model <- modobj
+    } else if (class(modobj$gam)=="gam") {
+      model <- modobj$gam
+    } else {
+      stop("Can't find a gam object to plot")
+    }
+    s<-summary(model)
+  
+    ## Generate custom line plot
+    np <- 100 #number of predicted values
+    df = model$model
+  
+    theseVars <- attr(model$terms,"term.labels")
+    varClasses <- attr(model$terms,"dataClasses")
+    thisResp <- as.character(model$terms[[2]])
+  
+  
+    # No interaction variable, just produce a single line plot
+    thisPred <- data.frame(init = rep(0,np))
+  
+    for (v in c(1:length(theseVars))) {
+      thisVar <- theseVars[[v]]
+      thisClass <- varClasses[thisVar]
+      if (thisVar == smooth_var) {
+        thisPred[,smooth_var] = seq(min(df[,smooth_var],na.rm = T),max(df[,smooth_var],na.rm = T), length.out = np)
+      } else {
+        switch (thisClass,
+            "numeric" = {thisPred[,thisVar] = median(df[,thisVar])},
+            "factor" = {thisPred[,thisVar] = levels(df[,thisVar])[[1]]},
+            "ordered" = {thisPred[,thisVar] = levels(df[,thisVar])[[1]]}
+              )
+      }
+    }
+    pred <- thisPred %>% select(-init)
+    p<-data.frame(predict(model,pred,se.fit = T))
+    pred <- cbind(pred,p)
+    pred$selo <- pred$fit - 2*pred$se.fit
+    pred$sehi <- pred$fit + 2*pred$se.fit
+    pred[,group_var] = NA
+    pred[,thisResp] = 1
+    
+    p1 <- ggplot(data = df, aes_string(x = smooth_var,y = thisResp)) +
+    geom_ribbon(data = pred,aes_string(x = smooth_var, ymin = "selo", ymax = "sehi"),alpha = .5, linetype = 0, fill = custom_color) +
+    geom_line(data = pred,aes_string(x = smooth_var, y = "fit"),size = line_size, color = custom_color) +
+    labs(title = plabels) +
+    theme(legend.position = "none",
+          axis.title.x = element_blank(),
+          axis.title.y = element_blank()) # will add labels after plotting all models together
+  }
+    
+  
+ 
+  if (derivative_plot == T) {
+    # We will add a bar that shows where the derivative is significant.
+    # First make some adjustments to the line plot.
+    p1<- p1+theme(text = element_text(size=this_font_size),
+                axis.text = element_text(size = this_font_size),
+                axis.title.y = element_text(size = this_font_size),
+                axis.title.x = element_blank(),
+                axis.text.x = element_blank(),
+                axis.ticks.x = element_blank(),
+                legend.text = element_text(size = this_font_size),
+                legend.title = element_text(size = this_font_size),
+                axis.title = element_text(size = this_font_size),
+                panel.grid.major = element_blank(),
+                panel.grid.minor = element_blank(),
+                panel.background = element_rect(fill = "transparent",colour = NA),
+                plot.background = element_rect(fill = "transparent",colour = NA),
+                plot.margin = unit(c(.2, .2, 0, .2), "cm")) #Top, left,Bottom, right
+    scatter <- list(p1)
+    
+    # Now add the plots using the derivative plotting function
+    if (any(grepl(x = row.names(s$s.table),pattern =  ":") & grepl(x=row.names(s$s.table),pattern = int_var))) {
+      # Factor levels separately if there is an interaction in the model.
+      f<-formula(model) # current formula
+      fterms <- terms(f)
+      fac <- attr(fterms, "factors")
+      idx <- which(as.logical(colSums(fac[grep(x=row.names(fac),pattern = int_var),])))
+      new_terms <- drop.terms(fterms, dropx = idx, keep.response = TRUE)
+      new_formula <- formula(new_terms) # Formula without any interaction terms in the model.
+      
+      #add derivative gradients for each level of the factor
+      num_levels <- length(levels(df[,int_var]))
+      level_colors <- suppressWarnings(RColorBrewer::brewer.pal(num_levels,"Set1")) #use the same palette as the line plot
+      plotlist = vector(mode = "list",length = num_levels+1) # we will be building a list of plots
+      plotlist[1] = scatter # first the scatter plot
+      
+      for (fcount in 1:num_levels) {
+        this_level <- levels(df[,int_var])[fcount]
+        df$subset <- df[,int_var] == this_level
+        df$group_var <- df[,group_var]
+        this_mod <- gam(formula = new_formula,data = df,subset = subset,random=list(group_var=~1))
+        # this_d <- get_derivs_and_plot(modobj = this_mod,smooth_var = smooth_var,low_color = "white",hi_color = level_colors[fcount])
+        this_d <- get_derivs_and_plot(modobj = this_mod,smooth_var = smooth_var,low_color = "white",hi_color = level_colors[fcount])
+        
+        if (fcount != num_levels & fcount != 1){
+          # get rid of redundant junk
+          this_d$theme$axis.title = element_blank()
+          this_d$theme$axis.text.x = element_blank()
+          this_d$theme$axis.ticks=element_blank()
+          this_d$theme$legend.background=element_blank()
+          this_d$theme$legend.box.background = element_blank()
+          this_d$theme$legend.key = element_blank()
+          this_d$theme$legend.title = element_blank()
+          this_d$theme$legend.text = element_blank()
+        }
+        if (fcount == 1) {
+         this_d$theme$axis.title = element_blank()
+         this_d$theme$axis.text.x = element_blank()
+         this_d$theme$axis.ticks=element_blank()
+         this_d$theme$legend.background=element_blank()
+         this_d$theme$legend.box.background = element_blank()
+         this_d$theme$legend.key = element_blank()
+         this_d$theme$legend.text = element_blank()
+        }
+        if (fcount == num_levels) {
+         this_d$theme$legend.background=element_blank()
+         this_d$theme$legend.box.background = element_blank()
+         this_d$theme$legend.key = element_blank()
+         this_d$theme$legend.title = element_blank()
+        }
+        this_d$labels$fill=NULL
+        plotlist[fcount+1] = list(this_d)
+      }
+      pg<-plot_grid(rel_heights = c(16*num_levels,rep(num_levels,num_levels-1),3*num_levels),plotlist = plotlist,align = "v",axis = "lr",ncol = 1)
+      final_plot <- pg
+      print(final_plot)
+  } else {
+    # No need to split
+    d1 <- get_derivs_and_plot(modobj = modobj,smooth_var = smooth_var)
+    scatter <- list(p1)
+    bar <- list(d1)
+    allplots <- c(scatter,bar)
+    pg<-plot_grid(rel_heights = c(16,3),plotlist = allplots,align = "v",axis = "lr",ncol = 1)
+    final_plot <- pg
+    print(final_plot)
+  }
+
+  }    else {
+    # No derivative plot
+    p1<- p1+theme(text = element_text(size=font_size),
+                axis.text = element_text(size = font_size),
+                legend.text = element_text(size = font_size),
+                panel.grid.major = element_blank(), 
+                panel.grid.minor = element_blank(),
+                panel.background = element_blank(),
+                plot.background = element_blank())
+    final_plot <- p1
+    print(final_plot)
+  }
+  
+  if (check_diagnostics == T) {
+    cp <- check(b,
+    a.qq = list(method = "tnorm",
+                a.cipoly = list(fill = "light blue")),
+    a.respoi = list(size = 0.5),
+    a.hist = list(bins = 10))
+    print(cp)
+  }
+  return(final_plot)
+}
+
+# function to implement visualize_model_hemis for all tracts
+visualize_tractprofiles <- function(tract, scalar, df) {
+  if(str_detect(tract, "Forceps")) {
+    tract_data <- df %>% filter(tractID == tract)  
+     
+    tract_model <- gamm(as.formula(sprintf("%s ~ s(nodeID, k=24, fx = F)", scalar)), random = list(subjectID=~1), data=tract_data)
+    print(paste("Finished fitting GAM for", tract))
+   
+    plot <- visualize_model_hemis(tract_model, both_hemis = F, smooth_var = "nodeID", int_var = NULL, group_var="subjectID", plabels = NULL,
+                          check_diagnostics = F,derivative_plot = F, custom_color = "#831D69FF") + 
+      labs(title = tract) + theme(plot.title = element_text(size=14, hjust=0.5))
+    print(paste("Finished plotting", tract))
+  } else {
+    tract_data_lh <- df %>% filter(tractID == tract) %>% filter(str_detect(tract_hemi, "Left"))
+    tract_data_rh <- df %>% filter(tractID == tract) %>% filter(str_detect(tract_hemi, "Right"))
+    
+     
+    tract_model_lh <- gamm(as.formula(sprintf("%s ~ s(nodeID, k=24, fx = F)", scalar)), random = list(subjectID=~1), data=tract_data_lh)
+    print(paste("Finished fitting GAM for left", tract))
+    tract_model_rh <- gamm(as.formula(sprintf("%s ~ s(nodeID, k=24, fx = F)", scalar)), random = list(subjectID=~1), data=tract_data_rh)
+    print(paste("Finished fitting GAM for right", tract))
+    
+    plot <- visualize_model_hemis(tract_model_lh$gam, tract_model_rh$gam, both_hemis = T, smooth_var = "nodeID", int_var = NULL, group_var="subjectID", plabels = NULL,
+                          check_diagnostics = F,derivative_plot = F, custom_color = "#831D69FF", custom_color_rh = "#FA9BAC") + 
+      labs(title = tract) + theme(plot.title = element_text(size=14, hjust=0.5))
+    print(paste("Finished plotting", tract))
+    
+  }
+  return(plot)
+  
+}
+
+
+# function for plotting tractprofiles mean and sd FA/MD
+plot_mean_sd <- function(tract, scalar, custom_color, custom_color_rh=NULL) {
+  df_profiles <- get(paste0("tract_profiles_", scalar, "_summary"))
+  df <- df_profiles %>% filter(tractID == tract)
+  
+  if(is.null(custom_color_rh)) {
+    plot <- ggplot(data = df, aes_string(x = "nodeID", y = scalar)) +
+    geom_ribbon(data = df, aes(x = nodeID , ymin = ymin ,ymax = ymax), alpha = .5, linetype = 0, fill= custom_color) + 
+    geom_line(data = df, aes(x = nodeID, y = mean_scalar), size = line_size, color = custom_color) +
+    theme(legend.position = "none",
+          axis.title.x = element_blank(),
+          axis.title.y = element_blank())
+    
+  } else {
+    plot <- ggplot(data = df, aes(x = nodeID, y = mean_scalar, group = hemi)) +
+    geom_ribbon(data = df, aes(x = nodeID , ymin = ymin ,ymax = ymax, fill = hemi), alpha = .5, linetype = 0) + 
+    geom_line(data = df, aes(x = nodeID, y = mean_scalar, color = hemi),size = 1) +
+    scale_fill_manual(values = c("Left" = custom_color, "Right" = custom_color_rh)) +
+    scale_color_manual(values = c("Left" = custom_color, "Right" = custom_color_rh)) +
+    theme(legend.position = "none",
+          axis.title.x = element_blank(),
+          axis.title.y = element_blank(),
+          plot.title = element_text(size=14, hjust=0.5)) + labs(title = tract)
+  }
+  return(plot)
+}
+
+
+
+# coefficient of variation function
+cv <- function(x, na.rm = FALSE)  sd(x, na.rm = na.rm)/mean(x, na.rm = na.rm)
+
+# function for plotting tractprofiles cv
+plot_cv <- function(tract, scalar, custom_color, custom_color_rh=NULL) {
+  df_profiles <- get(paste0("tract_profiles_", scalar, "_summary"))
+  df <- df_profiles %>% filter(tractID == tract)
+  
+  if(is.null(custom_color_rh)) {
+    plot <- ggplot(data = df, aes_string(x = "nodeID", y = scalar)) +
+    geom_line(data = df, aes(x = nodeID, y = cv_scalar), size = line_size, color = custom_color) +
+    theme(legend.position = "none",
+          axis.title.x = element_blank(),
+          axis.title.y = element_blank())
+    
+  } else {
+    plot <- ggplot(data = df, aes(x = nodeID, y = cv_scalar, group = hemi)) +
+    geom_line(data = df, aes(x = nodeID, y = cv_scalar, color = hemi),size = 1) +
+    scale_fill_manual(values = c("Left" = custom_color, "Right" = custom_color_rh)) +
+    scale_color_manual(values = c("Left" = custom_color, "Right" = custom_color_rh)) +
+    theme(legend.position = "none",
+          axis.title.x = element_blank(),
+          axis.title.y = element_blank(),
+          plot.title = element_text(size=14, hjust=0.5)) + labs(title = tract)
+  }
+  return(plot)
+}
+
+arrange_by_orientation <- function(list_figures, age_effect_type) {
+  
+  
+  AP_plots <- ggarrange(list_figures$`Anterior Thalamic Radiation`, 
+                           list_figures$`Cingulum Cingulate`, 
+                           list_figures$`Inferior Fronto-occipital Fasciculus`, 
+                           list_figures$`Inferior Longitudinal Fasciculus`, 
+                           list_figures$`Superior Longitudinal Fasciculus`, ncol=5, nrow = 1)
+  AP_plots_final <- annotate_figure(AP_plots, top = text_grob("Anterior - Posterior", 
+                 color = "black", face = "bold", size = 14))
+  
+  
+  AP_frontotemp_plots <- ggarrange(list_figures$`Arcuate Fasciculus`,
+                                      list_figures$`Uncinate Fasciculus`, ncol=2, nrow = 1)
+  AP_frontotemp_plots_final <- annotate_figure(AP_frontotemp_plots, top = text_grob("Anterior - Posterior (Frontal - Temporal)", 
+                 color = "black", face = "bold", size = 14))
+  
+   
+  RL_plots <- ggarrange(list_figures$`Forceps Major`, list_figures$`Forceps Minor`, 
+                           ncol=2, nrow = 1)
+  RL_plots_final <- annotate_figure(RL_plots, top = text_grob("Right - Left", 
+                 color = "black", face = "bold", size = 14))
+  
+  
+  SI_plots <- ggarrange(list_figures$`Corticospinal Tract`, list_figures$`Posterior Arcuate`, 
+                           list_figures$`Vertical Occipital Fasciculus`, common.legend=TRUE, legend=c("right"),
+                           ncol=3, nrow = 1)
+  SI_plots_final <- annotate_figure(SI_plots, top = text_grob("Superior - Inferior", 
+                 color = "black", face = "bold", size = 14))
+  
+  
+  tractprofiles_plot <- ggarrange(AP_plots_final, ggarrange(AP_frontotemp_plots_final, RL_plots_final, ncol = 2), SI_plots_final, nrow = 3)
+  
+  tractprofiles_plot_final <- annotate_figure(tractprofiles_plot, top = text_grob(age_effect_type, 
+               color = "black", face = "italic", size = 18))
+   return(tractprofiles_plot_final)
+}
+
+```
+
+## Fractional Anisotropy
+Mean FA across subjects
+```{r mean sd dti_fa, fig.width = 15, fig.height = 10}
+tract_profiles_fa <- tract_profiles %>% select(-dti_md) 
+tract_profiles_fa_summary <- tract_profiles_fa %>% 
+  group_by(tractID, tract_hemi, nodeID, hemi) %>% 
+  summarise(mean_scalar = mean(dti_fa, na.rm=T),
+            sd = sd(dti_fa, na.rm=T),
+            ymin = mean_scalar - sd,
+            ymax = mean_scalar + sd)  
+
+# plot
+mean_sd_fa <- lapply(unique(tract_profiles$tractID), plot_mean_sd, scalar="fa", custom_color = "#831D69FF", custom_color_rh = "#FA9BAC")
+names(mean_sd_fa) <- unique(tract_profiles$tractID)
+
+# arrange by AP, AP_frontal_temporal, RL (forceps), and SI
+x.grob <- textGrob("Position on Tract (Node ID)", 
+                   gp=gpar(col="black", fontsize=14))
+y.grob <- textGrob("Fractional Anisotropy", 
+                   gp=gpar(col="black", fontsize=14), rot=90)
+
+space.grob <- textGrob(" ", 
+                   gp=gpar(col="black", fontsize=28), rot=90)
+
+tractprofiles_fa_mean_final <- arrange_by_orientation(mean_sd_fa, "Mean +/- 1 SD")
+grid.arrange(arrangeGrob(tractprofiles_fa_mean_final, left = y.grob, bottom = x.grob, right = space.grob))
+
+#ggsave("/Users/audluo/PennLINC/luowm_local/output/tract_profiles_testing/HBN/tract_profiles_fa_mean.png", grid.arrange(arrangeGrob(tractprofiles_fa_mean_final, left = y.grob, bottom = x.grob, right = space.grob)), width = 15, height = 10, units = "in")
+
+```
+
+FA tract profiles modeled using GAMs for each tract:
+`gamm(FA ~ s(nodeID, k=24, fx = F), random = list(subjectID=~1), data=tract_data)`
+```{r fit nodeID gams fa, cache=TRUE, results = 'hide', include=FALSE}
+tractprofiles_fa_plots <- lapply(unique(tract_profiles$tractID), visualize_tractprofiles, df = tract_profiles, scalar = "dti_fa")
+names(tractprofiles_fa_plots) <- unique(tract_profiles$tractID)
+```
+
+```{r tractprofiles fa plots, fig.width=15, fig.height=10}
+# plot by AP, AP_frontal_temporal, RL (forceps), and SI
+tractprofiles_fa_final <- arrange_by_orientation(tractprofiles_fa_plots, "")
+grid.arrange(arrangeGrob(tractprofiles_fa_final, left = y.grob, bottom = x.grob, right = space.grob))
+
+ 
+#ggsave("/Users/audluo/PennLINC/luowm_local/output/tract_profiles_testing/HBN/tract_profiles_dti_fa.png", grid.arrange(arrangeGrob(tractprofiles_fa_final, left = y.grob, bottom = x.grob, right = space.grob)), width = 15, height = 10, units = "in")
+```
+
+## Mean Diffusivity
+Mean MD across subjects
+```{r mean sd dti_md, fig.width = 15, fig.height = 10}
+tract_profiles_dti_md <- tract_profiles %>% select(-dti_fa) 
+sqrt_n <- length(unique(tract_profiles_dti_md$subjectID))
+tract_profiles_dti_md_summary <- tract_profiles_dti_md %>% 
+  group_by(tractID, tract_hemi, nodeID, hemi) %>% 
+  summarise(mean_scalar = mean(dti_md, na.rm=T),
+            sd = sd(dti_md, na.rm=T),
+            #se = sd/sqrt_n,
+            #ymin = mean_scalar - se,
+            #ymax = mean_scalar + se,
+            ymin = mean_scalar - sd,
+            ymax = mean_scalar + sd,
+            cv_scalar = cv(dti_md, na.rm=T)) 
+
+# plot
+mean_sd_dti_md <- lapply(unique(tract_profiles$tractID), plot_mean_sd, scalar="dti_md", custom_color = "#831D69FF", custom_color_rh = "#FA9BAC")
+names(mean_sd_dti_md) <- unique(tract_profiles$tractID)
+
+# arrange by AP, AP_frontal_temporal, RL (forceps), and SI
+x.grob <- textGrob("Position on Tract (Node ID)", 
+                   gp=gpar(col="black", fontsize=14))
+y.grob <- textGrob("Mean Diffusivity", 
+                   gp=gpar(col="black", fontsize=14), rot=90)
+
+space.grob <- textGrob(" ", 
+                   gp=gpar(col="black", fontsize=28), rot=90)
+
+# arrange by AP, AP_frontal_temporal, RL (forceps), and SI
+tractprofiles_md_mean_final <- arrange_by_orientation(mean_sd_dti_md, "Mean +/- 1 SD")
+grid.arrange(arrangeGrob(tractprofiles_md_mean_final, left = y.grob, bottom = x.grob, right = space.grob))
+
+
+#ggsave("/Users/audluo/PennLINC/luowm_local/output/tract_profiles_testing/HBN/tract_profiles_dti_md_mean.png", grid.arrange(arrangeGrob(tractprofiles_md_mean_final, left = y.grob, bottom = x.grob, right = space.grob)), width = 15, height = 10, units = "in")
+
+
+```
+
+
+```{r cv dti_md, fig.width = 15, fig.height = 10}
+
+
+
+cv_dti_md <- lapply(unique(tract_profiles$tractID), plot_cv, scalar="dti_md", custom_color = "#831D69FF", custom_color_rh = "#FA9BAC")
+names(cv_dti_md) <- unique(tract_profiles$tractID)
+
+
+# arrange by AP, AP_frontal_temporal, RL (forceps), and SI
+x.grob <- textGrob("Position on Tract (Node ID)", 
+                   gp=gpar(col="black", fontsize=14))
+y.grob <- textGrob("Coefficient of Variation", 
+                   gp=gpar(col="black", fontsize=14), rot=90)
+
+space.grob <- textGrob(" ", 
+                   gp=gpar(col="black", fontsize=28), rot=90)
+
+# arrange by AP, AP_frontal_temporal, RL (forceps), and SI
+tractprofiles_md_cv_final <- arrange_by_orientation(cv_dti_md, "Coefficient of Variation for Mean Diffusivity")
+grid.arrange(arrangeGrob(tractprofiles_md_cv_final, left = y.grob, bottom = x.grob, right = space.grob))
+
+#ggsave("/Users/audluo/PennLINC/luowm_local/output/tract_profiles_testing/HBN/tract_profiles_dti_md_cv.png", grid.arrange(arrangeGrob(tractprofiles_md_cv_final, left = y.grob, bottom = x.grob, right = space.grob)), width = 15, height = 10, units = "in")
+
+
+```
+
+MD tract profiles modeled using GAMs for each tract:
+`gamm(MD ~ s(nodeID, k=24, fx = F), random = list(subjectID=~1), data=tract_data)`
+```{r fit nodeID gams md, cache = TRUE, results = 'hide', include=FALSE}
+tractprofiles_md_plots <- lapply(unique(tract_profiles$tractID), visualize_tractprofiles, df = tract_profiles, scalar = "dti_md")
+names(tractprofiles_md_plots) <- unique(tract_profiles$tractID)
+```
+
+```{r tractprofiles md plots, fig.width=15, fig.height=10}
+# plot by AP, AP_frontal_temporal, RL (forceps), and SI
+x.grob <- textGrob("Position on Tract (Node ID)", 
+                   gp=gpar(col="black", fontsize=14))
+y.grob <- textGrob("Mean Diffusivity", 
+                   gp=gpar(col="black", fontsize=14), rot=90)
+
+space.grob <- textGrob(" ", 
+                   gp=gpar(col="black", fontsize=28), rot=90)
+ 
+# plot by AP, AP_frontal_temporal, RL (forceps), and SI
+tractprofiles_md_final <- arrange_by_orientation(tractprofiles_md_plots, "")
+grid.arrange(arrangeGrob(tractprofiles_md_final, left = y.grob, bottom = x.grob, right = space.grob))
+
+ 
+#ggsave("/Users/audluo/PennLINC/luowm_local/output/tract_profiles_testing/HBN/tract_profiles_dti_md.png", grid.arrange(arrangeGrob(tractprofiles_md_final, left = y.grob, bottom = x.grob, right = space.grob)), width = 15, height = 10, units = "in")
+```
+
+```{r md profile boxplots, fig.height = 5, fig.width=5}
+# filter for central nodes
+central_tract_profiles <- tract_profiles %>% filter(nodeID > 39 & nodeID < 60)
+
+
+mycolors <- colorRampPalette(paletteer::paletteer_d("PNWColors::Sailboat"))(12)
+ 
+boxplot <- central_tract_profiles %>%
+  ggplot(aes(x = reorder(tractID, dti_md, fun = mean), y=dti_md, fill=tractID)) +
+    geom_boxplot(aes(color = tractID, fill = tractID), alpha=0.6) +
+    scale_fill_manual(values = mycolors) + 
+    scale_color_manual(values = mycolors) + 
+    theme(
+      legend.position="none",
+      plot.title = element_text(size=11, hjust=0.5),
+      axis.text.x = element_text(angle=45, hjust=0.95, size=8)
+    ) +
+    ggtitle("Median MD of Deep/Central Nodes") +
+    xlab("") + ylab("Mean Diffusivity")
+
+ggsave("/Users/audluo/PennLINC/luowm_local/output/tract_profiles_testing/HBN/tract_profiles_md_boxplot.png", boxplot, width = 5, height = 5, units = "in")
+```
+```{r ttest between central and peripheral, include=FALSE, echo=FALSE, eval=FALSE}
+
+# get top and bottom 10 nodes, get middle 20 nodes for each tract
+central <- tract_profiles %>% group_by(tract_hemi) %>% filter(nodeID < 10 | nodeID > 89)
+
+peripheral <- tract_profiles %>% group_by(tract_hemi) %>% filter(nodeID > 39 & nodeID < 61)
+
+central$tract_seg <- "central"
+peripheral$tract_seg <- "peripheral"
+central_stats <- central %>% select(tract_seg, dti_md)
+peripheral_stats <- peripheral %>% select(tract_seg, dti_md)
+
+ttest_df <- data.frame(rbind(central_stats, peripheral_stats))
+
+var.test(central$dti_md, peripheral$dti_md) # different variances
+t.test(central$dti_md, peripheral$dti_md)
+t.test(dti_md ~ tract_seg, ttest_df) 
+library(rstatix)
+ttest_df %>%  cohens_d(dti_md ~ tract_seg, var.equal = FALSE)
+
+
+mean(central$dti_md, na.rm=T) 
+sd(central$dti_md, na.rm=T)
+mean(peripheral$dti_md, na.rm=T)
+sd(peripheral$dti_md, na.rm=T)
+
+(mean(peripheral$dti_md, na.rm=T) - mean(central$dti_md, na.rm=T) ) / mean(central$dti_md, na.rm=T) 
+
+
+# lm dist to cortex
+
+central_periph_df <- compute_dist_to_cortex(tract_profiles)
+
+central_periph_lm <- lm(dti_md ~ dist_to_cortex, data=central_periph_df)
+
+summary(central_periph_lm)
+
+coef(central_periph_lm)[2]          -> b  # Coefficient of interest
+model.matrix(central_periph_lm)[,2] -> x  # Corresponding column of the design matrix
+central_periph_df$dti_md - b * x      -> y 
+
+
+cor.test(central_periph_df$dti_md, central_periph_df$dist_to_cortex)
+
+```
+
+# 2. Age effects
+- Age effect was computed in 3 different ways:
+1) Using nodewise GAMs to compute delta adjusted rsq for the age term
+2) Using tractwise GAMs, and estimating posterior fitted values from the simulated GAM posterior distribution for each node age each age. Then computing the percent change in FA/MD for each node for each draw of the max and min age
+3) Same as 2, but using normalized posterior percent change 
+  
+```{r functions for plotting age effects}
+# function for computing credible intervals for percent change
+compute_credible_intervals <- function(age_effect_df) {
+  df <- age_effect_df %>% select(contains("draw"))
+  median_age_effect <- apply(df, 1, function(x){median(x)})
+  age_effect.credible.intervals <- apply(df, 1, function(x){quantile(x, probs = c(0.025, 0.975))}) #compute the credible interval for the percent change at each node 
+  age_effect.credible.intervals <- as.data.frame(t(age_effect.credible.intervals))
+    
+  credible.intervals <- cbind(age_effect_df$nodeID, age_effect_df$tract_hemi, age_effect_df$tractID, age_effect_df$hemi, age_effect.credible.intervals)
+  credible.intervals <- cbind(credible.intervals, median_age_effect)
+  colnames(credible.intervals) <- c("nodeID","tract_hemi", "tractID", "hemi","lower","upper", "median_percent_change")
+  credible.intervals$median_percent_change <- credible.intervals$median_percent_change*100
+  credible.intervals$lower <- credible.intervals$lower*100
+  credible.intervals$upper <- credible.intervals$upper*100
+  
+  return(credible.intervals)
+}
+ 
+
+# function for plotting age effect
+plot_age_effect <- function(tract, age_effect_df, age_effect_type, custom_color, custom_color_rh=NULL) {
+  df <- age_effect_df %>% filter(tractID == tract)
+   if(age_effect_type == "adj_rsq") { # delta adj rsq
+      # NA out color/fill aes if adj rsq = 0 or if p-value doesn't survive FDR correction (makes the color gray)
+      includes_zero <- which(df$s_age.delta.adj.rsq_signed==0 | df$s_age.p.value.fdr > 0.05)
+      
+      if(str_detect(tract, "Forceps")) {
+      df$tract_hemi[includes_zero] <- NA
+       plot <- ggplot(data = df, aes(x = nodeID, y = s_age.delta.adj.rsq_signed, colour = tract_hemi, fill = tract_hemi)) +
+        geom_point(shape = 21, size=2, alpha = 0.6) + 
+        scale_colour_manual(values = custom_color, na.value = "grey50") +
+        scale_fill_manual(values = custom_color, na.value = "grey50") + 
+        theme(legend.position = "none",
+              axis.title.x = element_blank(),
+              axis.title.y = element_blank(),
+              plot.title = element_text(size=14, hjust=0.5)) + labs(title = tract)
+      
+      } else {
+        df$hemi[includes_zero] <- NA
+        plot <- ggplot(data = df, aes(x = nodeID, y = s_age.delta.adj.rsq_signed, group = hemi, colour = hemi, fill = hemi)) +
+        geom_point(shape = 21, size=2, alpha = 0.8) + 
+        scale_colour_manual(values = c("Left" = custom_color, "Right" = custom_color_rh), na.value = "grey50") +
+        scale_fill_manual(values = c("Left" = custom_color, "Right" = custom_color_rh), na.value = "grey50") +
+        theme(legend.position = "none",
+              axis.title.x = element_blank(),
+              axis.title.y = element_blank(),
+              plot.title = element_text(size=14, hjust=0.5)) + labs(title = tract)
+      }
+    } else if (age_effect_type == "percent_change") { # percent change or normalized percent change
+      
+      # NA out hemi if median_percent_change = 0 or if lower/upper CI contains 0 (makes the color gray)
+      includes_zero <- which(df$lower <= 0 & df$upper >= 0)
+      
+ 
+      if(str_detect(tract, "Forceps")) {
+
+        df$tractID[includes_zero] <- NA
+        plot <- ggplot(data = df, aes(x = nodeID, y = median_percent_change, colour = tractID, fill = tractID)) +
+        geom_point(shape = 21, size=2, alpha = 0.6) + 
+        geom_errorbar(aes(ymin=lower, ymax=upper), width=.2,
+              position=position_dodge(0.05), alpha = 0.8) + 
+        scale_colour_manual(values = custom_color, na.value = "grey50") +
+        scale_fill_manual(values = custom_color, na.value = "grey50") + 
+        theme(legend.position = "none",
+              axis.title.x = element_blank(),
+              axis.title.y = element_blank(),
+              plot.title = element_text(size=14, hjust=0.5)) + labs(title = tract)
+ 
+      } else {
+        df$hemi[includes_zero] <- NA
+        plot <- ggplot(data = df, aes(x = nodeID, y = median_percent_change, group = hemi, colour = hemi, fill = hemi)) +
+        geom_point(shape = 21, size=2, alpha = 0.6) + 
+        geom_errorbar(aes(ymin=lower, ymax=upper, colour = hemi), width=.2,
+                 position=position_dodge(0.05), alpha = 0.8) + 
+        scale_colour_manual(values = c("Left" = custom_color, "Right" = custom_color_rh), na.value = "grey50") +
+        scale_fill_manual(values = c("Left" = custom_color, "Right" = custom_color_rh), na.value = "grey50") +
+        theme(legend.position = "none",
+              axis.title.x = element_blank(),
+              axis.title.y = element_blank(),
+              plot.title = element_text(size=14, hjust=0.5)) + labs(title = tract)
+      }
+       
+    } else {
+      print("Provide valid age effect type")
+    }
+  return(plot)
+}
+```
+
+```{r load age effects, cache=TRUE}
+
+###############################################
+### load nodewise GAM results: adjusted Rsq ###
+###############################################
+# load nodewise GAM results for dti_fa and dti_md
+gam_age_fa <- read.csv("/cbica/projects/luo_wm_dev/output/HBN/tract_profiles/GAM/dti_fa/GAMresults.dti_fa.age.csv")
+gam_age_fa <- gam_age_fa %>% select(-X)
+
+gam_age_md <- read.csv("/cbica/projects/luo_wm_dev/output/HBN/tract_profiles/GAM/dti_md/GAMresults.dti_md.age.csv")
+gam_age_md <- gam_age_md %>% select(-X)
+ 
+# determine correct age effect sign for delta adjusted Rsq using equivalent linear model
+# load linear models
+lm_age_fa <- read.csv("/cbica/projects/luo_wm_dev/output/HBN/tract_profiles/GAM/dti_fa/LinearModelresults.dti_fa.age.csv")
+lm_age_md <- read.csv("/cbica/projects/luo_wm_dev/output/HBN/tract_profiles/GAM/dti_md/LinearModelresults.dti_md.age.csv")
+ 
+# take absolute value of delta adj rsq  
+gam_age_fa$s_age.delta.adj.rsq_signed <- abs(gam_age_fa$s_age.delta.adj.rsq) 
+gam_age_md$s_age.delta.adj.rsq_signed <- abs(gam_age_md$s_age.delta.adj.rsq) 
+ 
+# apply the sign of linear model age estimate (t-value) to GAM delta adj rsq
+gam_age_fa$s_age.delta.adj.rsq_signed <- gam_age_fa$s_age.delta.adj.rsq_signed * ifelse(lm_age_fa$age.estimate >= 0, 1, -1)
+gam_age_md$s_age.delta.adj.rsq_signed <- gam_age_md$s_age.delta.adj.rsq_signed * ifelse(lm_age_md$age.estimate >= 0, 1, -1)
+ 
+# How many nodes have significant age effect after FDR?
+dti_fa_significant_count <- length(which(gam_age_fa$s_age.p.value.fdr < 0.05))
+md_significant_count <- length(which(gam_age_md$s_age.p.value.fdr < 0.05))
+ 
+total_nodes = 2200
+
+print(paste0("Nodewise GAMs - dti_fa: ", dti_fa_significant_count, " nodes ", round(dti_fa_significant_count / total_nodes * 100, 2), "% with significant age effect after FDR correction"))
+print(paste0("Nodewise GAMs - dti_md: ", md_significant_count, " nodes ", round(md_significant_count / total_nodes * 100, 2), "% with significant age effect after FDR correction"))
+
+
+# Add tractID and nodeID to gam_age_fa
+gam_age_fa$tractID <- all_subjects$tractID[c(1:2200)]
+gam_age_fa$tract_hemi <- all_subjects$tract_hemi[c(1:2200)]
+gam_age_fa$hemi <- all_subjects$hemi[c(1:2200)]
+gam_age_fa$nodeID <- all_subjects$nodeID[c(1:2200)]
+
+# Add tractID and nodeID to gam_age_md
+gam_age_md$tractID <- all_subjects$tractID[c(1:2200)]
+gam_age_md$tract_hemi <- all_subjects$tract_hemi[c(1:2200)]
+gam_age_md$hemi <- all_subjects$hemi[c(1:2200)]
+gam_age_md$nodeID <- all_subjects$nodeID[c(1:2200)]
+
+############################################################
+### load tractwise GAM results: posterior percent change ###
+############################################################
+percent_change_fa <- readRDS("/cbica/projects/luo_wm_dev/output/HBN/tract_profiles/GAM/dti_fa/posterior_percentchange/HBN_posterior_percentchange.RData")
+percent_change_fa <- percent_change_fa %>% mutate(tractID = gsub("_"," ", tract_hemi)) %>% 
+    mutate(hemi = ifelse(grepl("Left", tract_hemi), "Left", "Right"))
+percent_change_fa$tractID <- gsub("Left |Right ", "", percent_change_fa$tractID)
+
+
+percent_change_md <- readRDS("/cbica/projects/luo_wm_dev/output/HBN/tract_profiles/GAM/dti_md/posterior_percentchange/HBN_posterior_percentchange.RData")
+percent_change_md <- percent_change_md %>% mutate(tractID = gsub("_"," ", tract_hemi)) %>% 
+    mutate(hemi = ifelse(grepl("Left", tract_hemi), "Left", "Right"))
+percent_change_md$tractID <- gsub("Left |Right ", "", percent_change_md$tractID)
+
+
+#######################################################################
+### load tractwise GAM results: normalized posterior percent change ###
+#######################################################################
+norm_percent_change_fa <- readRDS("/cbica/projects/luo_wm_dev/output/HBN/tract_profiles/GAM/dti_fa/posterior_percentchange/HBN_posterior_percentchange_normalized.RData")
+norm_percent_change_fa <- norm_percent_change_fa %>% mutate(tractID = gsub("_"," ", tract_hemi)) %>% 
+    mutate(hemi = ifelse(grepl("Left", tract_hemi), "Left", "Right"))
+norm_percent_change_fa$tractID <- gsub("Left |Right ", "", norm_percent_change_fa$tractID)
+
+norm_percent_change_md <- readRDS("/cbica/projects/luo_wm_dev/output/HBN/tract_profiles/GAM/dti_md/posterior_percentchange/HBN_posterior_percentchange_normalized.RData")
+norm_percent_change_md <- norm_percent_change_md %>% mutate(tractID = gsub("_"," ", tract_hemi)) %>% 
+    mutate(hemi = ifelse(grepl("Left", tract_hemi), "Left", "Right"))
+norm_percent_change_md$tractID <- gsub("Left |Right ", "", norm_percent_change_md$tractID)
+ 
+
+######################################################### 
+### tractwise GAM results: compute credible intervals ###
+######################################################### 
+
+ci_pc_fa <- compute_credible_intervals(percent_change_fa)
+ci_pc_md <- compute_credible_intervals(percent_change_md)
+
+ci_norm_pc_fa <- compute_credible_intervals(norm_percent_change_fa)
+ci_norm_pc_md <- compute_credible_intervals(norm_percent_change_md)
+
+
+######################################################
+### Fix tract orientations for all age effect df's ###
+######################################################
+
+fix_tract_orientations <- function(df) {
+  # flip tracts
+  to_reorient <- df %>%
+    group_by(tractID) %>%
+    mutate(nodeID = ifelse(tractID %in% c("Cingulum Cingulate", "Inferior Fronto-occipital Fasciculus", "Inferior Longitudinal Fasciculus", "Uncinate Fasciculus", "Corticospinal Tract"), max(nodeID) - nodeID, nodeID))
+  
+  # label main orientation
+  reoriented <- to_reorient %>% 
+    mutate(main_orientation = case_when(
+      tractID %in% c("Anterior Thalamic Radiation", "Cingulum Cingulate", "Inferior Fronto-occipital Fasciculus",
+                     "Inferior Longitudinal Fasciculus", "Superior Longitudinal Fasciculus") ~ "AP",
+      tractID %in% c("Arcuate Fasciculus", "Uncinate Fasciculus") ~ "AP_frontal_temporal",
+      tractID %in% c("Forceps Minor", "Forceps Major") ~ "RL",
+      tractID %in% c("Corticospinal Tract", "Posterior Arcuate","Vertical Occipital Fasciculus") ~ "SI",
+      TRUE ~ NA_character_
+    ))
+  
+  reoriented$main_orientation <- as.factor(reoriented$main_orientation)
+  
+  return(reoriented)
+}
+
+gam_age_fa <- fix_tract_orientations(gam_age_fa)
+gam_age_md <- fix_tract_orientations(gam_age_md)
+
+ci_pc_fa <- fix_tract_orientations(ci_pc_fa)
+ci_pc_md <- fix_tract_orientations(ci_pc_md)
+
+ci_norm_pc_fa <- fix_tract_orientations(ci_norm_pc_fa)
+ci_norm_pc_md <- fix_tract_orientations(ci_norm_pc_md)
+  
+
+
+gam_age_md <- gam_age_md %>% mutate(tract_node_noHemi = paste0(tractID, "_", nodeID))
+gam_age_md_bilat <- gam_age_md %>% group_by(tract_node_noHemi) %>% summarise(s_age.delta.adj.rsq_signed = mean(s_age.delta.adj.rsq_signed))
+gam_age_md_bilat <- gam_age_md_bilat %>% mutate(tractID = gsub("_[0-9]+", "",tract_node_noHemi))
+#write.csv(gam_age_md_bilat, "/cbica/projects/luo_wm_dev/output/HBN/tract_profiles/GAM/dti_md/GAM_bilateral_signedresults.dti_md.age.csv")
+
+ 
+
+#write.csv(gam_age_fa, "/cbica/projects/luo_wm_dev/output/HBN/tract_profiles/GAM/dti_fa/GAMresults.dti_fa.age_reoriented.csv")
+#write.csv(gam_age_md, "/cbica/projects/luo_wm_dev/output/HBN/tract_profiles/GAM/dti_md/GAMresults.dti_md.age_reoriented.csv")
+ 
+#saveRDS(ci_pc_fa, "/cbica/projects/luo_wm_dev/output/HBN/tract_profiles/GAM/dti_fa/posterior_percentchange/HBN_posterior_percentchange_reoriented.RData")
+#saveRDS(ci_pc_md, "/cbica/projects/luo_wm_dev/output/HBN/tract_profiles/GAM/dti_md/posterior_percentchange/HBN_posterior_percentchange_reoriented.RData")
+ 
+#saveRDS(ci_norm_pc_fa, "/cbica/projects/luo_wm_dev/output/HBN/tract_profiles/GAM/dti_fa/posterior_percentchange/HBN_posterior_percentchange_normalized_reoriented.RData")
+#saveRDS(ci_norm_pc_md, "/cbica/projects/luo_wm_dev/output/HBN/tract_profiles/GAM/dti_md/posterior_percentchange/HBN_posterior_percentchange_normalized_reoriented.RData")
+ 
+```
+
+## Fractional Anisotropy
+### 1. Nodewise GAMs: Delta Adjusted Rsq
+- Delta adjust Rsq was computed using nodewise gam
+`gam(fa_node_i_tract_i ~ s(age) + covariates))`
+```{r fa nodeID vs. delta adj rsq, fig.width=16, fig.height=10}
+# plot
+age_rsq_fa_plots <- lapply(unique(gam_age_fa$tractID), plot_age_effect, age_effect_df = gam_age_fa, age_effect_type = "adj_rsq", custom_color = "#831D69FF", custom_color_rh = "#FA9BAC")
+names(age_rsq_fa_plots) <- unique(gam_age_fa$tractID)
+ 
+# arrange by AP, AP_frontal_temporal, RL (forceps), and SI
+x.grob <- textGrob("Position on Tract (Node ID)", 
+                     gp=gpar(col="black", fontsize=14))
+y.grob <- textGrob("Fractional Anisotropy Delta Adj Rsq", 
+                   gp=gpar(col="black", fontsize=14), rot=90)
+
+space.grob <- textGrob(" ", 
+                     gp=gpar(col="black", fontsize=14), rot=90)
+  
+
+age_rsq_fa_plots_final <- arrange_by_orientation(age_rsq_fa_plots, "FA Delta Adjusted Rsq") 
+grid.arrange(arrangeGrob(age_rsq_fa_plots_final, left = y.grob, bottom = x.grob, right = space.grob))
+
+
+#ggsave("/Users/audluo/PennLINC/luowm_local/output/tract_profiles_testing/HBN/age_effect_rsq_fa.png", grid.arrange(arrangeGrob(age_rsq_fa_plots_final, left = y.grob, bottom = x.grob, right = space.grob)), width = 16, height = 10, units = "in")
+```
+
+### 2. Tractwise GAMs: Posterior percent change
+- GAM used: `gam(tract_i_fa ~ s(age, k = 3, fx = T, bs = 'cr') + s(nodeID, k = 24, fx = F, bs = 'cr') + ti(age, nodeID, k=c(3, 24), fx = F) + s(subjectID, bs = 're’) , method = “REML”)`
+- Estimated posterior fitted values from simulated GAM posterior distribution for each node at each age
+- Computed percent change for each node for each draw of the max and min age: `(Y_old - Y_young)/(Y_young)`
+- Computed credible intervals on the node-wise percent change from the posterior percent change values
+```{r fa nodeID vs. percent change,  fig.width = 16, fig.height = 10}
+ 
+percent_change_fa_plots <- lapply(unique(all_subjects$tractID), plot_age_effect, age_effect_df = ci_pc_fa, age_effect_type = "percent_change", custom_color = "#831D69FF", custom_color_rh = "#FA9BAC")
+names(percent_change_fa_plots) <- unique(all_subjects$tractID)
+ 
+ 
+# arrange by AP, AP_frontal_temporal, RL (forceps), and SI
+x.grob <- textGrob("Position on Tract (Node ID)", 
+                     gp=gpar(col="black", fontsize=14))
+y.grob <- textGrob("Fractional Anisotropy Percent Change", 
+                   gp=gpar(col="black", fontsize=14), rot=90)
+
+space.grob <- textGrob(" ", 
+                     gp=gpar(col="black", fontsize=14), rot=90)
+age_pc_fa_plots_final <- arrange_by_orientation(percent_change_fa_plots, "FA Percent Change") 
+
+grid.arrange(arrangeGrob(age_pc_fa_plots_final, left = y.grob, bottom = x.grob, right = space.grob))
+
+#ggsave("/Users/audluo/PennLINC/luowm_local/output/tract_profiles_testing/HBN/age_effect_pc_fa.png", grid.arrange(arrangeGrob(age_pc_fa_plots_final, left = y.grob, bottom = x.grob, right = space.grob)), width = 16, height = 10, units = "in")
+
+```
+
+### 3. Tractwise GAMs: Normalized posterior percent change
+- Same as `2` but computed normalized posterior percent change instead: `(Y_old - Y_young)/(mean_tract_i_node_i_fa)`
+```{r fa nodeID vs. normalized percent change, fig.width = 16, fig.height=10}
+norm_percent_change_fa_plots <- lapply(unique(all_subjects$tractID), plot_age_effect, age_effect_df = ci_norm_pc_fa, age_effect_type = "percent_change", custom_color = "#831D69FF", custom_color_rh = "#FA9BAC")
+names(norm_percent_change_fa_plots) <- unique(all_subjects$tractID)
+
+ 
+
+# arrange by AP, AP_frontal_temporal, RL (forceps), and SI
+x.grob <- textGrob("Position on Tract (Node ID)", 
+                     gp=gpar(col="black", fontsize=14))
+y.grob <- textGrob("Fractional Anisotropy Normalized Percent Change", 
+                   gp=gpar(col="black", fontsize=14), rot=90)
+
+space.grob <- textGrob(" ", 
+                     gp=gpar(col="black", fontsize=14), rot=90)
+age_norm_pc_plots_final <- arrange_by_orientation(norm_percent_change_fa_plots, "FA Normalized Percent Change") 
+
+grid.arrange(arrangeGrob(age_norm_pc_plots_final, left = y.grob, bottom = x.grob, right = space.grob))
+
+
+#ggsave("/Users/audluo/PennLINC/luowm_local/output/tract_profiles_testing/HBN/age_effect_norm_pc_fa.png", grid.arrange(arrangeGrob(age_norm_pc_plots_final, left = y.grob, bottom = x.grob, right = space.grob)), width = 16, height = 10, units = "in")
+```
+
+## Mean Diffusivity
+### 1. Nodewise GAMs: Delta Adjusted Rsq
+- Delta adjust Rsq was computed using nodewise gam
+`gam(md_node_i_tract_i ~ s(age) + covariates))`
+```{r md nodeID vs. delta adj rsq, fig.width=16, fig.height=10}
+# plot
+age_rsq_md_plots <- lapply(unique(gam_age_md$tractID), plot_age_effect, age_effect_df = gam_age_md, age_effect_type = "adj_rsq", custom_color = "#831D69FF", custom_color_rh = "#FA9BAC")
+names(age_rsq_md_plots) <- unique(gam_age_md$tractID)
+ 
+# arrange by AP, AP_frontal_temporal, RL (forceps), and SI
+x.grob <- textGrob("Position on Tract (Node ID)", 
+                     gp=gpar(col="black", fontsize=14))
+y.grob <- textGrob("Mean Diffusivity Delta Adj Rsq", 
+                   gp=gpar(col="black", fontsize=14), rot=90)
+
+space.grob <- textGrob(" ", 
+                     gp=gpar(col="black", fontsize=14), rot=90)
+age_rsq_md_plots_final <- arrange_by_orientation(age_rsq_md_plots, "MD Delta Adjusted Rsq") 
+grid.arrange(arrangeGrob(age_rsq_md_plots_final, left = y.grob, bottom = x.grob, right = space.grob))
+
+#ggsave("/Users/audluo/PennLINC/luowm_local/output/tract_profiles_testing/HBN/age_effect_rsq_md.png", grid.arrange(arrangeGrob(age_rsq_md_plots_final, left = y.grob, bottom = x.grob, right = space.grob)), width = 16, height = 10, units = "in")
+```
+
+### 2. Tractwise GAMs: Posterior percent change
+- GAM used: `gam(tract_i_md ~ s(age, k = 3, fx = T, bs = 'cr') + s(nodeID, k = 24, fx = F, bs = 'cr') + ti(age, nodeID, k=c(3, 24), fx = F) + s(subjectID, bs = 're’) , method = “REML”)`
+- Estimated posterior fitted values from simulated GAM posterior distribution for each node at each age
+- Computed percent change for each node for each draw of the max and min age: `(Y_old - Y_young)/(Y_young)`
+- Computed credible intervals on the node-wise percent change from the posterior percent change values
+
+In contrast to HCP-D, in HBN we're seeing that posterior regions of tracts like IFO and ILF seem to have greater age-related changes than anterior regions. Could be due to the fact that I didn't exclude Staten Island from HBN, or could have to do with psychopathology... It's on my list to exclude SI and re-calculate age effects for HBN. 
+```{r md nodeID vs. percent change,  fig.width = 16, fig.height = 10}
+percent_change_md_plots <- lapply(unique(all_subjects$tractID), plot_age_effect, age_effect_df = ci_pc_md, age_effect_type = "percent_change", custom_color = "#831D69FF", custom_color_rh = "#FA9BAC")
+names(percent_change_md_plots) <- unique(all_subjects$tractID)
+
+ 
+# arrange by AP, AP_frontal_temporal, RL (forceps), and SI
+x.grob <- textGrob("Position on Tract (Node ID)", 
+                     gp=gpar(col="black", fontsize=14))
+y.grob <- textGrob("Mean Diffusivity Percent Change", 
+                   gp=gpar(col="black", fontsize=14), rot=90)
+
+space.grob <- textGrob(" ", 
+                     gp=gpar(col="black", fontsize=14), rot=90)
+age_pc_md_plots_final <- arrange_by_orientation(percent_change_md_plots, "MD Percent Change") 
+
+grid.arrange(arrangeGrob(age_pc_md_plots_final, left = y.grob, bottom = x.grob, right = space.grob))
+ 
+#ggsave("/Users/audluo/PennLINC/luowm_local/output/tract_profiles_testing/HBN/age_effect_pc_md.png", grid.arrange(arrangeGrob(age_pc_md_plots_final, left = y.grob, bottom = x.grob, right = space.grob)), width = 16, height = 10, units = "in")
+
+```
+
+### 3. Tractwise GAMs: Normalized posterior percent change
+- Same as `2` but computed normalized posterior percent change instead: `(Y_old - Y_young)/(mean_tract_i_node_i_md)`
+```{r md nodeID vs. normalized percent change, fig.width = 16, fig.height=10}
+norm_percent_change_md_plots <- lapply(unique(all_subjects$tractID), plot_age_effect, age_effect_df = ci_norm_pc_md, age_effect_type = "percent_change", custom_color = "#831D69FF", custom_color_rh = "#FA9BAC")
+names(norm_percent_change_md_plots) <- unique(all_subjects$tractID)
+
+ 
+
+# arrange by AP, AP_frontal_temporal, RL (forceps), and SI
+x.grob <- textGrob("Position on Tract (Node ID)", 
+                     gp=gpar(col="black", fontsize=14))
+y.grob <- textGrob("Mean Diffusivity Normalized Percent Change", 
+                   gp=gpar(col="black", fontsize=14), rot=90)
+
+space.grob <- textGrob(" ", 
+                     gp=gpar(col="black", fontsize=14), rot=90)
+age_norm_pc_plots_final <- arrange_by_orientation(norm_percent_change_md_plots, "MD Normalized Percent Change") 
+
+grid.arrange(arrangeGrob(age_norm_pc_plots_final, left = y.grob, bottom = x.grob, right = space.grob))
+
+#ggsave("/Users/audluo/PennLINC/luowm_local/output/tract_profiles_testing/HBN/age_effect_norm_pc_md.png", grid.arrange(arrangeGrob(age_norm_pc_plots_final, left = y.grob, bottom = x.grob, right = space.grob)), width = 16, height = 10, units = "in")
+```
+
+## Compare age effects to an equivalent linear model
+- From Jason Yeatman:
+```
+How do the GAM results compare to a simpler model where you just fit a linear model at each node and look at the slope of development. Are the results pretty similar? 
+One issue that we've been having with GAMs is that small differences in model specification have dramatic impacts on the results so I always try to confirm with the simple approach.
+```
+- I checked with MD only
+- Output looks very similar to delta adj rsq and percent change! 
+```{r md nodeID vs. slope of age effect from lm, fig.width = 16, fig.height=10}
+
+# Add tractID and nodeID to lm_age_md
+lm_age_md$tractID <- all_subjects$tractID[c(1:2200)]
+lm_age_md$tract_hemi <- all_subjects$tract_hemi[c(1:2200)]
+lm_age_md$hemi <- all_subjects$hemi[c(1:2200)]
+lm_age_md$nodeID <- all_subjects$nodeID[c(1:2200)]
+lm_age_md <- fix_tract_orientations(lm_age_md)
+ 
+plot_age_effect_lm <- function(tract, age_effect_df, custom_color, custom_color_rh=NULL) {
+  df <- age_effect_df %>% filter(tractID == tract)
+  # NA out color/fill aes if adj rsq = 0 or if p-value doesn't survive FDR correction (makes the color gray)
+  includes_zero <- which(df$age.p.value.fdr > 0.05)
+  
+  if(str_detect(tract, "Forceps")) {
+  df$tract_hemi[includes_zero] <- NA
+   plot <- ggplot(data = df, aes(x = nodeID, y = age.estimate, colour = tract_hemi, fill = tract_hemi)) +
+    geom_point(shape = 21, size=2, alpha = 0.6) + 
+    scale_colour_manual(values= custom_color, na.value = "grey50") + # allows for dynamic updating of tractID value
+    scale_fill_manual(values=custom_color, na.value = "grey50") +
+    theme(legend.position = "none",
+          axis.title.x = element_blank(),
+          axis.title.y = element_blank(),
+          plot.title = element_text(size=14, hjust=0.5)) + labs(title = tract)
+  
+  } else {
+    df$hemi[includes_zero] <- NA
+    plot <- ggplot(data = df, aes(x = nodeID, y = age.estimate, group = hemi, colour = hemi, fill = hemi)) +
+    geom_point(shape = 21, size=2, alpha = 0.8) + 
+    scale_colour_manual(values = c("Left" = custom_color, "Right" = custom_color_rh), na.value = "grey50") +
+    scale_fill_manual(values = c("Left" = custom_color, "Right" = custom_color_rh), na.value = "grey50") +
+    theme(legend.position = "none",
+          axis.title.x = element_blank(),
+          axis.title.y = element_blank(),
+          plot.title = element_text(size=14, hjust=0.5)) + labs(title = tract)
+  }
+
+  return(plot)
+}
+
+lm_md_plots <- lapply(unique(all_subjects$tractID), plot_age_effect_lm, age_effect_df = lm_age_md, custom_color = "#831D69FF", custom_color_rh = "#FA9BAC")
+names(lm_md_plots) <- unique(all_subjects$tractID)
+
+ 
+
+# arrange by AP, AP_frontal_temporal, RL (forceps), and SI
+x.grob <- textGrob("Position on Tract (Node ID)", 
+                     gp=gpar(col="black", fontsize=14))
+y.grob <- textGrob("Mean Diffusivity Slope of Development (from linear model)", 
+                   gp=gpar(col="black", fontsize=14), rot=90)
+
+space.grob <- textGrob(" ", 
+                     gp=gpar(col="black", fontsize=14), rot=90)
+age_lm_plots_final <- arrange_by_orientation(lm_md_plots, "MD - Slope of Age Term (from linear model)") 
+
+grid.arrange(arrangeGrob(age_lm_plots_final, left = y.grob, bottom = x.grob, right = space.grob))
+
+
+#ggsave("/Users/audluo/PennLINC/luowm_local/output/tract_profiles_testing/HBN/age_effect_lm_md.png", grid.arrange(arrangeGrob(age_lm_plots_final, left = y.grob, bottom = x.grob, right = space.grob)), width = 16, height = 10, units = "in")
+```
+
+# 3. Age effect vs. relative node position
+- Are there systematic developmental changes happening along tracts?
+```{r relative position function}
+# relative position to end of tract: computed by difference between nodeID and 0 or 99. If nodeID < 50, then get abs diff to 0. If nodeID >= 50, then get abs diff to 99
+# also, create column called tract_segment to label which half of the tract the node is in (i.e. anterior vs posterior)
+
+compute_dist_to_cortex <- function(df) {
+  df <- df %>% mutate(dist_to_cortex = 
+           case_when(
+             nodeID < 50 & !(tractID %in% c("Anterior Thalamic Radiation", "Corticospinal Tract")) ~ abs(nodeID - 0),
+             nodeID >= 50 & !(tractID %in% c("Anterior Thalamic Radiation", "Corticospinal Tract")) ~ abs(nodeID - 99),
+             tractID %in% c("Anterior Thalamic Radiation", "Corticospinal Tract") ~ nodeID )) %>%
+  mutate(tract_segment = 
+           case_when(
+             nodeID < 50 & tractID %in% c("Cingulum Cingulate", "Inferior Fronto-occipital Fasciculus", "Inferior Longitudinal Fasciculus", "Superior Longitudinal Fasciculus") ~ "Anterior", 
+             nodeID >= 50 & tractID %in% c("Cingulum Cingulate", "Inferior Fronto-occipital Fasciculus", "Inferior Longitudinal Fasciculus", "Superior Longitudinal Fasciculus") ~ "Posterior", 
+             
+             nodeID < 50 & tractID %in% c("Arcuate Fasciculus", "Uncinate Fasciculus") ~ "Anterior_frontal", 
+             nodeID >= 50 & tractID %in% c("Arcuate Fasciculus", "Uncinate Fasciculus") ~ "Posterior_temporal",  
+             
+             nodeID < 50 & tractID %in% c("Forceps Minor", "Forceps Major") ~ "Right", 
+             nodeID >= 50 & tractID %in% c("Forceps Minor", "Forceps Major") ~ "Left",
+             
+             nodeID < 50 & tractID %in% c("Posterior Arcuate", "Vertical Occipital Fasciculus") ~ "Superior", 
+             nodeID >= 50 & tractID %in% c("Posterior Arcuate", "Vertical Occipital Fasciculus") ~ "Inferior",
+             
+             nodeID < 50 & tractID %in% c("Anterior Thalamic Radiation") ~ "Anterior", 
+             nodeID >= 50 & tractID %in% c("Anterior Thalamic Radiation") ~ "Posterior_thalamus",
+             
+             nodeID < 50 & tractID %in% c("Corticospinal Tract") ~ "Superior_motor", 
+             nodeID >= 50 & tractID %in% c("Corticospinal Tract") ~ "Inferior_brainstem",
+             
+           ))
+  return(df)
+
+}
+
+
+plot_dist_to_cortex <- function(tract, age_effect_df, age_effect_type, custom_color_seg1, custom_color_seg2) {
+  df <- age_effect_df %>% filter(tractID == tract) %>% arrange(tract_segment)
+   if(age_effect_type == "adj_rsq") { # delta adj rsq
+      # NA out color/fill aes if adj rsq = 0 or if p-value doesn't survive FDR correction (makes the color gray)
+      includes_zero <- which(df$s_age.delta.adj.rsq_signed==0 | df$s_age.p.value.fdr > 0.05)
+      
+     if(str_detect(tract, "Forceps")) {
+        
+       df$tract_segment[includes_zero] <- NA
+       seg1 <- "Left"
+       seg2 <- "Right"
+        
+       plot <- ggplot(data = df, aes(x = dist_to_cortex, y = s_age.delta.adj.rsq_signed, colour = tract_segment, fill = tract_segment, group = tract_segment)) +
+        geom_point(shape = 21, size=2, alpha = 0.7) + 
+         scale_colour_manual(values=c(custom_color_seg1, custom_color_seg2) |> `names<-`(c(seg1, seg2)), na.value = "grey50") + # allows for dynamic updating 
+        scale_fill_manual(values=c(custom_color_seg1, custom_color_seg2) |> `names<-`(c(seg1, seg2)), na.value = "grey50") + theme_classic() + 
+        theme(legend.position = "bottom",
+              axis.title.x = element_blank(),
+              axis.title.y = element_blank(),
+              plot.title = element_text(size=12, hjust=0.5)) + labs(title = tract) + labs(title = tract, colour = "") + guides(fill=FALSE)
+    
+       return(plot)
+      
+      } else {
+        
+       df$tract_segment[includes_zero] <- NA
+       seg1 <- unique(df$tract_segment)[which(!is.na(unique(df$tract_segment)))][1] 
+       seg2 <- unique(df$tract_segment)[which(!is.na(unique(df$tract_segment)))][2] 
+        
+       plot_lh <- df %>% filter(str_detect(df$tract_hemi, "Left")) %>%
+        ggplot(aes(x = dist_to_cortex, y = s_age.delta.adj.rsq_signed, group = tract_segment, colour = tract_segment, fill = tract_segment)) +
+        geom_point(shape = 21, size=2, alpha = 0.7) + 
+        scale_colour_manual(values=c(custom_color_seg1, custom_color_seg2) |> `names<-`(c(seg1, seg2)), na.value = "grey50") + # allows for dynamic updating of tractID value
+        scale_fill_manual(values=c(custom_color_seg1, custom_color_seg2) |> `names<-`(c(seg1, seg2)), na.value = "grey50") + theme_classic() + 
+        theme(legend.position = "bottom",
+              axis.title.x = element_blank(),
+            axis.title.y = element_blank(),
+            plot.title = element_text(size=12, hjust=0.5)) +  
+        labs(title = paste("Left", tract), colour = "") + guides(fill=FALSE)
+      
+      plot_rh <-  df %>% filter(str_detect(df$tract_hemi, "Right")) %>%
+        ggplot(aes(x = dist_to_cortex, y = s_age.delta.adj.rsq_signed, group = tract_segment, colour = tract_segment, fill = tract_segment)) +
+        geom_point(shape = 21, size=2, alpha = 0.7) + 
+        scale_colour_manual(values=c(custom_color_seg1, custom_color_seg2) |> `names<-`(c(seg1, seg2)), na.value = "grey50") + # allows for dynamic updating of tractID value
+        scale_fill_manual(values=c(custom_color_seg1, custom_color_seg2) |> `names<-`(c(seg1, seg2)), na.value = "grey50") + theme_classic() + 
+        theme(legend.position = "bottom",
+            axis.title.x = element_blank(),
+            axis.title.y = element_blank(),
+            plot.title = element_text(size=12, hjust=0.5)) + labs(title = paste("Right", tract), colour = "") + guides(fill=FALSE)
+      
+        return(list(plot_lh, plot_rh))
+        
+        
+      }
+    } else if (age_effect_type == "percent_change") { # percent change or normalized percent change
+      
+      # NA out hemi if median_percent_change = 0 or if lower/upper CI contains 0 (makes the color gray)
+      includes_zero <- which(df$lower <= 0 & df$upper >= 0)
+      
+ 
+      if(str_detect(tract, "Forceps")) {
+        df$tractID[includes_zero] <- NA
+        seg1 <- "Left"
+        seg2 <- "Right"
+        plot <- ggplot(data = df, aes(x = dist_to_cortex, y = median_percent_change, colour = tract_segment, fill = tract_segment, group = tract_segment)) +
+        geom_point(shape = 21, size=2, alpha = 0.7) + 
+        geom_errorbar(aes(ymin=lower, ymax=upper), width=1,
+              position=position_dodge(0.05), alpha = 0.8) + 
+        scale_colour_manual(values=c(custom_color_seg1, custom_color_seg2) |> `names<-`(c(seg1, seg2)), na.value = "grey50") + # allows for dynamic updating 
+        scale_fill_manual(values=c(custom_color_seg1, custom_color_seg2) |> `names<-`(c(seg1, seg2)), na.value = "grey50") + theme_classic() + 
+        theme(legend.position = "bottom",
+              axis.title.x = element_blank(),
+              axis.title.y = element_blank(),
+              plot.title = element_text(size=12, hjust=0.5)) + labs(title = tract, colour = "") + guides(fill=FALSE)
+        
+        return(plot)
+ 
+        } else {
+        seg1 <- unique(df$tract_segment)[1]
+        seg2 <- unique(df$tract_segment)[2]
+        df$tract_segment[includes_zero] <- NA
+        
+        plot_lh <- df %>% filter(str_detect(df$tract_hemi, "Left")) %>%
+          ggplot(aes(x = dist_to_cortex, y = median_percent_change, group = tract_segment, colour = tract_segment, fill = tract_segment)) +
+        geom_point(shape = 21, size=2, alpha = 0.7) + 
+        geom_errorbar(aes(ymin=lower, ymax=upper, colour = tract_segment), width=1,
+                 position=position_dodge(0.05), alpha = 0.8) + 
+        scale_colour_manual(values=c(custom_color_seg1, custom_color_seg2) |> `names<-`(c(seg1, seg2)), na.value = "grey50") + # allows for dynamic updating of tractID value
+        scale_fill_manual(values=c(custom_color_seg1, custom_color_seg2) |> `names<-`(c(seg1, seg2)), na.value = "grey50") + theme_classic() + 
+        theme(legend.position = "bottom",
+              axis.title.x = element_blank(),
+              axis.title.y = element_blank(),
+              plot.title = element_text(size=12, hjust=0.5)) + labs(title = paste("Left", tract), colour = "") + guides(fill=FALSE)
+        
+        plot_rh <- df %>% filter(str_detect(df$tract_hemi, "Right")) %>%
+          ggplot(aes(x = dist_to_cortex, y = median_percent_change, group = tract_segment, colour = tract_segment, fill = tract_segment)) +
+        geom_point(shape = 21, size=2, alpha = 0.7) + 
+        geom_errorbar(aes(ymin=lower, ymax=upper, colour = tract_segment), width=1,
+                 position=position_dodge(0.05), alpha = 0.8) + 
+        scale_colour_manual(values=c(custom_color_seg1, custom_color_seg2) |> `names<-`(c(seg1, seg2)), na.value = "grey50") + # allows for dynamic updating of tractID value
+        scale_fill_manual(values=c(custom_color_seg1, custom_color_seg2) |> `names<-`(c(seg1, seg2)), na.value = "grey50") + theme_classic() + 
+        theme(legend.position = "bottom",
+              axis.title.x = element_blank(),
+              axis.title.y = element_blank(),
+              plot.title = element_text(size=12, hjust=0.5)) + labs(title = paste("Right", tract), colour = "") + guides(fill=FALSE)
+        
+        return(list(plot_lh, plot_rh))
+      } 
+       
+    } else {
+      print("Provide valid age effect type")
+    }
+  
+}
+
+
+
+arrange_dist_to_cortex <- function(list_figures, age_effect_type) {
+  
+  ATR_plots <- ggarrange(list_figures$`Anterior Thalamic Radiation`[[1]], list_figures$`Anterior Thalamic Radiation`[[2]], nrow = 2, common.legend=TRUE, legend = "bottom")
+  
+  AP_plots <- ggarrange(list_figures$`Cingulum Cingulate`[[1]], 
+                           list_figures$`Inferior Fronto-occipital Fasciculus`[[1]], 
+                           list_figures$`Inferior Longitudinal Fasciculus`[[1]], 
+                           list_figures$`Superior Longitudinal Fasciculus`[[1]], 
+                           list_figures$`Cingulum Cingulate`[[2]], 
+                           list_figures$`Inferior Fronto-occipital Fasciculus`[[2]], 
+                           list_figures$`Inferior Longitudinal Fasciculus`[[2]], 
+                           list_figures$`Superior Longitudinal Fasciculus`[[2]], ncol=4, nrow = 2, common.legend=TRUE, legend = "bottom")
+  
+  AP_ATR_plots <- ggarrange(ATR_plots, AP_plots, ncol=2, widths = c(1,4)) 
+  AP_plots_final <- annotate_figure(AP_ATR_plots, top = text_grob("Anterior - Posterior", 
+                 color = "black", face = "bold", size = 12))
+  
+  
+  AP_frontotemp_plots <- ggarrange(list_figures$`Arcuate Fasciculus`[[1]], list_figures$`Uncinate Fasciculus`[[1]],
+                                   list_figures$`Arcuate Fasciculus`[[2]], list_figures$`Uncinate Fasciculus`[[2]], ncol=2, nrow = 2, common.legend=TRUE, legend = "bottom")
+  AP_frontotemp_plots_final <- annotate_figure(AP_frontotemp_plots, top = text_grob("Anterior - Posterior (Frontal - Temporal)", 
+                 color = "black", face = "bold", size = 12))
+  
+   
+  RL_plots <- ggarrange(list_figures$`Forceps Major`, list_figures$`Forceps Minor`, 
+                           ncol=2, nrow = 1, common.legend=TRUE, legend = "bottom")
+  RL_plots_final <- annotate_figure(RL_plots, top = text_grob("Right - Left", 
+                 color = "black", face = "bold", size = 12))
+  
+  CST_plots <- ggarrange(list_figures$`Corticospinal Tract`[[1]],list_figures$`Corticospinal Tract`[[2]], common.legend=TRUE, legend=c("bottom"), ncol=1, nrow = 2)
+  SI_plots <- ggarrange(list_figures$`Posterior Arcuate`[[1]], 
+                        list_figures$`Vertical Occipital Fasciculus`[[1]], 
+                        list_figures$`Posterior Arcuate`[[2]], 
+                        list_figures$`Vertical Occipital Fasciculus`[[2]], common.legend=TRUE, legend=c("bottom"), ncol=2, nrow = 2)
+  
+  SI_CST_plots <- ggarrange(CST_plots, SI_plots, widths = c(1, 2))
+  SI_plots_final <- annotate_figure(SI_CST_plots, top = text_grob("Superior - Inferior", 
+                 color = "black", face = "bold", size = 12))
+  
+  
+  tractprofiles_plot <- ggarrange(AP_plots_final, ggarrange(AP_frontotemp_plots_final, RL_plots_final, ncol = 2), SI_plots_final, nrow = 3)
+  
+  tractprofiles_plot_final <- annotate_figure(tractprofiles_plot, top = text_grob(age_effect_type, 
+               color = "black", face = "italic", size = 18))
+   return(tractprofiles_plot_final)
+}
+
+```
+
+```{r compute relative position to end of tract}
+gam_age_fa <- compute_dist_to_cortex(gam_age_fa)  
+gam_age_md <- compute_dist_to_cortex(gam_age_md)   
+ci_pc_fa <- compute_dist_to_cortex(ci_pc_fa)   
+ci_pc_md <- compute_dist_to_cortex(ci_pc_md)   
+ci_norm_pc_fa <- compute_dist_to_cortex(ci_norm_pc_fa)   
+ci_norm_pc_md <- compute_dist_to_cortex(ci_norm_pc_md)   
+```
+
+```{r plot relative position fa adj rsq, fig.height = 20, fig.width = 16}
+ 
+custom_color_seg1 = "#4CC3FFFF"
+custom_color_seg2 = "#FF9932FF"
+ 
+rsq_fa_dist_plots <- lapply(unique(gam_age_fa$tractID), plot_dist_to_cortex, age_effect_df = gam_age_fa, age_effect_type = "adj_rsq", custom_color_seg1, custom_color_seg2)
+names(rsq_fa_dist_plots) <- unique(gam_age_fa$tractID)
+                                   
+# FA delta adj rsq
+x.grob <- textGrob("Distance to Cortex", 
+                     gp=gpar(col="black", fontsize=12))
+y.grob <- textGrob("Fractional Anisotropy Delta Adjusted Rsq", 
+                   gp=gpar(col="black", fontsize=12), rot=90)
+space.grob <- textGrob(" ", 
+                     gp=gpar(col="black", fontsize=28), rot=90)
+ 
+grid.arrange(arrangeGrob(arrange_dist_to_cortex(rsq_fa_dist_plots, "FA Delta Adjusted Rsq"), left = y.grob, bottom = x.grob, right = space.grob))
+
+#ggsave("/Users/audluo/PennLINC/luowm_local/output/tract_profiles_testing/HBN/dist_to_cort_rsq_fa.png", grid.arrange(arrangeGrob(arrange_dist_to_cortex(rsq_fa_dist_plots, "FA Delta Adjusted Rsq"), left = y.grob, bottom = x.grob, right = space.grob)), width = 16, height = 20, units = "in")
+ 
+```
+
+```{r plot relative position fa pc, fig.height = 20, fig.width = 16}
+
+pc_fa_dist_plots <- lapply(unique(ci_pc_fa$tractID), plot_dist_to_cortex, age_effect_df = ci_pc_fa, age_effect_type = "percent_change", custom_color_seg1, custom_color_seg2)
+names(pc_fa_dist_plots) <- unique(ci_pc_fa$tractID)
+
+# FA Percent Change  
+y.grob <- textGrob("Fractional Anisotropy Percent Change", 
+                   gp=gpar(col="black", fontsize=12), rot=90)
+arrange_dist_to_cortex(pc_fa_dist_plots, "FA Percent Change")
+#ggsave("/Users/audluo/PennLINC/luowm_local/output/tract_profiles_testing/HBN/dist_to_cort_pc_fa.png", grid.arrange(arrangeGrob(arrange_dist_to_cortex(pc_fa_dist_plots, "FA Percent Change"), left = y.grob, bottom = x.grob, right = space.grob)), width = 16, height = 20, units = "in")
+
+```
+
+```{r plot relative position fa norm pc, fig.height = 20, fig.width = 16}
+norm_pc_fa_dist_plots <- lapply(unique(ci_norm_pc_fa$tractID), plot_dist_to_cortex, age_effect_df = ci_norm_pc_fa, age_effect_type = "percent_change", custom_color_seg1, custom_color_seg2)
+names(norm_pc_fa_dist_plots) <- unique(ci_norm_pc_fa$tractID)
+
+# FA Normalized Percent Change 
+y.grob <- textGrob("Fractional Anisotropy Normalized Percent Change", 
+                   gp=gpar(col="black", fontsize=12), rot=90)
+arrange_dist_to_cortex(norm_pc_fa_dist_plots, "FA Normalized Percent Change")
+
+#ggsave("/Users/audluo/PennLINC/luowm_local/output/tract_profiles_testing/HBN/dist_to_cort_norm_pc_fa.png", grid.arrange(arrangeGrob(arrange_dist_to_cortex(norm_pc_fa_dist_plots, "FA Normalized Percent Change"), left = y.grob, bottom = x.grob, right = space.grob)), width = 16, height = 20, units = "in")
+
+```
+
+- We are seeing that anterior portions of CC, IFO, and ILF have smaller age effects than posterior portions. Could be due to the fact that I didn't exclude Staten Island from HBN, or could have to do with psychopathology... It's on my list to exclude SI and re-calculate age effects for HBN. 
+```{r plot relative position md adj rsq, fig.height = 20, fig.width = 16}
+rsq_md_dist_plots <- lapply(unique(gam_age_md$tractID), plot_dist_to_cortex, age_effect_df = gam_age_md, age_effect_type = "adj_rsq", custom_color_seg1, custom_color_seg2)
+names(rsq_md_dist_plots) <- unique(gam_age_md$tractID)
+
+# MD delta adj rsq
+y.grob <- textGrob("Mean Diffusivity Delta Adjusted Rsq", 
+                   gp=gpar(col="black", fontsize=12), rot=90)
+arrange_dist_to_cortex(rsq_md_dist_plots, "MD Delta Adjusted Rsq")
+
+#ggsave("/Users/audluo/PennLINC/luowm_local/output/tract_profiles_testing/HBN/dist_to_cort_rsq_md.png", grid.arrange(arrangeGrob(arrange_dist_to_cortex(rsq_md_dist_plots, "MD Delta Adjusted Rsq"), left = y.grob, bottom = x.grob, right = space.grob)), width = 16, height = 20, units = "in")
+
+```
+
+```{r plot relative position md pc, fig.height = 20, fig.width = 16}
+pc_md_dist_plots <- lapply(unique(ci_pc_md$tractID), plot_dist_to_cortex, age_effect_df = ci_pc_md, age_effect_type = "percent_change", custom_color_seg1, custom_color_seg2)
+names(pc_md_dist_plots) <- unique(ci_pc_md$tractID)
+
+# MD Percent Change  
+y.grob <- textGrob("Mean Diffusivity Percent Change", 
+                   gp=gpar(col="black", fontsize=12), rot=90)
+arrange_dist_to_cortex(pc_md_dist_plots, "MD Percent Change")
+
+#ggsave("/Users/audluo/PennLINC/luowm_local/output/tract_profiles_testing/HBN/dist_to_cort_pc_md.png", grid.arrange(arrangeGrob(arrange_dist_to_cortex(pc_md_dist_plots, "MD Percent Change"), left = y.grob, bottom = x.grob, right = space.grob)), width = 16, height = 20, units = "in")
+
+```
+
+```{r plot relative position md norm pc, fig.height = 20, fig.width = 16}
+norm_pc_md_dist_plots <- lapply(unique(ci_norm_pc_md$tractID), plot_dist_to_cortex, age_effect_df = ci_norm_pc_md, age_effect_type = "percent_change", custom_color_seg1, custom_color_seg2)
+names(norm_pc_md_dist_plots) <- unique(ci_norm_pc_md$tractID)
+ 
+# MD Normalized Percent Change 
+y.grob <- textGrob("Mean Diffusivity Normalized Percent Change", 
+                   gp=gpar(col="black", fontsize=12), rot=90)
+arrange_dist_to_cortex(norm_pc_md_dist_plots, "MD Normalized Percent Change")
+
+#ggsave("/Users/audluo/PennLINC/luowm_local/output/tract_profiles_testing/HBN/dist_to_cort_norm_pc_md.png", grid.arrange(arrangeGrob(arrange_dist_to_cortex(norm_pc_md_dist_plots, "MD Normalized Percent Change"), left = y.grob, bottom = x.grob, right = space.grob)), width = 16, height = 20, units = "in")
+```
+
+Correlations between MD age effect and relative position to tract end
+(Spearman's, since relative position is directly related to nodeID)
+```{r correlations between age effect and position}
+
+# make a dataframe that has column tract, correlation, and p-value
+correlate_age_effect <- function(tract, age_effect_df, age_effect_type, hemi_avg = FALSE) {
+  df <- age_effect_df %>% filter(tractID == tract)
+  if (age_effect_type == "adj_rsq") {
+    age_effect_var <- "s_age.delta.adj.rsq_signed"
+  } else {
+    age_effect_var <- "median_percent_change"
+  }
+  if (hemi_avg == TRUE & !str_detect(tract, "Forceps")) {
+  
+    df_avg <- df %>% group_by(nodeID) %>% summarise(mean=mean(get(age_effect_var)))
+    names(df_avg) <- c("nodeID", age_effect_var)
+   
+    df <- right_join(df[c(1:100), c("tractID", "nodeID", "main_orientation", "dist_to_cortex", "tract_segment")], df_avg, by = "nodeID")
+    
+  }
+  
+ 
+  if(age_effect_type == "adj_rsq") {
+    cor_dist_cortex <- cor.test(df$dist_to_cortex, df$s_age.delta.adj.rsq_signed, method = "spearman")$estimate
+    pval_dist_cortex <- cor.test(df$dist_to_cortex, df$s_age.delta.adj.rsq_signed, method = "spearman")$p.value
+    cor_dist_along_tract <- cor.test(df$nodeID, df$s_age.delta.adj.rsq_signed, method = "spearman")$estimate
+    pval_dist_along_tract <- cor.test(df$nodeID, df$s_age.delta.adj.rsq_signed, method = "spearman")$p.value
+ 
+  } else if(age_effect_type == "percent_change") {
+    cor_dist_cortex <- cor.test(df$dist_to_cortex, df$median_percent_change, method = "spearman")$estimate
+    pval_dist_cortex <- cor.test(df$dist_to_cortex, df$median_percent_change, method = "spearman")$p.value
+    cor_dist_along_tract <- cor.test(df$nodeID, df$median_percent_change, method = "spearman")$estimate
+    pval_dist_along_tract <- cor.test(df$nodeID, df$median_percent_change, method = "spearman")$p.value
+  } else {
+    print("Provide valid age effect type")
+  }
+  cor_df <- data.frame(tract, cor_dist_cortex, pval_dist_cortex, cor_dist_along_tract, pval_dist_along_tract)
+  rownames(cor_df) <- NULL
+  
+  cor_df <- cor_df %>% mutate(pval_dist_cortex_sig = ifelse(pval_dist_cortex < 0.05, 1, 0)) %>%
+    mutate(pval_dist_along_tract_sig = ifelse(pval_dist_along_tract < 0.05, 1, 0))
+  cor_df <- cor_df %>% select(tract, cor_dist_cortex, pval_dist_cortex, pval_dist_cortex_sig, cor_dist_along_tract, pval_dist_along_tract, pval_dist_along_tract_sig)
+    
+  
+  return(cor_df)
+}
+ 
+dist_age_effect_fdr <- function(cor_df) {
+  
+  cor_df$pval_dist_cortex_fdr <- p.adjust(cor_df$pval_dist_cortex, method=c("fdr"))
+  cor_df$pval_dist_along_tract_fdr <- p.adjust(cor_df$pval_dist_along_tract, method=c("fdr"))
+  cor_df <- cor_df %>% mutate(pval_dist_cortex_sig = ifelse(pval_dist_cortex_fdr < 0.05, 1, 0)) %>%
+    mutate(pval_dist_along_tract_sig = ifelse(pval_dist_along_tract_fdr < 0.05, 1, 0))
+  cor_df <- cor_df %>% select(tract, cor_dist_cortex, pval_dist_cortex, pval_dist_cortex_fdr, pval_dist_cortex_sig, cor_dist_along_tract, pval_dist_along_tract, pval_dist_along_tract_fdr, pval_dist_along_tract_sig)
+  
+  return(cor_df)
+  
+}
+
+wrapper_correlate_age_effect <- function(age_effect_df, age_effect_type, tracts_exclude, hemi_avg=FALSE) {
+  cor_dist <- lapply(unique(age_effect_df$tractID), correlate_age_effect, age_effect_df = age_effect_df, age_effect_type = age_effect_type, hemi_avg)
+  cor_dist <- bind_rows(cor_dist)
+  cor_dist <- dist_age_effect_fdr(cor_dist)
+  mean_cor  <- cor_dist %>% filter(!tract %in% tracts_exclude) %>% 
+                                                            summarise(mean_cor_dist_cortex = mean(cor_dist_cortex), 
+                                                            mean_cor_dist_along_tract = mean(cor_dist_along_tract))
+  return(list(cor_dist, mean_cor))
+}
+
+cor_dist_adj_rsq_fa <- wrapper_correlate_age_effect(gam_age_fa, age_effect_type = "adj_rsq", tracts_exclude = c("Anterior Thalamic Radiation", "Corticospinal Tract"))
+cor_dist_adj_rsq_md <- wrapper_correlate_age_effect(gam_age_md, age_effect_type = "adj_rsq", tracts_exclude = c("Anterior Thalamic Radiation", "Corticospinal Tract"))
+cor_dist_pc_fa <- wrapper_correlate_age_effect(ci_pc_fa, age_effect_type = "percent_change", tracts_exclude = c("Anterior Thalamic Radiation", "Corticospinal Tract"))
+cor_dist_pc_md <- wrapper_correlate_age_effect(ci_pc_md, age_effect_type = "percent_change", tracts_exclude = c("Anterior Thalamic Radiation", "Corticospinal Tract"))
+cor_dist_norm_pc_fa <- wrapper_correlate_age_effect(ci_norm_pc_fa, age_effect_type = "percent_change", tracts_exclude = c("Anterior Thalamic Radiation", "Corticospinal Tract"))
+cor_dist_norm_pc_md <- wrapper_correlate_age_effect(ci_norm_pc_md, age_effect_type = "percent_change", tracts_exclude = c("Anterior Thalamic Radiation", "Corticospinal Tract"))
+ 
+
+kable(cor_dist_adj_rsq_md[[1]][,c(1:3)], caption="Correlation between Age Effect (Delta Adjusted Rsq) and Position Along Tract for MD", align="ccc")  %>%
+  kable_styling(font_size = 20, bootstrap_options = "hover")
+ 
+```
+
+Mean correlation across cortico-cortical tracts with all nodes and after excluding nodes from each end:
+```{r correlations between age effect and distance exclude nodes}
+
+# make a dataframe that has column tract, correlation, and p-value
+correlate_age_effect_exclude <- function(tract, age_effect_df, age_effect_type, nodes_exclude) {
+  df <- age_effect_df %>% filter(tractID == tract)
+  to_exclude_lowest <- seq(nodes_exclude-nodes_exclude, nodes_exclude-1, 1)
+  to_exclude_highest <- seq(100-nodes_exclude, 100-nodes_exclude+nodes_exclude-1, 1)
+  df <- df %>% filter(!(nodeID %in% to_exclude_lowest | nodeID %in% to_exclude_highest))
+ 
+  if(age_effect_type == "adj_rsq") {
+    cor_dist_cortex <- cor.test(df$dist_to_cortex, df$s_age.delta.adj.rsq_signed, method = "spearman")$estimate
+    pval_dist_cortex <- cor.test(df$dist_to_cortex, df$s_age.delta.adj.rsq_signed, method = "spearman")$p.value
+    cor_dist_along_tract <- cor.test(df$nodeID, df$s_age.delta.adj.rsq_signed, method = "spearman")$estimate
+    pval_dist_along_tract <- cor.test(df$nodeID, df$s_age.delta.adj.rsq_signed, method = "spearman")$p.value
+    
+  } else if(age_effect_type == "percent_change") {
+    cor_dist_cortex <- cor.test(df$dist_to_cortex, df$median_percent_change, method = "spearman")$estimate
+    pval_dist_cortex <- cor.test(df$dist_to_cortex, df$median_percent_change, method = "spearman")$p.value
+    cor_dist_along_tract <- cor.test(df$nodeID, df$median_percent_change, method = "spearman")$estimate
+    pval_dist_along_tract <- cor.test(df$nodeID, df$median_percent_change, method = "spearman")$p.value
+  } else {
+    print("Provide valid age effect type")
+  }
+  cor_df <- data.frame(tract, cor_dist_cortex, pval_dist_cortex, cor_dist_along_tract, pval_dist_along_tract)
+  rownames(cor_df) <- NULL
+  
+  cor_df <- cor_df %>% mutate(pval_dist_cortex_sig = ifelse(pval_dist_cortex < 0.05, 1, 0)) %>%
+    mutate(pval_dist_along_tract_sig = ifelse(pval_dist_along_tract < 0.05, 1, 0))
+  cor_df <- cor_df %>% select(tract, cor_dist_cortex, pval_dist_cortex, pval_dist_cortex_sig, cor_dist_along_tract, pval_dist_along_tract, pval_dist_along_tract_sig)
+    
+  
+  return(cor_df)
+}
+ 
+wrapper_correlate_age_effect_excl <- function(age_effect_df, age_effect_type, tracts_exclude, nodes_exclude) {
+  cor_dist <- lapply(unique(age_effect_df$tractID), correlate_age_effect_exclude, age_effect_df = age_effect_df, age_effect_type = age_effect_type, nodes_exclude = nodes_exclude)
+  cor_dist <- bind_rows(cor_dist)
+  cor_dist <- dist_age_effect_fdr(cor_dist)
+  mean_cor  <- cor_dist %>% filter(!tract %in% tracts_exclude) %>% 
+                                                            summarise(mean_cor_dist_cortex = mean(cor_dist_cortex), 
+                                                            mean_cor_dist_along_tract = mean(cor_dist_along_tract))
+  return(list(cor_dist, mean_cor))
+}
+
+cor_dist_adj_rsq_excl_fa <- wrapper_correlate_age_effect_excl(gam_age_fa, age_effect_type = "adj_rsq", tracts_exclude = c("Anterior Thalamic Radiation", "Corticospinal Tract"), nodes_exclude = 10)
+cor_dist_adj_rsq_excl_md <- wrapper_correlate_age_effect_excl(gam_age_md, age_effect_type = "adj_rsq", tracts_exclude = c("Anterior Thalamic Radiation", "Corticospinal Tract"), nodes_exclude = 10)
+cor_dist_pc_excl_fa <- wrapper_correlate_age_effect_excl(ci_pc_fa, age_effect_type = "percent_change", tracts_exclude = c("Anterior Thalamic Radiation", "Corticospinal Tract"), nodes_exclude = 10)
+cor_dist_pc_excl_md <- wrapper_correlate_age_effect_excl(ci_pc_md, age_effect_type = "percent_change", tracts_exclude = c("Anterior Thalamic Radiation", "Corticospinal Tract"), nodes_exclude = 10)
+cor_dist_norm_pc_excl_fa <- wrapper_correlate_age_effect_excl(ci_norm_pc_fa, age_effect_type = "percent_change", tracts_exclude = c("Anterior Thalamic Radiation", "Corticospinal Tract"), nodes_exclude = 10)
+cor_dist_norm_pc_excl_md <- wrapper_correlate_age_effect_excl(ci_norm_pc_md, age_effect_type = "percent_change", tracts_exclude = c("Anterior Thalamic Radiation", "Corticospinal Tract"), nodes_exclude = 10)
+ 
+cor_dist_adj_rsq_excl20_fa <- wrapper_correlate_age_effect_excl(gam_age_fa, age_effect_type = "adj_rsq", tracts_exclude = c("Anterior Thalamic Radiation", "Corticospinal Tract"), nodes_exclude = 20)
+cor_dist_adj_rsq_excl20_md <- wrapper_correlate_age_effect_excl(gam_age_md, age_effect_type = "adj_rsq", tracts_exclude = c("Anterior Thalamic Radiation", "Corticospinal Tract"), nodes_exclude = 20)
+cor_dist_pc_excl20_fa <- wrapper_correlate_age_effect_excl(ci_pc_fa, age_effect_type = "percent_change", tracts_exclude = c("Anterior Thalamic Radiation", "Corticospinal Tract"), nodes_exclude = 20)
+cor_dist_pc_excl20_md <- wrapper_correlate_age_effect_excl(ci_pc_md, age_effect_type = "percent_change", tracts_exclude = c("Anterior Thalamic Radiation", "Corticospinal Tract"), nodes_exclude = 20)
+cor_dist_norm_pc_excl20_fa <- wrapper_correlate_age_effect_excl(ci_norm_pc_fa, age_effect_type = "percent_change", tracts_exclude = c("Anterior Thalamic Radiation", "Corticospinal Tract"), nodes_exclude = 20)
+cor_dist_norm_pc_excl20_md <- wrapper_correlate_age_effect_excl(ci_norm_pc_md, age_effect_type = "percent_change", tracts_exclude = c("Anterior Thalamic Radiation", "Corticospinal Tract"), nodes_exclude = 20)
+
+
+# make a table to compare correlations
+mean_cor_compare <- data.frame(rbind(c(cor_dist_adj_rsq_md[[2]][1,1], cor_dist_adj_rsq_excl_md[[2]][1,1], cor_dist_adj_rsq_excl20_md[[2]][1,1]), c(cor_dist_pc_md[[2]][1,1], cor_dist_pc_excl_md[[2]][1,1], cor_dist_pc_excl20_md[[2]][1,1]), c(cor_dist_norm_pc_md[[2]][1,1], cor_dist_norm_pc_excl_md[[2]][1,1], cor_dist_norm_pc_excl20_md[[2]][1,1]))) %>% setNames(c("All Nodes", "Exclude 10 nodes from each end", "Exclude 20 nodes from each end"))
+rownames(mean_cor_compare) <-  c("Delta Adj Rsq", "Posterior Percent Change", "Normalized Posterior Percent Change")
+
+
+mean_cor_compare$notes <- c("CC, IFO, ILF, UNC, forceps major drop in correlation (IFO flips direction); but SLF, ARC, forceps minor, pARC and VOF are the same or better", "forceps maj reverses direction, IFO decreases; but forceps minor, CC, ARC, ILF, pARC, SLF, UNC, VOF increase in corr or stays approx the same ", "")
+ 
+kable(mean_cor_compare, caption="Mean Correlation of Age Effect and Distance to Cortex")  %>%
+  kable_styling(font_size = 20)
+```
+
+Mean correlations that were computed after averaging age effects of left and right tracts:
+```{r correlations between age effect and distance average hemispheres}
+ 
+cor_dist_adj_rsq_fa_hemi <- wrapper_correlate_age_effect(gam_age_fa, age_effect_type = "adj_rsq", tracts_exclude = c("Anterior Thalamic Radiation", "Corticospinal Tract"), hemi_avg = TRUE)
+cor_dist_adj_rsq_md_hemi <- wrapper_correlate_age_effect(gam_age_md, age_effect_type = "adj_rsq", tracts_exclude = c("Anterior Thalamic Radiation", "Corticospinal Tract"), hemi_avg = TRUE)
+cor_dist_pc_fa_hemi <- wrapper_correlate_age_effect(ci_pc_fa, age_effect_type = "percent_change", tracts_exclude = c("Anterior Thalamic Radiation", "Corticospinal Tract"), hemi_avg = TRUE)
+cor_dist_pc_md_hemi <- wrapper_correlate_age_effect(ci_pc_md, age_effect_type = "percent_change", tracts_exclude = c("Anterior Thalamic Radiation", "Corticospinal Tract"), hemi_avg = TRUE)
+cor_dist_norm_pc_fa_hemi <- wrapper_correlate_age_effect(ci_norm_pc_fa, age_effect_type = "percent_change", tracts_exclude = c("Anterior Thalamic Radiation", "Corticospinal Tract"), hemi_avg = TRUE)
+cor_dist_norm_pc_md_hemi <- wrapper_correlate_age_effect(ci_norm_pc_md, age_effect_type = "percent_change", tracts_exclude = c("Anterior Thalamic Radiation", "Corticospinal Tract"), hemi_avg = TRUE)
+ 
+ 
+# make a table to compare correlations
+hemi_cor_compare <- data.frame(rbind(c(cor_dist_adj_rsq_md[[2]][1,1], cor_dist_adj_rsq_md_hemi[[2]][1,1]), c(cor_dist_pc_md[[2]][1,1], cor_dist_pc_md_hemi[[2]][1,1]), c(cor_dist_norm_pc_md[[2]][1,1], cor_dist_norm_pc_md_hemi[[2]][1,1]))) %>% setNames(c("LH/RH age effects as separate datapoints", "Averaged LH/RH age effects"))
+rownames(hemi_cor_compare) <-  c("Delta Adj Rsq", "Posterior Percent Change", "Normalized Posterior Percent Change")
+
+kable(hemi_cor_compare, caption="Mean Correlation of Age Effect and Relative Positive to Tract End - Average Both Hemispheres", align = "cc")  %>%
+  kable_styling(font_size = 20, bootstrap_options = "hover")
+```
+
+
+# 4. Developmental trajectories along each tract
+- Plot trajectory for each tract and color by node
+- Used nodewise GAMs and estimated zero-centered smooths using `smooth_estimates`
+(I don't know how to use `smooth_estimates` for tractwise GAMs - can't figure out how to navigate multiple smooths and a tensor product lol)
+```{r nodewise GAMs zero centered smooths, fig.height = 5, fig.width=15}
+
+cohortfile <- cohortfile %>% select(subjectID, age, sex, mean_fd)
+gam_df <- merge(tract_profiles, cohortfile, by="subjectID")
+gam_df <- gam_df %>% mutate(tract_node = paste0(tract_hemi, "_", nodeID))
+gam_df$sex <- as.factor(gam_df$sex)
+ 
+# create df with column tract_node and another column (dti_metric) that contains the values (nrow = N * n_tract_nodes)
+# fa
+nodewise_gam_fa <- gam_df %>% select(dti_fa, age, sex, mean_fd, tract_node)
+nodewise_smoothfits_fa <- nodewise_gam_fa %>% group_by(tract_node) %>% 
+  do(fit = smooth_estimates(gam(dti_fa ~ s(age,k=3,fx=F),data=.))) %>% unnest(fit)
+nodewise_smoothfits_fa <- nodewise_smoothfits_fa %>% mutate(tractID = gsub("Left |Right ", "", gsub("_", " ", gsub("_[0-9]+", "", tract_node)))) %>% 
+  mutate(nodeID = str_extract(tract_node, "[0-9]+")) %>%
+  mutate(hemi = str_extract(tract_node, "Left|Right"))
+
+orientations <- tract_profiles[,c("tractID", "main_orientation")]
+orientations <- orientations[!duplicated(orientations),]
+nodewise_smoothfits_fa <- merge(nodewise_smoothfits_fa,  orientations, by = "tractID")
+                                                                
+# md
+nodewise_gam_md <- gam_df %>% select(dti_md, age, sex, mean_fd, tract_node)
+nodewise_smoothfits_md <- nodewise_gam_md %>% group_by(tract_node) %>% 
+  do(fit = smooth_estimates(gam(dti_md ~ s(age,k=3,fx=F),data=.))) %>% unnest(fit)
+nodewise_smoothfits_md <- nodewise_smoothfits_md %>% mutate(tractID = gsub("Left |Right ", "", gsub("_", " ", gsub("_[0-9]+", "", tract_node)))) %>% 
+  mutate(nodeID = str_extract(tract_node, "[0-9]+")) %>%
+   mutate(hemi = str_extract(tract_node, "Left|Right"))
+nodewise_smoothfits_md <- merge(nodewise_smoothfits_md,  orientations, by = "tractID")
+
+ 
+  
+```
+
+```{r function plot zero centered dev traj tract ends}
+
+plot_tract_ends_zeroed <- function(orientation, df, scalar, mycolors, ylim1, ylim2) {
+  if (orientation == "CP") {
+    title1 <- "Peripheral"
+    title2 <- "Central"
+    plot1 <- df %>% filter(tractID != "Anterior Thalamic Radiation") %>% 
+      filter(tractID != "Corticospinal Tract") %>% 
+      filter(nodeID < 10 | nodeID > 90) %>% group_by(tract_node) %>%
+      ggplot(aes(x = age, y = est, group = tract_node)) +
+        geom_line(aes(colour = tractID), size = 0.8, alpha = 0.7) + 
+        theme_classic() +                         
+        theme(text=element_text(size=12),
+              legend.position = "right",
+              plot.title = element_text(hjust=0.5)) + 
+        scale_colour_manual(values = mycolors) +
+        labs(y = paste("Fitted", scalar), x = "Age", title=title1) + ylim(ylim1, ylim2)
+    
+     plot2 <- df %>% filter(tractID != "Anterior Thalamic Radiation") %>% 
+      filter(tractID != "Corticospinal Tract") %>% 
+      filter(nodeID > 39 & nodeID < 60) %>% group_by(tract_node) %>%
+      ggplot(aes(x = age, y = est, group = tract_node)) +
+        geom_line(aes(colour = tractID), size = 0.8, alpha = 0.7) + 
+        theme_classic() +                         
+        theme(text=element_text(size=12),
+              legend.position = "right",
+              plot.title = element_text(hjust=0.5)) + 
+        scale_colour_manual(values = mycolors) +
+        labs(y = paste("Fitted", scalar), x = "Age", title=title2) + ylim(ylim1, ylim2)
+    
+  } else {
+    if (orientation == "AP") {
+      title1 <- "Anterior"
+      title2 <- "Posterior"
+    } else if (orientation == "AP_frontal_temporal") {
+      title1 <- "Frontal"
+      title2 <- "Temporal"
+    } else if (orientation == "SI") {
+      title1 <- "Superior"
+      title2 <- "Inferior"
+    } else {
+      print("Provide valid orientation (AP, AP_frontal_temporal, SI, CP)")
+    }
+    plot1 <- df %>% filter(main_orientation == orientation) %>% 
+      filter(tractID != "Anterior Thalamic Radiation") %>%
+      filter(tractID != "Corticospinal Tract") %>%
+      filter(nodeID < 10) %>% group_by(tract_node) %>%
+      ggplot( aes(x = age, y = est, group = tract_node)) +
+      geom_line(aes(colour = tractID), size = 0.8, alpha = 0.7) + theme_classic() +                        
+      theme(text=element_text(size=12),
+            legend.position = "right",
+          plot.title = element_text(hjust=0.5)) + 
+      scale_colour_manual(values = mycolors) +
+      labs(y = paste("Fitted", scalar), x = "Age", title=title1) + ylim(ylim1, ylim2)
+    
+    plot2 <- df %>% filter(main_orientation == orientation) %>% 
+      filter(tractID != "Anterior Thalamic Radiation") %>%
+      filter(tractID != "Corticospinal Tract") %>%
+      filter(nodeID > 89) %>% group_by(tract_node) %>%
+      ggplot( aes(x = age, y = est, group = tract_node)) +
+      geom_line(aes(colour = tractID), size = 0.8, alpha = 0.7) + theme_classic() +                        
+      theme(text=element_text(size=12),
+            legend.position = "right",
+          plot.title = element_text(hjust=0.5)) + 
+      scale_colour_manual(values = mycolors) +
+      labs(y = paste("Fitted", scalar), x = "Age", title=title2) + ylim(ylim1, ylim2)
+  }
+  return(ggarrange(plot1, plot2, ncol=2, common.legend=T, legend="right"))
+  
+  
+}
+
+ 
+plot_nodes_zeroed_hemi <- function(tract, df, scalar, ylim1, ylim2) {
+  
+  df$nodeID <- as.numeric(df$nodeID)
+  
+  if(str_detect(tract, "Forceps")) {
+      plot <- df %>% filter(tractID == tract) %>% 
+      group_by(tract_node) %>%
+      ggplot(aes(x = age, y = est, group = tract_node)) +
+        geom_line(aes(colour = nodeID), size = 0.8, alpha = 0.6) + 
+        theme_classic() +                         
+        theme(text=element_text(size=12),
+              legend.position = "none",
+              plot.title = element_text(hjust=0.5)) + 
+        paletteer::scale_colour_paletteer_c("grDevices::RdYlBu", direction=-1) +
+        labs(x="", y="", title=tract) + ylim(ylim1, ylim2)
+    
+       return(plot)
+  } else {
+    plot1 <- df %>% filter(tractID == tract) %>% 
+      filter(hemi == "Left") %>%
+      group_by(tract_node) %>%
+      ggplot(aes(x = age, y = est, group = tract_node)) +
+        geom_line(aes(colour = nodeID), size = 0.8, alpha = 0.6) + 
+        theme_classic() +                         
+        theme(text=element_text(size=12),
+              legend.position = "none",
+              plot.title = element_text(hjust=0.5)) + 
+        paletteer::scale_colour_paletteer_c("grDevices::RdYlBu", direction=-1) +
+        labs(x="", y="", title=paste("Left", tract)) + ylim(ylim1, ylim2)
+    
+    plot2 <- df %>% filter(tractID == tract) %>% 
+      filter(hemi == "Right") %>%
+      group_by(tract_node) %>%
+      ggplot(aes(x = age, y = est, group = tract_node)) +
+        geom_line(aes(colour = nodeID), size = 0.8, alpha = 0.6) + 
+        theme_classic() +                         
+        theme(text=element_text(size=12),
+              legend.position = "none",
+              plot.title = element_text(hjust=0.5)) + 
+        paletteer::scale_colour_paletteer_c("grDevices::RdYlBu", direction=-1) +
+        labs(x="", y="", title=paste("Right", tract)) + ylim(ylim1, ylim2)
+    return(plot_grid(plot1, plot2, nrow=2))
+  }
+  
+}
+
+
+plot_nodes_zeroed <- function(tract, df, scalar, ylim1, ylim2) {
+  
+  df$nodeID <- as.numeric(df$nodeID)
+
+  plot <- df %>% filter(tractID == tract) %>% 
+  group_by(tract_node) %>%
+  ggplot(aes(x = age, y = est, group = tract_node)) +
+    geom_line(aes(colour = nodeID), size = 0.8, alpha = 0.6) + 
+    theme_classic() +                         
+    theme(text=element_text(size=12),
+          legend.position = "none",
+          plot.title = element_text(hjust=0.5)) + 
+    paletteer::scale_colour_paletteer_c("grDevices::RdYlBu", direction=-1) +
+    labs(x="", y="", title=tract) + ylim(ylim1, ylim2)
+
+   return(plot)
+}
+ 
+
+```
+
+Seeing more dissociable trajectories for FA in HBN compared to HCP-D - kind of interesting. 
+```{r plot fa nodewise dev traj zero centered all, fig.height=24, fig.width=22}
+ 
+devtraj_zeroed_fa <- lapply(unique(nodewise_smoothfits_fa$tractID), plot_nodes_zeroed, df = nodewise_smoothfits_fa, scalar = "FA", -0.1, 0.1) 
+names(devtraj_zeroed_fa) <- unique(nodewise_smoothfits_fa$tractID)
+ 
+devtraj_zeroed_fa_plots <- arrange_by_orientation(devtraj_zeroed_fa, "Fractional Anisotropy")
+ 
+
+x.grob <- textGrob("Age (years)", 
+                     gp=gpar(col="black", fontsize=12))
+y.grob <- textGrob("Zero-centered FA", 
+                   gp=gpar(col="black", fontsize=12), rot=90)
+
+space.grob <- textGrob(" ", 
+                     gp=gpar(col="black", fontsize=12), rot=90)
+
+grid.arrange(arrangeGrob(devtraj_zeroed_fa_plots, left = y.grob, bottom = x.grob, right = space.grob))
+
+#ggsave("/Users/audluo/PennLINC/luowm_local/output/tract_profiles_testing/HBN/devtraj_zeroed_fa.png", grid.arrange(arrangeGrob(devtraj_zeroed_fa_plots, left = y.grob, bottom = x.grob, right = space.grob)), width = 22, height = 24, units = "in")
+```
+
+```{r plot md nodewise dev traj zero centered, fig.height=10, fig.width=25, echo = FALSE, include = FALSE}
+# Define the number of colors you want
+nb.cols <- 7
+mycolors <- colorRampPalette(paletteer::paletteer_d("vapoRwave::floralShoppe"))(nb.cols)
+AP_tract_ends_centered_md <- plot_tract_ends_zeroed("AP", nodewise_smoothfits_md, "MD", mycolors, -0.00005, 0.00006) 
+
+nb.cols <- 5
+mycolors <- colorRampPalette(paletteer::paletteer_d("vapoRwave::floralShoppe"))(nb.cols)
+AP_frontotemp_tract_ends_centered_md <- plot_tract_ends_zeroed("AP_frontal_temporal", nodewise_smoothfits_md, "MD", mycolors, -0.00005, 0.00006) 
+
+SI_tract_ends_centered_md <- plot_tract_ends_zeroed("SI", nodewise_smoothfits_md, "MD", mycolors, -0.00005, 0.00006) 
+nb.cols <- 10
+mycolors <- colorRampPalette(paletteer::paletteer_d("vapoRwave::floralShoppe"))(nb.cols)
+ 
+CP_tract_ends_centered_md <- plot_tract_ends_zeroed("CP", nodewise_smoothfits_md, "MD", mycolors, -0.00005, 0.00006) 
+
+ggarrange(AP_tract_ends_centered_md, AP_frontotemp_tract_ends_centered_md, SI_tract_ends_centered_md, CP_tract_ends_centered_md, nrow=2, ncol =2)
+
+
+
+##ggsave("/Users/audluo/PennLINC/luowm_local/output/tract_profiles_testing/HBN/fitted_val_tract_ends_centered_md.png",  ggarrange(AP_tract_ends_centered_md, AP_frontotemp_tract_ends_centered_md, SI_tract_ends_centered_md, CP_tract_ends_centered_md, nrow=2, ncol =2) + bgcolor("white"), width = 25, height = 10, units = "in")
+```
+
+We see dissociable trajectories along each tract: 
+- For A-P tracts, lower node IDs (blue; anterior segments) have more steeply decreasing trajectories and higher node IDs (red; posterior segments) flatten out around mid-adolescence only in SLF. FOR ATR, CC, IFO, and ILF, lower node IDs (blue; anterior) seem to have shallower slopes. But deeper tract regions (yellow) still have distinct trajectories that appear flatter than either end of the tract. 
+- For R-L tracts, we also see distinct trajectories in deep white matter (yellow) compared to peripheral (red/blue), but we see that deep white matter seems to increase in Forceps minor, which is maybe surprising? Issues of noise?
+- For S-I tracts, deeper white matter (yellow and red for CST; yellow for the other tracts) have flatter developmental trajectories compared to that at tract ends (blue for CST; red and blue for other tracts)
+
+```{r plot md nodewise dev traj zero centered all, fig.height=20, fig.width=22}
+ 
+devtraj_zeroed_md <- lapply(unique(nodewise_smoothfits_md$tractID), plot_nodes_zeroed, df = nodewise_smoothfits_md, scalar = "MD", -0.00007, 0.00006) 
+names(devtraj_zeroed_md) <- unique(nodewise_smoothfits_md$tractID)
+ 
+devtraj_zeroed_md_plots <- arrange_by_orientation(devtraj_zeroed_md, "Mean Diffusivity")
+ 
+
+x.grob <- textGrob("Age (years)", 
+                     gp=gpar(col="black", fontsize=12))
+y.grob <- textGrob("Zero-centered MD", 
+                   gp=gpar(col="black", fontsize=12), rot=90)
+
+space.grob <- textGrob(" ", 
+                     gp=gpar(col="black", fontsize=12), rot=90)
+
+
+grid.arrange(arrangeGrob(devtraj_zeroed_md_plots, left = y.grob, bottom = x.grob, right = space.grob))
+
+#ggsave("/Users/audluo/PennLINC/luowm_local/output/tract_profiles_testing/HBN/devtraj_zeroed_md.png", grid.arrange(arrangeGrob(devtraj_zeroed_md_plots, left = y.grob, bottom = x.grob, right = space.grob)), width = 22, height = 20, units = "in")
+```
+
+
+I also tried looking at developmental trajectories of nodes using tractwise GAMs. So I fit my GAM for each tract:
+`gamm(MD ~ s(age, k = 3, fx = T, bs = 'cr') + s(nodeID, k = 24, fx = F, bs = 'cr') + ti(age, nodeID, k=c(3, 24), fx = F) + sex + mean_fd, random = list(subjectID=~1), data = df)`, where I used bs='cr' for the smooth spline basis to match the ti() default spline basis. Then I used `fitted_values` to get the fitted MD for each node at each age.
+```{r functions for fitted values on tractwise gams, include = FALSE, echo = FALSE}
+
+## Developmental trajectories at each end of the tract
+#- fitted values of nodes at each end of the tracts
+#- refit GAMs to get smooth fits I think: age vs. DTI metric
+
+
+fit_tensor_gam <- function(tract_name, scalar) {
+  df <- gam_df %>% filter(tract_hemi == tract_name)
+  df$subjectID <- as.factor(df$subjectID)
+  te_gam <- gamm(as.formula(sprintf("%s ~ s(age, k = 3, fx = T, bs = 'cr') + s(nodeID, k = 24, fx = F, bs = 'cr') + 
+                                  ti(age, nodeID, k=c(3, 24), fx = F) + sex + mean_fd", scalar)), random = list(subjectID=~1), data = df) 
+ 
+  print(summary(te_gam$gam))
+  print(k.check(te_gam$gam))
+  print(paste(tract_name, "done"))
+  te_gam <- te_gam$gam
+  
+  return(te_gam)  # return the model object 
+}
+
+
+fitted_all_ages <- function(tract_name, te_model) {
+  df <- gam_df %>% filter(tract_hemi == tract_name)
+  # Predict trends for each node, ages 5-22
+  pdat <- with(df,
+                data.frame(age = rep(5:22, each = 100),
+                           nodeID = rep(seq(from = 0, to = 99, by = 1), times = 18), # could maybe do a version of this where by=1
+                           mean_fd = mean(te_model$model$mean_fd),
+                           subjectID = "subID", 
+                           sex = "M"))  
+  newdf <- expand.grid(sex="M", age=c(5:22), mean_fd = mean(te_model$model$mean_fd))
+  pdat <- cbind(fitted_values(te_model,data = pdat), c(rep(tract_name, nrow(newdf))))
+  return(pdat)
+}
+
+ 
+plot_tract_ends <- function(orientation, df, scalar, mycolors, ylim1, ylim2) {
+  if (orientation == "CP") {
+    title1 <- "Peripheral"
+    title2 <- "Central"
+    plot1 <- df %>% filter(tractID != "Anterior Thalamic Radiation") %>% 
+      filter(tractID != "Corticospinal Tract") %>% 
+      filter(nodeID < 20 | nodeID > 80) %>% group_by(tract_node) %>%
+      ggplot(aes(x = age, y = fitted, group = tract_node)) +
+        geom_line(aes(colour = tractID), size = 0.8, alpha = 0.7) + 
+        theme_classic() +                         
+        theme(text=element_text(size=16),
+              legend.position = "right",
+              plot.title = element_text(hjust=0.5)) + 
+        scale_colour_manual(values = mycolors) +
+        labs(y = paste("Fitted", scalar), x = "Age", title=title1) + ylim(ylim1, ylim2)
+    
+     plot2 <- df %>% filter(tractID != "Anterior Thalamic Radiation") %>% 
+      filter(tractID != "Corticospinal Tract") %>% 
+      filter(nodeID > 39 & nodeID < 60) %>% group_by(tract_node) %>%
+      ggplot(aes(x = age, y = fitted, group = tract_node)) +
+        geom_line(aes(colour = tractID), size = 0.8, alpha = 0.7) + 
+        theme_classic() +                         
+        theme(text=element_text(size=16),
+              legend.position = "right",
+              plot.title = element_text(hjust=0.5)) + 
+        scale_colour_manual(values = mycolors) +
+        labs(y = paste("Fitted", scalar), x = "Age", title=title2) + ylim(ylim1, ylim2)
+    
+  } else {
+    if (orientation == "AP") {
+      title1 <- "Anterior"
+      title2 <- "Posterior"
+    } else if (orientation == "AP_frontal_temporal") {
+      title1 <- "Frontal"
+      title2 <- "Temporal"
+    } else if (orientation == "SI") {
+      title1 <- "Superior"
+      title2 <- "Inferior"
+    } else {
+      print("Provide valid orientation (AP, AP_frontal_temporal, SI, CP)")
+    }
+    plot1 <- df %>% filter(main_orientation == orientation) %>% 
+      filter(tractID != "Anterior Thalamic Radiation") %>%
+      filter(tractID != "Corticospinal Tract") %>%
+      filter(nodeID < 10) %>% group_by(tract_node) %>%
+      ggplot( aes(x = age, y = fitted, group = tract_node)) +
+      geom_line(aes(colour = tractID), size = 0.8, alpha = 0.7) + theme_classic() +                        
+      theme(text=element_text(size=16),
+            legend.position = "right",
+          plot.title = element_text(hjust=0.5)) + 
+      scale_colour_manual(values = mycolors) +
+      labs(y = paste("Fitted", scalar), x = "Age", title=title1) + ylim(ylim1, ylim2)
+    
+    plot2 <- df %>% filter(main_orientation == orientation) %>% 
+      filter(tractID != "Anterior Thalamic Radiation") %>%
+      filter(tractID != "Corticospinal Tract") %>%
+      filter(nodeID > 89) %>% group_by(tract_node) %>%
+      ggplot( aes(x = age, y = fitted, group = tract_node)) +
+      geom_line(aes(colour = tractID), size = 0.8, alpha = 0.7) + theme_classic() +                        
+      theme(text=element_text(size=16),
+            legend.position = "right",
+          plot.title = element_text(hjust=0.5)) + 
+      scale_colour_manual(values = mycolors) +
+      labs(y = paste("Fitted", scalar), x = "Age", title=title2) + ylim(ylim1, ylim2)
+  }
+  return(ggarrange(plot1, plot2, ncol=2, common.legend=T, legend="right"))
+}
+```
+
+ 
+
+```{r fit gams fa for fitted values, cache=TRUE, include=FALSE, echo=FALSE, eval=FALSE}
+
+cohortfile <- cohortfile %>% select(subjectID, age, sex, mean_fd)
+gam_df <- merge(tract_profiles, cohortfile, by="subjectID")
+gam_df <- gam_df %>% mutate(tract_node = paste0(tract_hemi, "_", nodeID))
+gam_df$sex <- gsub("Female", "F", gam_df$sex)
+gam_df$sex <- gsub("Male", "M", gam_df$sex)
+gam_df$sex <- as.factor(gam_df$sex)
+ 
+ 
+# fit GAMs
+tractwise_te_models_fa <- lapply(unique(gam_df$tract_hemi), fit_tensor_gam, scalar="dti_fa")
+names(tractwise_te_models_fa) <- unique(gam_df$tract_hemi)
+tractwise_te_models_fa$Left_Anterior_Thalamic_Radiation
+
+# compute fitted values
+fitted_all_ages_dfs_fa <- lapply(1:length(unique(gam_df$tract_hemi)), 
+                              function(x) fitted_all_ages(unique(gam_df$tract_hemi)[x], tractwise_te_models_fa[[unique(gam_df$tract_hemi)[x]]]))
+names(fitted_all_ages_dfs_fa) <- unique(gam_df$tract_hemi)
+fitted_all_ages_dfs_fa <- lapply(fitted_all_ages_dfs_fa, setNames, nm=c("age", "nodeID", "mean_fd", "subjectID", "sex", "fitted", "se", "lower", "upper", "tract_hemi"))
+ 
+
+# for now, keep nodes 0-19, 40-59, 80-99
+fitted_fa <- bind_rows(fitted_all_ages_dfs_fa)
+orientations <- tract_profiles[,c("tractID", "tract_hemi", "main_orientation")]
+orientations <- orientations[!duplicated(orientations),]
+fitted_fa <- left_join(fitted_fa, orientations, by = "tract_hemi")
+fitted_fa <- fitted_fa %>% mutate(tract_node = paste0(tract_hemi, "_", nodeID))
+```
+
+
+```{r plot fa fitted values for tract ends, fig.height=10, fig.width=20, include=FALSE, echo=FALSE, eval=FALSE}
+
+
+nb.cols <- 7
+mycolors <- colorRampPalette(paletteer::paletteer_d("vapoRwave::floralShoppe"))(nb.cols)
+AP_tract_ends_fa <- plot_tract_ends("AP", fitted_fa, "FA", mycolors, 0, 1) 
+
+nb.cols <- 5
+mycolors <- colorRampPalette(paletteer::paletteer_d("vapoRwave::floralShoppe"))(nb.cols)
+AP_frontotemp_tract_ends_fa <- plot_tract_ends("AP_frontal_temporal", fitted_fa, "FA", mycolors, 0, 1) 
+SI_tract_ends_fa <- plot_tract_ends("SI", fitted_fa, "FA", mycolors, 0, 1) 
+
+nb.cols <- 10
+mycolors <- colorRampPalette(paletteer::paletteer_d("vapoRwave::floralShoppe"))(nb.cols)
+ 
+CP_tract_ends_fa <- plot_tract_ends("CP", fitted_fa, "FA", mycolors, 0, 1) 
+
+ggarrange(AP_tract_ends_fa, AP_frontotemp_tract_ends_fa, SI_tract_ends_fa, CP_tract_ends_fa, nrow=2, ncol =2)
+  
+
+###ggsave("/Users/audluo/PennLINC/luowm_local/output/tract_profiles_testing/HBN/fitted_val_tract_ends_fa.png", 
+#       ggarrange(AP_tract_ends_fa, AP_frontotemp_tract_ends_fa, SI_tract_ends_fa, CP_tract_ends_fa, nrow=2, ncol =2) + bgcolor("white"), width = 20, height = #10, units = "in")
+
+```
+
+
+
+```{r fit gams md for fitted values, cache = TRUE, include=FALSE, eval=FALSE}
+
+# fit GAMs
+tractwise_te_models_md <- lapply(unique(gam_df$tract_hemi), fit_tensor_gam, scalar="dti_md")
+names(tractwise_te_models_md) <- unique(gam_df$tract_hemi)
+
+# compute fitted values
+fitted_all_ages_dfs_md <- lapply(1:length(unique(gam_df$tract_hemi)), 
+                              function(x) fitted_all_ages(unique(gam_df$tract_hemi)[x], tractwise_te_models_md[[unique(gam_df$tract_hemi)[x]]]))
+names(fitted_all_ages_dfs_md) <- unique(gam_df$tract_hemi)
+fitted_all_ages_dfs_md <- lapply(fitted_all_ages_dfs_md, setNames, nm=c("age", "nodeID", "mean_fd", "subjectID", "sex", "fitted", "se", "lower", "upper", "tract_hemi"))
+
+# for now, keep nodes 0-9, 45-55, 90-99
+fitted_md <- bind_rows(fitted_all_ages_dfs_md)
+orientations <- tract_profiles[,c("tractID", "tract_hemi", "main_orientation")]
+orientations <- orientations[!duplicated(orientations),]
+fitted_md <- left_join(fitted_md, orientations, by = "tract_hemi")
+fitted_md <- fitted_md %>% mutate(tract_node = paste0(tract_hemi, "_", nodeID))
+
+saveRDS(fitted_md, "/cbica/projects/luo_wm_dev/output/HBN/tract_profiles/GAM/dti_md/dev_traj_fitted_md.RData")
+```
+ 
+```{r load fitted values, cache=TRUE}
+fitted_md <- readRDS("/cbica/projects/luo_wm_dev/output/HBN/tract_profiles/GAM/dti_md/dev_traj_fitted_md.RData")
+```
+ 
+ 
+It's definitely easier to see the differences in developmental trajectories with the zero-centered smooths above, but this is also kind of interesting... There's a super stark difference between central (nodes 40-59) and peripheral (nodes 0-19 and 80-99) tract regions, where deeper white matter have super distinct MD profiles between tracts.  
+```{r  plot md fitted values for tract ends, fig.height=10, fig.width=20}
+# Define the number of colors you want
+nb.cols <- 7
+mycolors <- colorRampPalette(paletteer::paletteer_d("LaCroixColoR::Pamplemousse"))(nb.cols)
+AP_tract_ends_md <- plot_tract_ends("AP", fitted_md, "MD", mycolors, 0.0003, 0.0008) 
+
+nb.cols <- 5
+mycolors <- colorRampPalette(paletteer::paletteer_d("LaCroixColoR::Pamplemousse"))(nb.cols)
+AP_frontotemp_tract_ends_md <- plot_tract_ends("AP_frontal_temporal", fitted_md, "MD", mycolors, 0.00045, 0.0008) 
+
+SI_tract_ends_md <- plot_tract_ends("SI", fitted_md, "MD", mycolors, 0.0003, 0.0008) 
+nb.cols <- 10
+mycolors <- colorRampPalette(paletteer::paletteer_d("LaCroixColoR::Pamplemousse"))(nb.cols)
+ 
+CP_tract_ends_md <- plot_tract_ends("CP", fitted_md, "MD", mycolors, 0.0003, 0.0008) 
+
+ggarrange(AP_tract_ends_md, AP_frontotemp_tract_ends_md, SI_tract_ends_md, CP_tract_ends_md, nrow=2, ncol =2)
+
+#ggsave("/Users/audluo/PennLINC/luowm_local/output/tract_profiles_testing/HBN/fitted_val_tract_ends_md.png", ggarrange(AP_tract_ends_md, AP_frontotemp_tract_ends_md, SI_tract_ends_md, CP_tract_ends_md, nrow=2, ncol =2) + bgcolor("white"), width = 20, height = 10, units = "in")
+ 
+```
+
+
+```{r md plot central}
+
+mycolors <- colorRampPalette(paletteer::paletteer_d("PNWColors::Sailboat"))(5)[c(1,3)] 
+somato_fitted <- fitted_md %>% filter(tractID == "Corticospinal Tract" | tractID == "Vertical Occipital Fasciculus") %>%
+    filter(nodeID > 39 & nodeID < 60) %>% group_by(tract_node) %>%
+    ggplot(aes(x = age, y = fitted, group = tract_node)) +
+      geom_line(aes(colour = tractID), size = 0.8, alpha = 0.7) + 
+      theme_classic() +                         
+      theme(text=element_text(size=16),
+            legend.position = "bottom", legend.text = element_text(size=10),legend.title=element_blank(),
+            plot.title = element_text(hjust=0.5)) + #Top, left,bottom, bottom
+      scale_colour_manual(values = mycolors) +
+      labs(y = paste("Fitted MD"), x = "Age", title="") + ylim(0.00035, 0.0007) + guides(col = guide_legend(nrow = 2))
+
+mycolors <- colorRampPalette(paletteer::paletteer_d("PNWColors::Sailboat"))(8)[c(3, 5, 7)]
+slf_arc_fitted <- fitted_md %>% filter(tractID == "Superior Longitudinal Fasciculus" | 
+                       tractID == "Arcuate Fasciculus" |
+                       tractID == "Posterior Arcuate") %>%
+    filter(nodeID > 39 & nodeID < 60) %>% group_by(tract_node) %>%
+    ggplot(aes(x = age, y = fitted, group = tract_node)) +
+      geom_line(aes(colour = tractID), size = 0.8, alpha = 0.7) + 
+      theme_classic() +                         
+      theme(text=element_text(size=16),
+            legend.position = "bottom", legend.text = element_text(size=10),legend.title=element_blank(),
+            plot.title = element_text(hjust=0.5)) + 
+      scale_colour_manual(values = mycolors) +
+      labs(y = paste("Fitted MD"), x = "Age", title="") + ylim(0.00035, 0.0007) + guides(col = guide_legend(nrow = 2))
+
+
+mycolors <- colorRampPalette(paletteer::paletteer_d("PNWColors::Sailboat"))(15)[c(6, 8, 10, 12)]
+frontal_fitted <- fitted_md %>% filter(tractID == "Anterior Thalamic Radiation" | tractID == "Cingulum Cingulate" | 
+                       tractID == "Inferior Fronto-occipital Fasciculus" | tractID == "Inferior Longitudinal Fasciculus" |
+                       tractID == "Uncinate") %>%
+    filter(nodeID > 39 & nodeID < 60) %>% group_by(tract_node) %>%
+    ggplot(aes(x = age, y = fitted, group = tract_node)) +
+      geom_line(aes(colour = tractID), size = 0.8, alpha = 0.7) + 
+      theme_classic() +                         
+      theme(text=element_text(size=16),
+            legend.position = "bottom", legend.text = element_text(size=10),legend.title=element_blank(),
+            plot.title = element_text(hjust=0.5)) + 
+      scale_colour_manual(values = mycolors) +
+      labs(y = paste("Fitted MD"), x = "Age", title="") + ylim(0.00035, 0.0007) + guides(col = guide_legend(nrow = 2))
+ 
+mycolors <- colorRampPalette(paletteer::paletteer_d("PNWColors::Sailboat"))(12)[c(1, 10)]
+forceps_fitted <- fitted_md %>% filter(tractID == "Forceps Major" | tractID == "Forceps Minor") %>%
+    filter(nodeID > 39 & nodeID < 60) %>% group_by(tract_node) %>%
+    ggplot(aes(x = age, y = fitted, group = tract_node)) +
+      geom_line(aes(colour = tractID), size = 0.8, alpha = 0.7) + 
+      theme_classic() +                         
+      theme(text=element_text(size=16),
+            legend.position = "bottom", legend.text = element_text(size=10),legend.title=element_blank(),
+            plot.title = element_text(hjust=0.5)) + 
+      scale_colour_manual(values = mycolors) +
+      labs(y = paste("Fitted MD"), x = "Age", title="") + ylim(0.00035, 0.0007) + guides(col = guide_legend(nrow = 2))
+
+gA = ggplotGrob(somato_fitted)
+gB = ggplotGrob(slf_arc_fitted)
+gC = ggplotGrob(frontal_fitted)
+gD = ggplotGrob(forceps_fitted)
+gA$heights <- gB$heights
+gC$heights <- gB$heights
+gD$heights <- gB$heights
+
+grid.arrange(gA, gB, gC, gD)
+
+
+ 
+ggsave("/Users/audluo/PennLINC/luowm_local/output/tract_profiles_testing/HBN/fitted_val_tract_ends_md_arranged.png", grid.arrange(gA, gB, gC, gD), width = 11, height = 13, units = "in")
+
+ 
+```
+
+What do central vs. peripheral nodes look like for specific tracts? 
+```{r md unpack central peripheral, fig.height=20, fig.width=13}
+scalar <- "MD"
+df <- fitted_md
+title1 <- "Peripheral"
+title2 <- "Central"
+ylim1 <- 0.0003
+ylim2 <- 0.0008
+
+plot_central_peripheral <- function(tract) {
+  plot1 <- df %>% filter(tractID == tract) %>% 
+  filter(nodeID < 10 | nodeID > 90) %>% group_by(tract_node) %>%
+  ggplot(aes(x = age, y = fitted, group = tract_node)) +
+    geom_line(aes(colour = tractID), size = 0.9, alpha = 0.7) + 
+    theme_classic() +                         
+    theme(text=element_text(size=16),
+          legend.position = "bottom",
+          plot.title = element_text(hjust=0.5)) + 
+    scale_colour_manual(values = "#4CC3FFFF") +
+    labs(y = paste("Fitted", scalar), x = "Age", title=title1) + ylim(ylim1, ylim2)
+
+ plot2 <- df %>% filter(tractID == tract) %>% 
+  filter(nodeID > 39 & nodeID < 60) %>% group_by(tract_node) %>%
+  ggplot(aes(x = age, y = fitted, group = tract_node)) +
+    geom_line(aes(colour = tractID), size = 0.9, alpha = 0.7) + 
+    theme_classic() +                         
+    theme(text=element_text(size=16),
+          legend.position = "bottom",
+          plot.title = element_text(hjust=0.5)) + 
+    scale_colour_manual(values = "#FF9932FF") +
+    labs(y = paste("Fitted", scalar), x = "Age", title=title2) + ylim(ylim1, ylim2)
+ 
+ return(plot_grid(plot1, plot2))
+}
+
+central_peripheral_plots <- lapply(c("Arcuate Fasciculus", "Cingulum Cingulate", "Forceps Major", "Forceps Minor", "Inferior Fronto-occipital Fasciculus", "Inferior Longitudinal Fasciculus", "Superior Longitudinal Fasciculus", "Uncinate Fasciculus", "Posterior Arcuate","Vertical Occipital Fasciculus"), plot_central_peripheral)
+
+names(central_peripheral_plots) <- c("Arcuate Fasciculus", "Cingulum Cingulate", "Forceps Major", "Forceps Minor", "Inferior Fronto-occipital Fasciculus", "Inferior Longitudinal Fasciculus", "Superior Longitudinal Fasciculus", "Uncinate Fasciculus", "Posterior Arcuate","Vertical Occipital Fasciculus")
+
+central_peripheral_specific <- ggarrange(plot_grid(plotlist=central_peripheral_plots[c(1:4)], ncol=2), plot_grid(plotlist=central_peripheral_plots[c(5:8)], ncol=2), plot_grid(plotlist=central_peripheral_plots[c(9:10)], ncol=2), heights = c(1,1,0.5), nrow=3)
+
+central_peripheral_specific
+
+#ggsave("/Users/audluo/PennLINC/luowm_local/output/tract_profiles_testing/HBN/fitted_val_tract_ends_cp_md.png", central_peripheral_specific, width = 13, height = 20, units = "in")
+ 
+```
+
+For some of the tracts, there's kind of two chunks of developmental trajectories - could they correspond to each end of the tract? 
+```{r md anterior posterior specific tracts, fig.height = 15, fig.width=10}
+
+scalar <- "MD"
+df <- fitted_md
+title1 <- "Anterior"
+title2 <- "Posterior"
+ylim1 <- 0.0003
+ylim2 <- 0.0008
+
+  
+
+plot_anterior_posterior <- function(tract) {
+  plot1 <- df %>% filter(tractID == tract) %>% 
+  filter(nodeID < 10) %>% group_by(tract_node) %>%
+  ggplot(aes(x = age, y = fitted, group = tract_node)) +
+    geom_line(aes(colour = tractID), size = 0.9, alpha = 0.7) + 
+    theme_classic() +                         
+    theme(text=element_text(size=16),
+          legend.position = "bottom",
+          plot.title = element_text(hjust=0.5)) + 
+    scale_colour_manual(values = "#4CC3FFFF") +
+    labs(y = paste("Fitted", scalar), x = "Age", title=title1) + ylim(ylim1, ylim2)
+
+ plot2 <- df %>% filter(tractID == tract) %>% 
+  filter(nodeID > 89) %>% group_by(tract_node) %>%
+  ggplot(aes(x = age, y = fitted, group = tract_node)) +
+    geom_line(aes(colour = tractID), size = 0.9, alpha = 0.7) + 
+    theme_classic() +                         
+    theme(text=element_text(size=16),
+          legend.position = "bottom",
+          plot.title = element_text(hjust=0.5)) + 
+    scale_colour_manual(values = "#FF9932FF") +
+    labs(y = paste("Fitted", scalar), x = "Age", title=title2) + ylim(ylim1, ylim2)
+ 
+ return(plot_grid(plot1, plot2))
+}
+
+anterior_posterior_specific <- ggarrange(plot_anterior_posterior("Inferior Longitudinal Fasciculus"),
+plot_anterior_posterior("Uncinate Fasciculus"),
+plot_anterior_posterior("Inferior Fronto-occipital Fasciculus"), nrow=3)
+
+anterior_posterior_specific
+
+##ggsave("/Users/audluo/PennLINC/luowm_local/output/tract_profiles_testing/HBN/fitted_val_tract_ends_ap_md.png", anterior_posterior_specific, width = 10, height = 15, units = "in")
+```
+
+ 
+ 
+

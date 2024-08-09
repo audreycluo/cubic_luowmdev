@@ -1,0 +1,103 @@
+---
+title: "Untitled"
+author: "Audrey Luo"
+date: "2024-05-09"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r cars}
+summary(cars)
+
+
+ci_pc_md %>% filter(tractID == "Cingulum Cingulate")
+cingulum <- ci_pc_md %>% filter(tractID == "Cingulum Cingulate")
+cing_cor <- cor.test(cingulum$dist_to_cortex, cingulum$median_percent_change, method = "spearman")
+
+ifo <- ci_pc_md %>% filter(tractID == "Inferior Fronto-occipital Fasciculus")
+ifo_cor <- cor.test(ifo$dist_to_cortex, ifo$median_percent_change)
+
+ilf <- ci_pc_md %>% filter(tractID == "Inferior Longitudinal Fasciculus")
+ilf_cor <- cor.test(ilf$dist_to_cortex, ilf$median_percent_change)
+
+parc <- ci_pc_md %>% filter(tractID == "Posterior Arcuate")
+parc_cor <- cor.test(parc$dist_to_cortex, parc$median_percent_change)
+
+slf <- ci_pc_md %>% filter(tractID == "Superior Longitudinal Fasciculus")
+slf_cor <- cor.test(slf$dist_to_cortex, slf$median_percent_change)
+
+uf <- ci_pc_md %>% filter(tractID == "Uncinate Fasciculus")
+uf_cor <- cor.test(uf$dist_to_cortex, uf$median_percent_change)
+
+vof <- ci_pc_md %>% filter(tractID == "Vertical Occipital Fasciculus")
+vof_cor <- cor.test(vof$dist_to_cortex, vof$median_percent_change) 
+
+fmaj <- ci_pc_md %>% filter(tractID == "Forceps Major")
+fmaj_cor <- cor.test(fmaj$dist_to_cortex, fmaj$median_percent_change) 
+
+fmin <- ci_pc_md %>% filter(tractID == "Forceps Minor")
+fmin_cor <- cor.test(fmin$dist_to_cortex, fmin$median_percent_change) 
+
+mean(c(cing_cor$estimate, ifo_cor$estimate, ilf_cor$estimate, parc_cor$estimate, slf_cor$estimate, uf_cor$estimate, vof_cor$estimate))
+
+c(cing_cor$estimate, ifo_cor$estimate, ilf_cor$estimate, parc_cor$estimate, slf_cor$estimate, uf_cor$estimate, vof_cor$estimate, fmaj_cor$estimate, fmin_cor$estimate)
+
+
+gam_age_md
+```
+
+```{r}
+
+
+gam_age_md %>% filter(tractID == "Cingulum Cingulate")
+cingulum <- gam_age_md %>% filter(tractID == "Cingulum Cingulate")
+cing_cor <- cor.test(cingulum$dist_to_cortex, cingulum$s_age.delta.adj.rsq_signed, method = "spearman")
+
+ifo <- gam_age_md %>% filter(tractID == "Inferior Fronto-occipital Fasciculus")
+ifo_cor <- cor.test(ifo$dist_to_cortex, ifo$s_age.delta.adj.rsq_signed)
+
+ilf <- gam_age_md %>% filter(tractID == "Inferior Longitudinal Fasciculus")
+ilf_cor <- cor.test(ilf$dist_to_cortex, ilf$s_age.delta.adj.rsq_signed)
+
+parc <- gam_age_md %>% filter(tractID == "Posterior Arcuate")
+parc_cor <- cor.test(parc$dist_to_cortex, parc$s_age.delta.adj.rsq_signed)
+
+slf <- gam_age_md %>% filter(tractID == "Superior Longitudinal Fasciculus")
+slf_cor <- cor.test(slf$dist_to_cortex, slf$s_age.delta.adj.rsq_signed)
+
+uf <- gam_age_md %>% filter(tractID == "Uncinate Fasciculus")
+uf_cor <- cor.test(uf$dist_to_cortex, uf$s_age.delta.adj.rsq_signed)
+
+vof <- gam_age_md %>% filter(tractID == "Vertical Occipital Fasciculus")
+vof_cor <- cor.test(vof$dist_to_cortex, vof$s_age.delta.adj.rsq_signed) 
+
+fmaj <- gam_age_md %>% filter(tractID == "Forceps Major")
+fmaj_cor <- cor.test(fmaj$dist_to_cortex, fmaj$s_age.delta.adj.rsq_signed) 
+
+fmin <- gam_age_md %>% filter(tractID == "Forceps Minor")
+fmin_cor <- cor.test(fmin$dist_to_cortex, fmin$s_age.delta.adj.rsq_signed) 
+
+mean(c(cing_cor$estimate, ifo_cor$estimate, ilf_cor$estimate, parc_cor$estimate, slf_cor$estimate, uf_cor$estimate, vof_cor$estimate))
+
+range(c(cing_cor$estimate, ifo_cor$estimate, ilf_cor$estimate, parc_cor$estimate, slf_cor$estimate, uf_cor$estimate, vof_cor$estimate))
+
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
