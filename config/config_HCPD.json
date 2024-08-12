@@ -2,8 +2,8 @@
 	"dataset": "HCPD",
 	"data_root": "/cbica/projects/luo_wm_dev/input/HCPD",
 	"outputs_root": "/cbica/projects/luo_wm_dev/output/HCPD/tract_profiles",
-	"tract_profiles_data_root": "/cbica/projects/luo_wm_dev/input/HCPD/HCPD_tractprofiles",
+	"tract_profiles_root": "/cbica/projects/luo_wm_dev/input/HCPD/derivatives/tract_profiles_dki",
 	"tract_profiles_outputs_root": "/cbica/projects/luo_wm_dev/output/HCPD/tract_profiles",
-	"demographics_file": "/cbica/projects/luo_wm_dev/input/HCPD/sample_selection_files/HCPD_WMDev_TempSampleDemographics_N568_age8to22.csv",
-	"qc_file": "/cbica/projects/luo_wm_dev/input/HCPD/sample_selection_files/HCPD_WMDev_TempSampleQCMetrics_N568_age8to22.csv"
+	"demographics_temp": "/cbica/projects/luo_wm_dev/input/HCPD/sample_selection_files/HCPD_WMDev_TempSampleDemographics_N572_age8to22.csv",
+	"qc_temp": "/cbica/projects/luo_wm_dev/input/HCPD/sample_selection_files/HCPD_WMDev_TempSampleQCMetrics_N572_age8to22.csv"
 }
