@@ -91,159 +91,32 @@ participants.final <- participants.final[!participants.final$sub %in% motionexcl
 ## Age Range Exclusion 
 ```{r}
 # not doing age range exclusion for PNC 
- 
+
 ```
 
+ 
 
-
-
-## Missing Data Exclusion - do after autotrack finishes
-
-### Load autotrack .csv files
+## Save Temporary Sample for PyAFQ: Subject List and Demographics
 ```{r}
 
-# autotrack .csv files live in data/<dataset>/<dataset>_autotrack/<subject>/*.csv
-subdirectories <- list.dirs(
-  path = "/cbica/projects/luo_wm_dev/input/HCPD/HCPD_autotrack/",
-  full.names = TRUE,
-  recursive = TRUE
-)
+# Make temp sample demographics dataframe
+demographics.temp <- demographics[demographics$sub %in% participants.final$sub,] %>% mutate(age = ageAtScan1/12) %>% select(sub, age, sex, race)# combine demographics data 
 
-subdirectories <- subdirectories[grep("sub-", subdirectories)] # There should be 642 subject folders
-
-# Initialize a list to store .csv files
-csv_files <- c()
-
-# Iterate through the subdirectories and find subject .csv files
-for (subdir in subdirectories) {
-  csv_files_in_subdir <- list.files(
-    path = subdir,
-    pattern = "\\.csv$",  # Match files with '.csv' extension
-    full.names = TRUE     # Return full file paths
-  )
-  csv_files <- c(csv_files, csv_files_in_subdir)
-}
-
+# Make temp sample QC metrics dataframe 
+dwi.qc.temp <- dwi.qc[dwi.qc$subject_id %in% participants.final$sub,] %>% select(subject_id, mean_fd, t1_neighbor_corr) %>% rename(sub = subject_id) # note that var(t1_neighbor_corr) = 0.0001081781 and var(mean_fd) = 0.0237685
  
-# Remove excluded subjects
-remove <- c()
-i <- 1
-for (file in csv_files) {
-  sub <- str_extract(file, "sub-[0-9]*")
-  if (! sub %in% participants.final$sub) {
-    remove <- c(remove, i)
-  }
-  i <- i + 1
-}
+sub_id <- demographics.temp$sub %>% as.data.frame() %>% setNames("sub_id") # want the same ordering as demographics df
+write.table(sub_id, "/cbica/projects/luo_wm_dev/input/PNC/subject_list/PNC_tempsubject_list.txt", col.names=F, row.names=F, quote = FALSE)
+write.table(sub_id, "/cbica/projects/luo_wm_dev/input/PNC/subject_list/PNC_subject_list_babs.txt", col.names=T, row.names=F, quote = FALSE)
+#write.table(sub_id[c(1:3),], "/cbica/projects/luo_wm_dev/input/PNC/subject_list/PNC_subject_list_test.txt", col.names=F, row.names=F, quote = FALSE)
+ 
+write.csv(demographics.temp, "/cbica/projects/luo_wm_dev/input/PNC/sample_selection_files/PNC_WMDev_TempSampleDemographics_N1153_age8to23.csv", quote = F, row.names = F)
+write.csv(dwi.qc.temp, "/cbica/projects/luo_wm_dev/input/PNC/sample_selection_files/PNC_WMDev_TempSampleQCMetrics_N1153_age8to23.csv", quote = F, row.names = F)
 
-csv_files_final <- csv_files[-remove]
 
-# Read in autotrack csvs
-autotrack_csvs <- lapply(csv_files_final, read.csv)
-```
-
-### Look at example autotrack dataframe
-```{r}
-autotrack_csvs[[1]]
-
-length(autotrack_csvs)
 ```
 
 
- 
-### Save all subjects' tract metrics to files
-```{r}
-
-# Read in tract list
-tracts <- unlist(read.csv('/cbica/projects/luo_wm_dev/input/HCPD/tract_list/tract_list.csv', header=F)) # tract_list.csv is from Marc. It lists all the tracks that had autotrack completed (and formatted without underscores)
-
-metrics_dir <- '/cbica/projects/luo_wm_dev/output/HCPD/autotrack'
-if (!file.exists(metrics_dir)) {
-  dir.create(metrics_dir)
-}
-
-measures <- colnames(autotrack_csvs[[1]])[2:40]
- 
-
-# Save out separate csv for each autotrack measure for all participants
-for (measure in measures) {
-
-  # Create matrix to hold tract metrics
-  tractometry_mat <- matrix(nrow=length(autotrack_csvs), ncol=length(tracts))
-  sub_mat <- matrix(nrow=length(autotrack_csvs), ncol=1)
-  # Populate matrix
-  for (csv in 1:length(autotrack_csvs)) {
-    
-    autotrack_csv <- autotrack_csvs[[csv]]
-    
-    # Alphabetize by bundle names
-    autotrack_csv <- autotrack_csv[order(autotrack_csv$bundle_name),]
-    
-    tractometry_mat[csv,] <- autotrack_csv[,measure]
-    sub_mat[csv,] <- autotrack_csv[,"subject_id"][[1]]
-  }
-  
-  # Add in subject column
-  sub_mat <- matrix(participants.final$sub)
-  tractometry_mat <- cbind(sub_mat, tractometry_mat)
-  
-  colnames(tractometry_mat) <- c('sub', tracts)
-  
-  # Save
-  write.csv(tractometry_mat, paste0(metrics_dir, '/', measure, '.csv'), row.names = FALSE)
-   
-}
- 
- 
-```
-
-### Check bundle completeness
-```{r}
-
-metrics_dir <- '/cbica/projects/luo_wm_dev/output/HCPD/autotrack'
-num_tracts <- read.csv(paste0(metrics_dir, '/number_of_tracts.csv'), header=T)
-
-sub_list <- c()
-for (i in 2:ncol(num_tracts)) {
-  
-  tract_data <- num_tracts[,i]
-  
-  # Check for NAs
-  if (sum(is.na(tract_data)) != 0) {
-    print(colnames(num_tracts)[i])
-    print(paste0('--Subjects with NAs: ', sum(is.na(tract_data))))
-    print(paste0('----', num_tracts[which(is.na(tract_data)), 'sub']))
-    sub_list <- c(sub_list, num_tracts[which(is.na(tract_data)), 'sub'])
-  }
-  
-  # Check for 0s
-  if (sum(ifelse(tract_data[! is.na(tract_data)] == 0, 1, 0)) != 0) {
-    print(paste0('--Subjects have 0s: ', sum(ifelse(tract_data[! is.na(tract_data)] == 0, 1, 0))))
-  }
-
-}
-print('')
-print(paste0('Minimum number of tracts per bundle across HCP-D: ', min(unlist(num_tracts[! is.na(num_tracts)]))))
- 
-```
- 
- 
-### Update tract metrics files to exclude subjects with NAs
-```{r}
-# For each csv, remove subjects with NAs (sub_list)
-for(filename in list.files(metrics_dir, pattern="csv",  full.names=T)) {
-  file <- read.csv(filename)
-  file <- file[!file$sub %in% sub_list,] 
-  write.csv(file, filename, row.names=F)
-}
- 
-```
-
-
-### Exclude subjects with NA's
-```{r}
-(participants.final <- data.frame(setdiff(participants.final$sub, sub_list)) %>% setNames("sub"))
-```
 
 # Save Final Sample: Subject List and Demographics
 ```{r}
