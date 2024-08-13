@@ -62,7 +62,7 @@ babs-init --where_project /cbica/projects/luo_wm_dev/input/HCPD/derivatives \
     --container_name qsiprep-0-22-0 --container_config_yaml_file /cbica/projects/luo_wm_dev/code/tract_profiles/run_babs_qsirecon/babs_qsiprep-0-22-0_qsirecon_mrtrix_pyafq_dki.yaml \
     --type_session single-ses --type_system slurm 
 
-# HCPD - dki with test subjects, sge TT_TT
+# HCPD - dki with test subjects, sge TT_TT -- final command used
 babs-init --where_project /cbica/projects/luo_wm_dev/input/HCPD/derivatives \
     --project_name babs_qsirecon_pyafq_dki --input qsiprep /cbica/projects/luo_wm_dev/input/HCPD/raw/datalad_qsiprep \
     --list_sub_file /cbica/projects/luo_wm_dev/input/HCPD/subject_list/HCPD_subject_list_babs.txt \
@@ -82,7 +82,7 @@ babs-init --where_project /cbica/projects/luo_wm_dev/input/PNC \
     --container_name qsiprep-0-21-4 --container_config_yaml_file /cbica/projects/luo_wm_dev/code/tract_profiles/run_babs_qsirecon/babs_qsiprep-0-21-4_qsirecon_mrtrix_pyafq_singleshell.yaml \
     --type_session single-ses --type_system sge # note that yaml code will have to be edited after babs init to include the correct json
  
-# PNC 0.22.0
+# PNC 0.22.0  -- final command used
 babs-init --where_project /cbica/projects/luo_wm_dev/input/PNC/derivatives \
     --project_name babs_qsirecon_pyafq_dki --input qsiprep /cbica/projects/luo_wm_dev/input/PNC/raw/datalad_qsiprep \
     --list_sub_file /cbica/projects/luo_wm_dev/input/PNC/subject_list/PNC_subject_list_babs.txt \
@@ -98,7 +98,7 @@ babs-init --where_project /cbica/projects/luo_wm_dev/input/HBN \
     --container_name qsiprep-0-19-1 --container_config_yaml_file /cbica/projects/luo_wm_dev/code/tract_profiles/run_babs_qsirecon/babs_qsiprep-0-19-1_qsirecon_mrtrix_pyafq.yaml \
     --type_session single-ses --type_system sge 
  
-
+# HBN  -- final command used
 babs-init --where_project /cbica/projects/luo_wm_dev/input/HBN/derivatives \
     --project_name babs_qsirecon_pyafq_dki --input qsiprep /cbica/projects/luo_wm_dev/input/HBN/raw/datalad_qsiprep \
     --list_sub_file /cbica/projects/luo_wm_dev/input/HBN/sample_selection_files/HBN_WMDev_TempSample_N1276_age5to22.txt \
@@ -107,7 +107,6 @@ babs-init --where_project /cbica/projects/luo_wm_dev/input/HBN/derivatives \
     --type_session single-ses --type_system slurm 
  
 
- 
 
 # note:
 # "Registering the input dataset(s)...
@@ -129,7 +128,7 @@ babs-submit --project-root $PWD --all
 # submit failed
 babs-status \
     --project-root $PWD \
-    --resubmit failed  
+    --resubmit failed   # sometimes need to resubmit failed. it's a cubic thing that they failed and the only remedy is to rerun. *facepalm*
 
 babs-merge --project-root $PWD
 
@@ -155,7 +154,5 @@ datalad clone \
 # Failed BABS projects #
 ########################
 cd /cbica/projects/luo_wm_dev/input/HBN/
-
- 
 chmod -R +w babs_qsirecon_pyafq 
 rm -rf babs_qsirecon_pyafq

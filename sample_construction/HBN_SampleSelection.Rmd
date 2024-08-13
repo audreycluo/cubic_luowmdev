@@ -98,7 +98,7 @@ participants.final <- participants.final[!participants.final$sub %in% motionexcl
 participants.final <- participants.final[!participants.final$sub %in% demographics$sub[which(is.na(demographics$age))],] %>% as.data.frame()  #remove additional 1 participant from the sample of 1277 due to missing age data, remaining N = 1276
 ```
 
-# Save Temp Sample: Subject List and Demographics
+## Save Temporary Sample for PyAFQ: Subject List and Demographics
 ```{r}
 # Make temp sample demographics dataframe
 demographics.temp <- demographics[demographics$sub %in% participants.final$sub,] %>% select(sub, age, sex, race, site) # combine demographics data 
@@ -121,11 +121,13 @@ write.csv(dwi.qc.temp, "/cbica/projects/luo_wm_dev/input/HBN/sample_selection_fi
 # load subs that failed qsiprep/qsirecon through babs
 # this txt file was made with grep 'error' job_status.csv | cut -d',' -f1 > ~/input/HBN/sample_selection_files/subs_failed_babs.txt
 failed_babs <- read.table("/cbica/projects/luo_wm_dev/input/HBN/sample_selection_files/subs_failed_babs.txt", header=F)
-sub_id <- sub_id[!sub_id$sub_id %in% failed_babs$V1,] %>% as.data.frame() %>% setNames("sub_id") # remove 29 participants from sample of 1276 due to failing qsiprep/qsirecon, new N = 1247
+# an additional subject, sub-NDARWV470ATB, did not get recorded as an error because its job timed out (> 24 hours; there was an issue with making FODs)
+failed_babs <- c(failed_babs$V1, "sub-NDARWV470ATB")
+sub_id <- sub_id[!sub_id$sub_id %in% failed_babs,] %>% as.data.frame() %>% setNames("sub_id") # remove 30 participants from sample of 1276 due to failing qsiprep/qsirecon, new N = 1246
 
 # load subs with missing tracts
 subs_missing_tracts <- read.table("/cbica/projects/luo_wm_dev/input/HBN/sample_selection_files/subs_missing_tracts.txt", header=F)
-sub_id <- sub_id[!sub_id$sub_id %in% subs_missing_tracts$V1,] %>% as.data.frame() %>% setNames("sub_id") # remove 15 participants from sample of 1247 due to missing tracts after pyAFQ, new N = 1232
+sub_id <- sub_id[!sub_id$sub_id %in% subs_missing_tracts$V1,] %>% as.data.frame() %>% setNames("sub_id") # remove 15 participants from sample of 1247 due to missing tracts after pyAFQ, new N = 1231
 ```
 
 ## Save Final Sample: Subject List, Demographics, QC measures

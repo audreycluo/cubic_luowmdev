@@ -1,9 +1,9 @@
 {
 	"dataset": "PNC",
 	"data_root": "/cbica/projects/luo_wm_dev/input/PNC",
-	"outputs_root": "/cbica/projects/luo_wm_dev/output/PNC/superficialWM",
-	"tract_profiles_data_root": "/cbica/projects/luo_wm_dev/input/PNC/PNC_tractprofiles",
-	"tract_profiles_outputs_root": "/cbica/projects/luo_wm_dev/output/PNC/tract_profiles",
-	"demographics_file": "/cbica/projects/luo_wm_dev/input/PNC/sample_selection_files/PNC_WMDev_FinalSampleDemographics_N1153_age8to22.csv",
-	"qc_file": "/cbica/projects/luo_wm_dev/input/PNC/sample_selection_files/PNC_WMDev_FinalSampleQCMetrics_N1153_age8to22.csv"
+	"outputs_root": "/cbica/projects/luo_wm_dev/output/PNC/tract_profiles",
+	"tract_profiles_root": "/cbica/projects/luo_wm_dev/input/PNC/derivatives/tract_profiles",
+	"demographics_temp": "/cbica/projects/luo_wm_dev/input/PNC/sample_selection_files/PNC_WMDev_TempSampleDemographics_N1153_age8to23.csv",
+	"qc_temp": "/cbica/projects/luo_wm_dev/input/PNC/sample_selection_files/PNC_WMDev_TempSampleQCMetrics_N1153_age8to23.csv",
+	"demo_qc": "/cbica/projects/luo_wm_dev/input/PNC/sample_selection_files/final_sample/PNC_WMDev_FinalSampleDemoQC.csv"
 }
