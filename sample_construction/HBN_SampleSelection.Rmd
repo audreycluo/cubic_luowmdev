@@ -77,12 +77,17 @@ participants.final <- participants.final[!participants.final$sub %in% qualityexc
 pod2 <- read.delim("/cbica/projects/luo_wm_dev/input/HBN/sample_selection_files/HBN-POD2.tsv")
 pod2 <- pod2 %>% rename(sub=subject_id)
   
-participants.final <- inner_join(participants.final, pod2[,c('sub', 'expert_qc_score', 'xgb_qsiprep_qc_score', 'xgb_qc_score', 'dl_qc_score')], by = "sub") # remove 24 participants from sample of 1971 due to not being BIDS-compliant dMRI data, remaining N = 1947
+participants.final <- inner_join(participants.final, pod2[,c('sub', 'expert_qc_score', 'xgb_qsiprep_qc_score', 'xgb_qc_score', 'dl_qc_score', 'site_variant')], by = "sub") # remove 24 participants from sample of 1971 due to not being BIDS-compliant dMRI data, remaining N = 1947
 
 # exclude based on expert rater score and CNN-i +q score from HBN-POD2 (CNN-i score is the definitive QC score, according to Richie-Halford paper)
-pod2exclude <- participants.final %>% filter(expert_qc_score < 0.6 | dl_qc_score < 0.6)
+pod2exclude <- participants.final %>% filter(expert_qc_score < 0.6 | dl_qc_score < 0.6) 
+
+# exclude if had ACBD sequence
+pod2exclude_abcd <- participants.final %>% filter(str_detect(site_variant, "ABCD"))
 
 participants.final <- participants.final[!participants.final$sub %in% pod2exclude$sub,] %>% as.data.frame() # remove 624 participants from sample of 1947 due to failing expert rater, remaining N = 1323
+
+participants.final <- participants.final[!participants.final$sub %in% pod2exclude_abcd$sub,] %>% as.data.frame() # remove 15 participants from sample of 1323 due to ABCD sequence, remaining N = 1315
 
 ```
 
@@ -90,50 +95,53 @@ participants.final <- participants.final[!participants.final$sub %in% pod2exclud
 ```{r}
 motionexclude <- dwi.qc %>% filter(mean_fd > 1) %>% select(sub) #participants to exclude from the final study sample based on high in-scanner head motion during the diffusion runs. (Note that 8 of these participants were already excluded in previous steps)
  
-participants.final <- participants.final[!participants.final$sub %in% motionexclude$sub,] %>% as.data.frame()  #remove additional 46 participants from the sample of 1323 due to in-scanner head motion, remaining N = 1277
+participants.final <- participants.final[!participants.final$sub %in% motionexclude$sub,] %>% as.data.frame()  #remove additional 46 participants from the sample of 1315 due to in-scanner head motion, remaining N = 1269
 ```
 
 ## Age Range Exclusion 
 ```{r}
-participants.final <- participants.final[!participants.final$sub %in% demographics$sub[which(is.na(demographics$age))],] %>% as.data.frame()  #remove additional 1 participant from the sample of 1277 due to missing age data, remaining N = 1276
+participants.final <- participants.final[!participants.final$sub %in% demographics$sub[which(is.na(demographics$age))],] %>% as.data.frame()  #remove additional 1 participant from the sample of 1269 due to missing age data, remaining N = 1268
 ```
 
 ## Save Temporary Sample for PyAFQ: Subject List and Demographics
 ```{r}
 # Make temp sample demographics dataframe
 demographics.temp <- demographics[demographics$sub %in% participants.final$sub,] %>% select(sub, age, sex, race, site) # combine demographics data 
- 
+demographics.temp <- demographics.temp %>% mutate(sex = case_when(
+  sex == "Male" ~ "M",
+  sex == "Female" ~ "F"
+))
 # Make temp sample QC metrics dataframe 
 dwi.qc.temp <- dwi.qc[dwi.qc$sub %in% participants.final$sub,] %>% select(sub, mean_fd, t1_neighbor_corr) 
 
 sub_id <- participants.final$sub %>% as.data.frame() %>% setNames("sub_id")
 
-write.table(sub_id, "/cbica/projects/luo_wm_dev/input/HBN/sample_selection_files/HBN_WMDev_TempSample_N1276_age5to22.txt", col.names=T, row.names=F, quote = TRUE)
+write.table(sub_id, "/cbica/projects/luo_wm_dev/input/HBN/sample_selection_files/HBN_WMDev_TempSample_N1268_age5to22.txt", col.names=T, row.names=F, quote = TRUE)
 #write.table(sub_id, "/cbica/projects/luo_wm_dev/input/HBN/subject_list/HBN_tempsubject_list.txt", col.names=F, row.names=F, quote = FALSE)
 write.table(sub_id, "/cbica/projects/luo_wm_dev/input/HBN/subject_list/HBN_subject_list_babs.txt", col.names=T, row.names=F, quote = FALSE)
 write.table(sub_id[c(1:3),], "/cbica/projects/luo_wm_dev/input/HBN/subject_list/HBN_subject_list_test.txt", col.names=F, row.names=F, quote = FALSE)
-write.csv(demographics.temp, "/cbica/projects/luo_wm_dev/input/HBN/sample_selection_files/HBN_WMDev_TempSampleDemographics_N1276_age5to22.csv", quote = F, row.names = F)
-write.csv(dwi.qc.temp, "/cbica/projects/luo_wm_dev/input/HBN/sample_selection_files/HBN_WMDev_TempSampleQCMetrics_N1276_age5to22.csv", quote = F, row.names = F)
+write.csv(demographics.temp, "/cbica/projects/luo_wm_dev/input/HBN/sample_selection_files/HBN_WMDev_TempSampleDemographics_N1268_age5to22.csv", quote = F, row.names = F)
+write.csv(dwi.qc.temp, "/cbica/projects/luo_wm_dev/input/HBN/sample_selection_files/HBN_WMDev_TempSampleQCMetrics_N1268_age5to22.csv", quote = F, row.names = F)
 ```
 
-## Missing Data Exclusion (after pyAFQ)
+## Missing Data Exclusion (after pyAFQ) - need to update after running
 ```{r}
 # load subs that failed qsiprep/qsirecon through babs
 # this txt file was made with grep 'error' job_status.csv | cut -d',' -f1 > ~/input/HBN/sample_selection_files/subs_failed_babs.txt
 failed_babs <- read.table("/cbica/projects/luo_wm_dev/input/HBN/sample_selection_files/subs_failed_babs.txt", header=F)
 # an additional subject, sub-NDARWV470ATB, did not get recorded as an error because its job timed out (> 24 hours; there was an issue with making FODs)
 failed_babs <- c(failed_babs$V1, "sub-NDARWV470ATB")
-sub_id <- sub_id[!sub_id$sub_id %in% failed_babs,] %>% as.data.frame() %>% setNames("sub_id") # remove 30 participants from sample of 1276 due to failing qsiprep/qsirecon, new N = 1246
+sub_id <- sub_id[!sub_id$sub_id %in% failed_babs,] %>% as.data.frame() %>% setNames("sub_id") # remove 30 participants from sample of 1268 due to failing qsiprep/qsirecon, new N = 1223
 
 # load subs with missing tracts
 subs_missing_tracts <- read.table("/cbica/projects/luo_wm_dev/input/HBN/sample_selection_files/subs_missing_tracts.txt", header=F)
-sub_id <- sub_id[!sub_id$sub_id %in% subs_missing_tracts$V1,] %>% as.data.frame() %>% setNames("sub_id") # remove 15 participants from sample of 1247 due to missing tracts after pyAFQ, new N = 1231
+sub_id <- sub_id[!sub_id$sub_id %in% subs_missing_tracts$V1,] %>% as.data.frame() %>% setNames("sub_id") # remove 15 participants from sample of 1223 due to missing tracts after pyAFQ, new N = 1231
 ```
 
 ## Save Final Sample: Subject List, Demographics, QC measures
 ```{r}
 # Make final sample demographics dataframe
-demographics.final<- demographics[demographics$sub %in% sub_id$sub_id,] %>% select(sub, age, sex, race, site) # combine demographics data 
+demographics.final<- demographics.temp[demographics.temp$sub %in% sub_id$sub_id,] %>% select(sub, age, sex, race, site) # combine demographics data 
  
 # Make final sample QC metrics dataframe 
 dwi.qc.final <- dwi.qc[dwi.qc$sub %in% sub_id$sub_id,] %>% select(sub, mean_fd, t1_neighbor_corr) 

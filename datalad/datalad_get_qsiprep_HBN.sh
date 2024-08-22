@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=datalad_get_HBN
+#SBATCH --job-name=datalad_get_qsiprep_HBN
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=1
 #SBATCH --mem=4G

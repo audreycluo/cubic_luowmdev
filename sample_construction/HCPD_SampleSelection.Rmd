@@ -29,7 +29,6 @@ colnames(participants) <- c("rbcid")
 # Construct Final Sample
 ```{r}
 demographics <- read.csv("/cbica/projects/luo_wm_dev/input/HCPD/sample_selection_files/hcpd_demographics.csv") # originally downloaded from /cbica/projects/RBC/Curation/RBC_demo_pheno/data/hcpd_demographics.csv but this file has since been moved. Also available on PennLINC slack.
-
 demographics$rbcid <- gsub("HCD", "sub-", demographics$src_subject_id) 
 demographics <- demographics[demographics$rbcid %in% participants$rbcid,] #demographic, medical, and clinical information for just the N = 639 participants with non-variant diffusion MRI data
 ```
@@ -116,3 +115,11 @@ write.csv(dwi.qc.temp, "/cbica/projects/luo_wm_dev/input/HCPD/sample_selection_f
 write.table(sub_id, "/cbica/projects/luo_wm_dev/input/HCPD/subject_list/final_sample/HCPD_WMDev_FinalSample.txt", col.names=T, row.names=F, quote = TRUE)
 write.csv(merge(demographics.temp, dwi.qc.temp), "/cbica/projects/luo_wm_dev/input/HCPD/sample_selection_files/final_sample/HCPD_WMDev_FinalSampleDemoQC.csv", quote = F, row.names = F)
 ```
+
+
+```{r}
+sub_id <- read.table("/cbica/projects/luo_wm_dev/input/HCPD/subject_list/final_sample/HCPD_WMDev_FinalSample.txt", header=T)
+
+setdiff(sub_id$sub_id, unique(all_subjects$sub))
+```
+

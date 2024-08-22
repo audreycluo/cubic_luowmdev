@@ -1,0 +1,493 @@
+---
+title: "NEST for distance to cortex"
+author: "Audrey Luo"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(cowplot)
+library(data.table)
+library(dplyr)
+library(ggplot2)
+library(ggpubr)
+library(grid)
+library(gridExtra)
+library(gratia) 
+library(knitr)
+library(kableExtra)
+library(mgcv)
+library(RColorBrewer)
+library(scales)
+library(stringr)
+library(rjson)
+library(tidyr)
+library(NEST)
+
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE, include = TRUE) 
+
+font_size <- 14
+theme_set(theme_classic(base_family = "sans",base_size = font_size))
+line_size <- 1
+point_size <- 2
+
+proj_root <- "/cbica/projects/luo_wm_dev/"
+input_root <- paste0(proj_root, "input")
+output_root <- paste0(proj_root, "output")
+png_dir <- "/Users/audluo/PennLINC/luowm_local/output/tract_profiles_testing/both_datasets/"
+local_dir <- "/Users/audluo/Desktop/temp_code"
+```
+
+# load data
+- tract profiles data from baseline tract profiles
+- may want to separate each tract (for each dataset)
+- need a vector for which locations should be ignored. May want to ignore the nodes that are neither central (i.e. nodes 40-59) nor peripheral (i.e. nodes 0-9 and 90-99)
+- also need a binary vector indicating 1 = central, 0 = peripheral 
+
+test for hcpd arcuate
+```{r step 2: prepare data}
+config_data <- fromJSON(file=sprintf("/cbica/projects/luo_wm_dev/code/tract_profiles/config/config_%1$s.json", "HCPD"))
+demographics <- read.csv(config_data$demo_qc)
+
+HCPD <- readRDS(sprintf("%1$s/%2$s/tract_profiles/all_subjects/tract_profiles_for_viz.RData", output_root, "HCPD"))
+HCPD_arcuate <- HCPD %>% filter(tract_label == "Arcuate")
+HCPD_wide <- HCPD_arcuate %>% select(sub, tract_node, all_of("dti_md")) %>% pivot_wider(names_from = "tract_node", values_from = "dti_md") 
+# identical(demographics$sub, as.character(HCPD_wide$sub))
+HCPD_wide <- HCPD_wide %>% select(-sub)
+
+# set phenotype of interest (age) and covariates (sex + mean_fd)
+demographics$sex <- as.numeric(as.factor(demographics$sex))
+# 1 = F, 2 = M
+HCPD_covs <- as.matrix(cbind( demographics$age, demographics$sex, as.numeric(demographics$mean_fd))) # matrix dimensions = N x 3
+colnames(HCPD_covs) <- c("age", "sex", "mean_fd")
+
+# set other variables - note that this is for bilateral tracts
+idx <- c(11:45, 56:90, 111:145, 156:190) # identify which locations should be ignored. E.g. nodes that are neither central (i.e. nodes 45-54) nor peripheral (i.e. nodes 0-9 and 90-99)
+
+# 'network of interest': indicate where peripheral WM is (0 = deep, 1 = peripheral)
+peripheral_idx <-  as.numeric(grepl("_(0|[1-9]|9[0-9])$", names(HCPD_wide[, -idx])))  
+
+# final variables for NEST
+HCPD_X <- as.matrix(HCPD_wide[, -idx])
+colnames(HCPD_X) <- NULL
+HCPD_dat <- HCPD_covs
+net <- list(peripheral_10nodes <- peripheral_idx)
+```
+
+```{r step 3: define dictionary of arguments}
+args.gam <- list(
+    X = HCPD_X, # brain measurements (dimension N subjects x P image locations)
+    
+    dat = HCPD_dat, # matrix including phenotype and any covariates. make sure all columns in dat are names
+    
+    gam.formula =  as.formula(X.v ~ s(age, k = 3, fx = TRUE) + sex + mean_fd), # user-specified formula for gam fit at each vertex (in each gam, outcome will be a different column of X and the right side of the formula should include variables included in dat matrix)
+    
+    lm.formula = as.formula(X.v ~ age + sex + mean_fd), # user-specified formula for lm fit at each vertex (purpose is just to get a sign of the multivariate wald statistic obtained from the gam at each vertex, since the wald stat is always positive)
+      
+    y.in.gam = "s(age)", # if there's a smooth term for the phenotype, it may be something like s(y)
+      
+    y.in.lm = "age", # character specifying how phenotype variable can be identified in lm.
+    
+    y.permute = "age",# specify names of columns in dat matrix that should be permuted when getNull = TRUE
+    getNull = TRUE,
+    seed = 123,
+    n.perm = 999
+)
+```
+
+ 
+ 
+so i don't think that multivariate Wald statistic will capture differences in age effect very well.
+Time to customize for delta adjusted Rsq T_T 
+
+```{r}
+#' statFun.gam.deltaRsq() will be called by NEST() if NEST argument statFun=="gam.deltaRsq"
+#'@param X n x p matrix of image measurements (n = number of subjects, p = number of image locations)
+#'@param dat matrix including phenotype and any covariates. make sure all columns in dat are names
+#'@param gam.formula user-specified formula for gam fit at each vertex (in each gam, outcome will be a different column of X and the right side of the formula should include variables included in dat matrix)
+#'@param lm.formula user-specified formula for lm fit at each vertex (purpose is to get the sign of the delta adjusted R-squared)
+#'@param y.in.gam character specifying how the phenotype variable can be identified in gam. if phenotype is included as a linear term in the gam formula, this could just be the variable name. if there's a smooth term for the phenotype, it may be something like s(y)
+#'@param y.in.lm character specifying how the phenotype variable can be identified in lm. again, might just be the name of the variable, but could be different (e.g., if testing an interaction term)
+#'@param y.permute specify names of columns in dat matrix that should be permuted when getNull = TRUE
+#'@param n.cores for parallelization, number of cores to use (default is 1 / no parallelization)
+#'@param seed optional to set seed
+#'@param n.perm number of permutations to conduct for inference. default is 999 (i.e. minimum p-value 1/1000)
+#'@param getNull whether to obtain null distribution vs. just get observed map of statistics. default will be TRUE inside NEST function, but the statFun function will then be recursively called to get null distribution and getNull will then switch to FALSE
+#'@export
+statFun.gam.deltaRsq = function(X, dat, gam.formula, lm.formula, y.in.gam, y.in.lm, y.permute = NULL, n.cores = 1, seed = NULL, n.perm = 999, getNull = TRUE){
+
+  xyz = cbind(X.v = X[,1], # just use the first image location for building model.matrix (will end up refitting at every location though)
+              dat)
+
+  # initial gam (to get model matrix)
+  gam.init = gam(formula = gam.formula, data = data.frame(xyz))
+  gam.model.matrix = model.matrix(gam.init)
+
+  # weird bug: model matrix is not full rank; remove duplicated column
+  if (sum(duplicated(t(gam.model.matrix))) > 0){
+    gam.model.matrix = gam.model.matrix[,-which(duplicated(t(gam.model.matrix)))]
+  }
+
+  columns.to.test = colnames(gam.model.matrix)[grepl(y.in.gam, colnames(gam.model.matrix), fixed = TRUE)]
+
+  # pre-specify the permutations (i.e., do the same permutations of people across vertices)
+  if (getNull == TRUE){
+    if (is.null(y.permute)){
+      message("need to specify which columns of `dat` should be permuted")
+      return(NULL)
+    }
+    if (!is.null(seed)){set.seed(seed)}
+    perm.ind = lapply(1:n.perm, FUN = function(k){
+      sample(1:nrow(X), replace = FALSE)
+    })
+  }
+
+  # Calculate delta adjusted R-squared (ΔR^2adj) for observed data:
+  stat.obs = unlist(mclapply(1:ncol(X), FUN = function(v){
+    xyz[,"X.v"] = X[,v]
+
+    # Full model (with smooth term)
+    gam.fullmodel = gam(formula = gam.formula, data = data.frame(xyz))
+    gam.fullmodel.results = summary(gam.fullmodel)
+
+    # Null model (without smooth term)
+    nullmodel.formula = update(gam.formula, . ~ . - s(age, k = 3, fx = TRUE))  # Remove the smooth term
+    gam.nullmodel = gam(formula = nullmodel.formula, data = data.frame(xyz))
+    gam.nullmodel.results = summary(gam.nullmodel)
+
+    # Calculate delta adjusted R-squared (ΔR^2adj)
+    adjRsq = gam.fullmodel.results$r.sq - gam.nullmodel.results$r.sq
+
+    # Determine the sign using the linear model
+    lm.model = lm(lm.formula, data = data.frame(xyz))
+    lm.model.t = summary(lm.model)$coefficients[2, 3]  # t-value for the first covariate (assumed to be the smooth term)
+
+    if(lm.model.t < 0){
+      adjRsq = adjRsq * -1
+    }
+
+    return(adjRsq)
+  }, mc.cores = n.cores))
+
+  # If getNull is TRUE, calculate the null distribution of ΔR^2adj
+  if (getNull == TRUE){
+    stat.null = lapply(1:n.perm, FUN = function(k){
+
+      dat.k = dat
+      dat.k[,y.permute] = dat.k[perm.ind[[k]], y.permute]
+
+      statFun.gam.deltaRsq(X = X,
+                           dat = dat.k,
+                           gam.formula = gam.formula,
+                           lm.formula = lm.formula,
+                           y.in.gam = y.in.gam,
+                           y.in.lm = y.in.lm, n.cores = n.cores, seed = seed,
+                           n.perm = NULL,  # no permutations to do with getNull = FALSE
+                           getNull = FALSE)
+
+    })
+    return(list(T.obs = stat.obs,
+                T.null = stat.null))
+  } else{
+    return(stat.obs)
+  }
+}
+
+
+```
+
+
+
+```{r update NEST}
+#' NEST function
+#'@param statFun Function name for the statistical function to be used (e.g., "lm", "gam.mvwald", "gam.deltaRsq").
+#'@param args List of arguments required by the selected statFun function.
+#'@param net.maps List of vectors (one for each network), where each vector contains 0s and 1s indicating network membership.
+#'@param one.sided Logical. If TRUE, performs a one-sided test.
+#'@param n.cores Number of cores to use for parallel processing.
+#'@param seed Optional seed for reproducibility.
+#'@param what.to.return Character vector indicating what outputs to return (e.g., "pval", "ES", "T.obs", "T.null").
+#'@export
+NEST_audrey = function(statFun, args, net.maps, one.sided = TRUE, n.cores = 1, seed = NULL, what.to.return = c("pval")){
+
+  # Check input requirements
+  if (!is.list(net.maps)){
+    message("net.maps argument should be a list, of vectors (one for each network)")
+    return(NULL)
+  }
+
+  if (ncol(args$X) != length(net.maps[[1]])){
+    message("each network should be specified as a vector with length equal to number of columns of X.")
+    return(NULL)
+  }
+
+  if (!identical(as.numeric(sort(unique(unlist(net.maps)))), as.numeric(c(0,1)))){ 
+    message("net.maps should include only 0's and 1's (1 = in network/ROI; 0 = outside network/ROI)")
+    return(NULL)
+  }
+
+  # Map brain-phenotype associations
+  if (statFun == "lm"){
+    required.args = c("X", "y")
+    optional.args = c("Z", "type", "FL", "getNull","n.perm")
+
+    args = checkArgs(args = args, required.args = required.args, optional.args = optional.args)
+    if (!isFALSE(args)){
+      statFun.out = statFun.lm(X = args$X,
+                               y = args$y,
+                               Z = args$Z,
+                               type = args$type,
+                               n.cores = n.cores,
+                               seed = seed,
+                               FL = args$FL,
+                               n.perm = args$n.perm,
+                               getNull = args$getNull)
+    } else{
+      message("fix args!")
+      return(NULL)
+    }
+  }
+
+  if (statFun == "gam.mvwald" || statFun == "gam.deltaRsq"){
+
+    # Check args:
+    required.args = c("X","dat","gam.formula","lm.formula","y.in.gam","y.in.lm")
+    optional.args = c("n.perm")
+
+    args = checkArgs(args = args, required.args = required.args, optional.args = optional.args)
+
+    if (!isFALSE(args)){
+      if (statFun == "gam.mvwald") {
+        statFun.out = statFun.gam.mvwald(X = args$X,
+                                         dat = args$dat,
+                                         gam.formula = args$gam.formula,
+                                         lm.formula = args$lm.formula,
+                                         y.in.gam = args$y.in.gam,
+                                         y.in.lm = args$y.in.lm,
+                                         y.permute = args$y.permute,
+                                         n.cores = n.cores, seed = seed,
+                                         n.perm = args$n.perm,
+                                         getNull = TRUE)
+      } else if (statFun == "gam.deltaRsq") {
+        statFun.out = statFun.gam.deltaRsq(X = args$X,
+                                           dat = args$dat,
+                                           gam.formula = args$gam.formula,
+                                           lm.formula = args$lm.formula,
+                                           y.in.gam = args$y.in.gam,
+                                           y.in.lm = args$y.in.lm,
+                                           y.permute = args$y.permute,
+                                           n.cores = n.cores, seed = seed,
+                                           n.perm = args$n.perm,
+                                           getNull = TRUE)
+      }
+    } else{
+      message("fix args!")
+      return(NULL)
+    }
+  }
+
+  ES.list = mclapply(net.maps, FUN = function(net.map){
+    ES.obs = enrichScore(stat.map = statFun.out$T.obs,
+                         net.map = net.map,
+                         one.sided = one.sided,
+                         save.detail = F)
+
+    ES.null = lapply(1:args$n.perm, FUN = function(k){
+      enrichScore(stat.map = statFun.out$T.null[[k]],
+                  net.map = net.map,
+                  one.sided = one.sided,
+                  save.detail = F)
+    })
+
+    return(list(ES.obs = ES.obs,
+                ES.null.dist = ES.null))
+  }, mc.cores = n.cores)
+
+  pval.list = mclapply(1:length(net.maps), FUN = function(net){
+    pvalFun(obs = ES.list[[net]]$ES.obs, null.dist = ES.list[[net]]$ES.null.dist)
+  })
+
+  out = list()
+
+  if ("everything" %in% what.to.return){
+    out$pval = pval.list
+    out$ES = ES.list
+    out$T.obs = statFun.out$T.obs
+    out$T.null = statFun.out$T.null
+    return(out)
+  }else{
+    if ("pval" %in% what.to.return){ 
+      out$pval = pval.list
+    }
+
+    if ("ES" %in% what.to.return){
+      out$ES = ES.list
+    }
+
+    if ("ES.obs" %in% what.to.return){
+      out$ES.obs = sapply(ES.list, FUN = function(x){x$ES.obs})
+    }
+
+    if ("T.obs" %in% what.to.return){
+      out$T.obs = statFun.out$T.obs
+    }
+
+    if ("T.null" %in% what.to.return){
+      out$T.null = statFun.out$T.null
+    }
+    return(out)
+  }
+}
+
+```
+
+
+will need to adapt this to multiple tracts, datasets, and for submitting as a job on cubic
+```{r run NEST with delta adj rsq}
+
+# i think this should be two sided
+result <- NEST_audrey(
+  statFun = "gam.deltaRsq",
+  args = list(X = HCPD_X, 
+              dat = HCPD_dat, 
+              gam.formula = as.formula(X.v ~ s(age, k = 3, fx = TRUE) + sex + mean_fd), 
+              lm.formula = as.formula(X.v ~ age + sex + mean_fd),  
+              y.in.gam = "s(age)", 
+              y.in.lm = "age", 
+              y.permute = "age",  
+              n.perm = 999),
+  net.maps = net,
+  one.sided = TRUE,
+  n.cores = 4, 
+  seed = 123, 
+  what.to.return = "everything"
+)
+
+result$pval
+result$ES
+hist(unlist(result$ES))
+```
+
+
+```{r}
+result_twosided <- NEST_audrey(
+  statFun = "gam.deltaRsq",
+  args = list(X = HCPD_X, 
+              dat = HCPD_dat, 
+              gam.formula = as.formula(X.v ~ s(age, k = 3, fx = TRUE) + sex + mean_fd), 
+              lm.formula = as.formula(X.v ~ age + sex + mean_fd),  
+              y.in.gam = "s(age)", 
+              y.in.lm = "age", 
+              y.permute = "age",  
+              n.perm = 999),
+  net.maps = net,
+  one.sided = FALSE,
+  n.cores = 4, 
+  seed = 123, 
+  what.to.return = "everything"
+)
+
+ 
+result_twosided$pval
+result_twosided$ES
+hist(unlist(result_twosided$ES), breaks=20)
+data.frame(HCPD_X)
+```
+
+
+```{r wrapper function for running NEST}
+config_data <- fromJSON(file=sprintf("/cbica/projects/luo_wm_dev/code/tract_profiles/config/config_%1$s.json", dataset))
+demographics <- read.csv(config_data$demo_qc)
+
+run_NEST <- function(dataset, tract, bin_num_nodes) {
+  df <- readRDS(sprintf("%1$s/%2$s/tract_profiles/all_subjects/tract_profiles_for_viz.RData", output_root, dataset))
+  df_tract <- df %>% filter(tract_label == tract)
+  df_wide <- df_tract %>% select(sub, tract_node, all_of("dti_md")) %>% pivot_wider(names_from = "tract_node", values_from = "dti_md") 
+
+  if(!identical(demographics$sub, as.character(df_wide$sub))) {
+    stop("Error: The 'sub' columns in 'demographics' and 'df_wide' do not match.")
+  }
+  
+  # set phenotype of interest (age) and covariates (sex + mean_fd)
+  demographics$sex <- as.numeric(as.factor(demographics$sex))
+  # 1 = F, 2 = M
+  covs <- as.matrix(cbind( demographics$age, demographics$sex, as.numeric(demographics$mean_fd))) # matrix dimensions = N x 3
+  colnames(covs) <- c("age", "sex", "mean_fd")
+ 
+  
+  # identify which locations should be ignored. E.g. nodes that are neither central (i.e. nodes 40-59 for bin_num_nodes = 10) nor peripheral (i.e. nodes 0-9 and 90-99 for bin_num_nodes = 10)
+  if(bin_num_nodes == 10) {
+    idx <- c(11:40, 61:90, 111:140, 161:190) 
+  } else if (bin_num_nodes == 15) {
+    idx <- c(16:45, 66:85, 116:145, 166:185) 
+  } else if (bin_num_nodes == 20) {
+    idx <- c(21:50, :85, 116:145, 166:185) 
+  }
+  
+  
+  # 'network of interest': indicate where peripheral WM is (0 = deep, 1 = peripheral)
+  peripheral_idx <-  as.numeric(grepl("_(0|[1-9]|9[0-9])$", names(HCPD_wide[, -idx])))  
+  
+  # final variables for NEST
+  HCPD_X <- as.matrix(HCPD_wide[, -idx])
+  colnames(HCPD_X) <- NULL
+  HCPD_dat <- HCPD_covs
+  net <- list(peripheral_10nodes <- peripheral_idx)
+
+
+}
+ 
+ 
+
+
+
+```
+
+
+check preliminary outputs for multiple tracts
+```{r check outputs hcpd}
+atr <- readRDS("/cbica/projects/luo_wm_dev/output/HCPD/tract_profiles/NEST/Anterior Thalamic_numNodes10_twsided.RData")
+arc <- readRDS("/cbica/projects/luo_wm_dev/output/HCPD/tract_profiles/NEST/Arcuate_numNodes10_twsided.RData")
+cing <- readRDS("/cbica/projects/luo_wm_dev/output/HCPD/tract_profiles/NEST/Cingulum Cingulate_numNodes10_twsided.RData")
+cst <- readRDS("/cbica/projects/luo_wm_dev/output/HCPD/tract_profiles/NEST/Corticospinal_numNodes10_twsided.RData")
+ifo <- readRDS("/cbica/projects/luo_wm_dev/output/HCPD/tract_profiles/NEST/Inferior Fronto-occipital_numNodes10_twsided.RData")
+ilf <- readRDS("/cbica/projects/luo_wm_dev/output/HCPD/tract_profiles/NEST/Inferior Longitudinal_numNodes10_twsided.RData")
+slf <- readRDS("/cbica/projects/luo_wm_dev/output/HCPD/tract_profiles/NEST/Superior Longitudinal_numNodes10_twsided.RData")
+parc <- readRDS("/cbica/projects/luo_wm_dev/output/HCPD/tract_profiles/NEST/Posterior Arcuate_numNodes10_twsided.RData")
+unc <- readRDS("/cbica/projects/luo_wm_dev/output/HCPD/tract_profiles/NEST/Uncinate_numNodes10_twsided.RData")
+
+p.adjust(unlist(c(arc$pval, cing$pval, ifo$pval, ilf$pval, slf$pval, parc$pval, unc$pval)), method=c("fdr"))
+ 
+unc$pval
+arcuate_two$pval
+```
+
+```{r check outputs HBN}
+atr <- readRDS("/cbica/projects/luo_wm_dev/output/HBN/tract_profiles/NEST/Anterior Thalamic_numNodes10_twsided.RData")
+arc <- readRDS("/cbica/projects/luo_wm_dev/output/HBN/tract_profiles/NEST/Arcuate_numNodes10_twsided.RData")
+cing <- readRDS("/cbica/projects/luo_wm_dev/output/HBN/tract_profiles/NEST/Cingulum Cingulate_numNodes10_twsided.RData")
+cst <- readRDS("/cbica/projects/luo_wm_dev/output/HBN/tract_profiles/NEST/Corticospinal_numNodes10_twsided.RData")
+
+ 
+
+arc$pval
+cing$pval
+cst$pval
+```
+
+
+
+```{r check outputs PNC}
+atr <- readRDS("/cbica/projects/luo_wm_dev/output/PNC/tract_profiles/NEST/Anterior Thalamic_numNodes10_twsided.RData")
+arc <- readRDS("/cbica/projects/luo_wm_dev/output/PNC/tract_profiles/NEST/Arcuate_numNodes10_twsided.RData")
+cing <- readRDS("/cbica/projects/luo_wm_dev/output/PNC/tract_profiles/NEST/Cingulum Cingulate_numNodes10_twsided.RData")
+cst <- readRDS("/cbica/projects/luo_wm_dev/output/PNC/tract_profiles/NEST/Corticospinal_numNodes10_twsided.RData")
+ifo <- readRDS("/cbica/projects/luo_wm_dev/output/PNC/tract_profiles/NEST/Inferior Fronto-occipital_numNodes10_twsided.RData")
+ilf <- readRDS("/cbica/projects/luo_wm_dev/output/PNC/tract_profiles/NEST/Inferior Longitudinal_numNodes10_twsided.RData")
+parc <- readRDS("/cbica/projects/luo_wm_dev/output/PNC/tract_profiles/NEST/Posterior Arcuate_numNodes10_twsided.RData")
+ 
+
+arc$pval
+cing$pval
+ifo$pval
+parc$pval
+```

@@ -1,0 +1,124 @@
+---
+title: "Compare DTI before and after qsiprep update"
+author: "Audrey Luo"
+date: "2024-08-14"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+
+library(cowplot)
+library(data.table)
+library(dplyr)
+library(ggplot2)
+library(ggpubr)
+library(grid)
+library(gridExtra)
+library(gratia) 
+library(kableExtra)
+library(mgcv)
+library(RColorBrewer)
+library(stringr)
+library(tidyr)
+input_root <- "/cbica/projects/luo_wm_dev/input"
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r cars}
+
+all_subjects_HCPD <- fread(sprintf("%1$s/%2$s/derivatives/%2$s_tractprofiles_dti/all_subjects/collated_tract_profiles_reoriented_nocovbat.tsv", input_root, "HCPD"))
+old_HCPD <- all_subjects_HCPD
+old_HCPD <- old_HCPD %>% mutate(tractID = case_when(
+      tract_hemi == "Left_Anterior_Thalamic_Radiation" ~ "Left_Anterior_Thalamic",
+      tract_hemi == "Right_Anterior_Thalamic_Radiation" ~ "Right_Anterior_Thalamic",
+      tract_hemi == "Left_Corticospinal_Tract" ~ "Left_Corticospinal" ,
+      tract_hemi == "Right_Corticospinal_Tract" ~ "Right_Corticospinal" ,
+      tract_hemi == "Left_Inferior_Fronto-occipital_Fasciculus" ~ "Left_Inferior_Fronto-occipital",
+      tract_hemi == "Right_Inferior_Fronto-occipital_Fasciculus" ~ "Right_Inferior_Fronto-occipital_Fasciculus",
+      tract_hemi == "Left_Inferior_Longitudinal_Fasciculus" ~ "Left_Inferior_Longitudinal",
+      tract_hemi == "Right_Inferior_Longitudinal_Fasciculus" ~ "Right_Inferior_Longitudinal",
+      tract_hemi == "Left_Superior_Longitudinal_Fasciculus" ~ "Left_Superior_Longitudinal",
+      tract_hemi == "Right_Superior_Longitudinal_Fasciculus" ~ "Right_Superior_Longitudinal",
+      tract_hemi == "Left_Arcuate_Fasciculus" ~ "Left_Arcuate",
+      tract_hemi == "Right_Arcuate_Fasciculus" ~ "Right_Arcuate",
+      tract_hemi == "Left_Uncinate_Fasciculus" ~ "Left_Uncinate",
+      tract_hemi == "Right_Uncinate_Fasciculus" ~ "Right_Uncinate",
+      tract_hemi == "Left_Posterior_Arcuate" ~ "Left_Posterior",
+      tract_hemi == "Right_Posterior_Arcuate" ~ "Right_Posterior",
+      tract_hemi == "Left_Vertical_Occipital_Fasciculus" ~ "Left_Vertical_Occipital",
+      tract_hemi == "Right_Vertical_Occipital_Fasciculus" ~ "Right_Vertical_Occipital",
+      TRUE ~ tract_hemi
+    ))
+old_HCPD <- old_HCPD %>% mutate(tract_node_subject = paste(tractID, "_", nodeID, "_", subjectID))
+old_HCPD <- old_HCPD %>% rename(dti_md_old = dti_md) %>% select(tract_node_subject, subjectID, nodeID, dti_md_old, tractID)
+
+all_subjects_HBN <- fread(sprintf("%1$s/%2$s/derivatives/%2$s_tractprofiles/all_subjects/collated_tract_profiles_reoriented_nocovbat.tsv", input_root, "HBN"))
+
+old_HBN <- all_subjects_HBN
+
+old_HBN <- old_HBN %>% mutate(tractID = case_when(
+      tract_hemi == "Left_Anterior_Thalamic_Radiation" ~ "Left_Anterior_Thalamic",
+      tract_hemi == "Right_Anterior_Thalamic_Radiation" ~ "Right_Anterior_Thalamic",
+      tract_hemi == "Left_Corticospinal_Tract" ~ "Left_Corticospinal" ,
+      tract_hemi == "Right_Corticospinal_Tract" ~ "Right_Corticospinal" ,
+      tract_hemi == "Left_Inferior_Fronto-occipital_Fasciculus" ~ "Left_Inferior_Fronto-occipital",
+      tract_hemi == "Right_Inferior_Fronto-occipital_Fasciculus" ~ "Right_Inferior_Fronto-occipital_Fasciculus",
+      tract_hemi == "Left_Inferior_Longitudinal_Fasciculus" ~ "Left_Inferior_Longitudinal",
+      tract_hemi == "Right_Inferior_Longitudinal_Fasciculus" ~ "Right_Inferior_Longitudinal",
+      tract_hemi == "Left_Superior_Longitudinal_Fasciculus" ~ "Left_Superior_Longitudinal",
+      tract_hemi == "Right_Superior_Longitudinal_Fasciculus" ~ "Right_Superior_Longitudinal",
+      tract_hemi == "Left_Arcuate_Fasciculus" ~ "Left_Arcuate",
+      tract_hemi == "Right_Arcuate_Fasciculus" ~ "Right_Arcuate",
+      tract_hemi == "Left_Uncinate_Fasciculus" ~ "Left_Uncinate",
+      tract_hemi == "Right_Uncinate_Fasciculus" ~ "Right_Uncinate",
+      tract_hemi == "Left_Posterior_Arcuate" ~ "Left_Posterior",
+      tract_hemi == "Right_Posterior_Arcuate" ~ "Right_Posterior",
+      tract_hemi == "Left_Vertical_Occipital_Fasciculus" ~ "Left_Vertical_Occipital",
+      tract_hemi == "Right_Vertical_Occipital_Fasciculus" ~ "Right_Vertical_Occipital",
+      TRUE ~ tract_hemi
+    ))
+
+old_HBN <- old_HBN %>% mutate(tract_node_subject = paste(tractID, "_", nodeID, "_", subjectID))
+old_HBN <- old_HBN %>% rename(dti_md_old = dti_md) %>% select(tract_node_subject, subjectID, nodeID, dti_md_old, tractID)
+
+```
+
+```{r}
+new_HCPD_load <- fread("/cbica/projects/luo_wm_dev/input/HCPD/derivatives/tract_profiles/all_subjects/collated_tract_profiles_nocovbat.tsv")
+new_HBN_load <- fread("/cbica/projects/luo_wm_dev/input/HBN/derivatives/tract_profiles/all_subjects/collated_tract_profiles_nocovbat.tsv")
+
+new_HCPD <- new_HCPD_load 
+new_HBN <- new_HBN_load 
+new_HCPD$tractID <- gsub(" ", "_", new_HCPD$tractID)
+new_HBN$tractID <- gsub(" ", "_", new_HBN$tractID)
+
+new_HCPD <- new_HCPD %>% rename(dti_md_new = dti_md, subjectID = sub) %>% mutate(tract_node_subject = paste(tractID, "_", nodeID, "_", subjectID))
+new_HCPD_dti <- new_HCPD %>% select(tract_node_subject, subjectID, tractID, nodeID, dti_md_new)
+
+new_HBN <- new_HBN %>% rename(dti_md_new = dti_md, subjectID = sub) %>% mutate(tract_node_subject = paste(tractID, "_", nodeID, "_", subjectID))
+new_HBN_dti <- new_HBN %>% select(tract_node_subject, subjectID, tractID, nodeID, dti_md_new)
+
+
+ 
+HCPD <- inner_join(old_HCPD, new_HCPD_dti, by = "tract_node_subject")
+cor.test(HCPD$dti_md_old, HCPD$dti_md_new) # 0.9886657 
+
+HBN <- inner_join(old_HBN, new_HBN_dti, by = "tract_node_subject")
+cor.test(HBN$dti_md_old, HBN$dti_md_new) # 0.9946295 
+
+```
+
+```{r}
+# compare dki and dti
+
+cor.test(new_HCPD_load$dki_md, new_HCPD_load$dti_md) # r = 0.7544453 
+cor.test(new_HBN_load$dki_md, new_HBN_load$dti_md) # r = -0.0835131 # well that's interesting lol
+cbind(new_HBN_load$dki_md, new_HBN_load$dti_md)
+```
+ 
+

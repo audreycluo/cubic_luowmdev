@@ -34,7 +34,6 @@ format_covbat <- function(df, scalar) {
     mutate(hemi = str_extract(tractID, "Left|Right"))
   df_long$nodeID <- as.numeric(df_long$nodeID)
   df_long$sub <- as.factor(df_long$sub)
-  df_long$tractID <- gsub("Fronto.occipital", "Fronto-occipital", df_long$tractID)
   names(df_long)[which(names(df_long) == "value")] <- paste0(scalar)
   return(df_long)
 }
@@ -43,6 +42,7 @@ format_covbat <- function(df, scalar) {
 # Load files 
 ################## 
 all_subjects <- fread(sprintf("%1$s/all_subjects/collated_tract_profiles_nocovbat.tsv", data_root))
+all_subjects$tractID <- gsub("Fronto-occipital", "Fronto.occipital", all_subjects$tractID)
 all_subjects <- all_subjects %>% mutate(hemi = ifelse(grepl("Left", tractID), "Left", "Right")) %>% 
   mutate(tract_node = gsub(" ", "_", paste0(tractID, "_", nodeID)))
 all_subjects$sub <- as.factor(all_subjects$sub)
@@ -106,7 +106,6 @@ print("DKI MD harmonized")
 data.harmonized_dti_md <- covfam(dti_md_to_harmonize, bat = as.factor(demographics$site), covar = covar_df, model = gam, formula = y ~ s(age, k=3, fx=T) + as.factor(sex) + as.numeric(mean_fd))
 print("DTI MD harmonized")
 
-
 # clean up covbat output for saving to RData
 dki_fa_covbat <- data.frame(data.harmonized_dki_fa$dat.covbat)
 dki_fa_covbat$sub <- rownames(dki_fa_covbat)
@@ -143,5 +142,3 @@ merged_covbat_all <- merged_covbat_all %>% arrange(sub, tractID, nodeID, hemi)
 # save out!
 saveRDS(merged_covbat_all, sprintf("%1$s/all_subjects/collated_tract_profiles_final.RData", data_root))
  
-
-

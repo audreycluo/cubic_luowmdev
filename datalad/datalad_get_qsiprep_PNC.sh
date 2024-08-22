@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=datalad_get_PNC
+#SBATCH --job-name=datalad_get_qsiprep_PNC
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=1
 #SBATCH --mem=4G

@@ -42,7 +42,10 @@ for dataset in ["HCPD", "HBN", "PNC"]:
     ########################################
     # load each subject's csv. make new dataframes for dki/dti fa and md separately
     # that dataframe should have column names as tractID_nodeID and the number should correspond to fa or md
-    all_tract_profiles = pd.DataFrame(columns=['sub', 'tractID', 'nodeID', 'dki_fa', 'dki_md','dti_fa', 'dti_md'])
+    if dataset == "PNC":
+        all_tract_profiles = pd.DataFrame(columns=['sub', 'tractID', 'nodeID', 'dti_fa', 'dti_md'])
+    else: 
+        all_tract_profiles = pd.DataFrame(columns=['sub', 'tractID', 'nodeID', 'dki_fa', 'dki_md','dti_fa', 'dti_md'])
 
     # also, keep track of subjects who are missing data
     subs_missing_tracts = []
@@ -50,7 +53,7 @@ for dataset in ["HCPD", "HBN", "PNC"]:
 
     for sub in os.listdir(data_root):
         sub_dir = os.path.join(data_root, sub)
-        if os.path.isdir(sub_dir):
+        if os.path.isdir(sub_dir) and sub != "all_subjects":
             for filename in os.listdir(sub_dir):
                 if filename.endswith("profiles_dwi.csv"):
                     filepath = os.path.join(sub_dir, filename)
@@ -68,8 +71,9 @@ for dataset in ["HCPD", "HBN", "PNC"]:
                         df['sub'] = sub
                         # append the data to the all_tract_profiles df
                         all_tract_profiles = pd.concat([all_tract_profiles, df], ignore_index=True)
-        # remove subject folder - won't need subject level tract profiles anymore. Save storage!
-        shutil.rmtree(sub_dir)
+                    os.remove(filepath)
+            # delete the entire subject directory to save storage
+            shutil.rmtree(sub_dir)
              
     # save out collated tract profiles (subjects missing data are NOT included in this)
     all_tract_profiles = all_tract_profiles.iloc[:, :-1]
