@@ -1,0 +1,1200 @@
+---
+title: "Figures for Flux"
+author: "Audrey Luo"
+output: html_document
+---
+
+
+```{r setup, include=FALSE}
+library(cowplot)
+library(data.table)
+library(dplyr)
+library(ggplot2)
+library(ggpubr)
+library(grid)
+library(gridExtra)
+library(gratia) 
+library(knitr)
+library(kableExtra)
+library(mgcv)
+library(RColorBrewer)
+library(scales)
+library(stringr)
+library(rjson)
+library(tidyr)
+
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE, include = TRUE) 
+
+font_size <- 20
+theme_set(theme_classic(base_family = "sans",base_size = font_size))
+line_size <- 1
+point_size <- 2
+
+proj_root <- "/cbica/projects/luo_wm_dev/"
+input_root <- paste0(proj_root, "input")
+output_root <- paste0(proj_root, "output")
+png_dir <- "/Users/audluo/PennLINC/luowm_local/output/tract_profiles_testing/all_datasets/flux/"
+local_dir <- "/Users/audluo/Desktop/temp_code"
+ 
+```
+
+
+# Tract Names and Orientations
+https://yeatmanlab.github.io/pyAFQ/explanations/bundle_orientation.html#bundle-orientation 
+- All callosum bundles: right to left
+- Left Corticospinal: superior to inferior
+- Right Corticospinal: superior to inferior
+- Left Inferior Fronto-occipital: anterior to posterior
+- Right Inferior Fronto-occipital: anterior to posterior
+- Left Inferior Longitudinal: anterior to posterior
+- Right Inferior Longitudinal: anterior to posterior
+- Left Superior Longitudinal: anterior to posterior
+- Right Superior Longitudinal: anterior to posterior
+- Left Arcuate: anterior to posterior
+- Right Arcuate: anterior to posterior
+- Forceps Minor: right to left
+- Forceps Major: right to left
+- Left Posterior Arcuate: superior to inferior
+- Right Posterior Arcuate: superior to inferior
+- Left Vertical Occipital: superior to inferior
+- Right Vertical Occipital: superior to inferior
+
+```{r load tract profiles, cache=TRUE}
+HCPD <- readRDS(sprintf("%1$s/%2$s/tract_profiles/all_subjects/tract_profiles_for_viz.RData", output_root, "HCPD"))
+HBN <- readRDS(sprintf("%1$s/%2$s/tract_profiles/all_subjects/tract_profiles_for_viz.RData", output_root, "HBN"))
+PNC <- readRDS(sprintf("%1$s/%2$s/tract_profiles/all_subjects/tract_profiles_for_viz.RData", output_root, "PNC"))
+```
+
+```{r functions for visualizing baseline tract profiles, fig.height = 20, fig.width = 10}
+# make summary df's: this creates summary_[dataset]_[scalar] dataframes that include mean, sd, se for each scalar/dataset
+make_summary_dfs <- function(scalar, dataset_name, df) {
+  # set variables
+  mean_scalar <- paste0("mean_", scalar)
+  # Process the given dataset df
+  scalar_data <- df %>% select(sub, tractID, tract_label, nodeID, hemi, all_of(scalar))
+  sqrt_n <- sqrt(length(unique(scalar_data$sub)))
+  setDT(scalar_data)
+  summary_data <- scalar_data[, .(
+    mean_scalar = mean(.SD[[1]], na.rm = TRUE),
+    sd = sd(.SD[[1]], na.rm = TRUE),
+    se = sd(.SD[[1]], na.rm = TRUE) / sqrt_n,
+    ymin_sd = mean(.SD[[1]], na.rm = TRUE) - sd(.SD[[1]], na.rm = TRUE),
+    ymax_sd = mean(.SD[[1]], na.rm = TRUE) + sd(.SD[[1]], na.rm = TRUE),
+    ymin_se = mean(.SD[[1]], na.rm = TRUE) - (sd(.SD[[1]], na.rm = TRUE) / sqrt_n),
+    ymax_se = mean(.SD[[1]], na.rm = TRUE) + (sd(.SD[[1]], na.rm = TRUE) / sqrt_n),
+    cv = (sd(.SD[[1]], na.rm = TRUE) / (mean(.SD[[1]], na.rm = TRUE))) * 100
+  ), by = .(tract_label, tractID, nodeID, hemi), .SDcols = scalar]
+
+  setnames(summary_data, "mean_scalar", paste0("mean_", scalar))
+  summary_data[, Dataset := dataset_name]
+  summary_dataset_scalar <- paste0("summary_", dataset_name, "_", scalar)
+  assign(summary_dataset_scalar, summary_data, envir = .GlobalEnv)
+}
+
+# function for plotting tractprofiles mean and sd or se for a given scalar
+plot_mean_var <- function(tract, scalar, variance_measure, color1, color2, color3, ylim1 = 0, ylim2 = 1, ylim3 = NULL, ylim4 = NULL, clipEnds) {
+  mean_scalar <- paste0("mean_", scalar)
+  summary_HCPD <- get(paste0("summary_HCPD_", scalar)) %>% filter(nodeID > (clipEnds-1) & nodeID < (99-clipEnds+1))
+  summary_HBN <- get(paste0("summary_HBN_", scalar)) %>% filter(nodeID > (clipEnds-1) & nodeID < (99-clipEnds+1))
+  summary_PNC <- get(paste0("summary_PNC_", scalar)) %>% filter(nodeID > (clipEnds-1) & nodeID < (99-clipEnds+1))
+  
+  df_profiles <- rbind(summary_HCPD, summary_HBN, summary_PNC)
+  df <- df_profiles %>% filter(tract_label == tract)
+
+  # plot
+  if(str_detect(tract, "Callosum")) {
+    plot <- ggplot(data = df, aes(x = nodeID, y = get(mean_scalar))) +
+    geom_ribbon(data = df, aes_string(x = "nodeID", ymin = paste0("ymin_", variance_measure), ymax = paste0("ymax_", variance_measure), fill = "Dataset"), alpha = .3) + 
+    geom_line(data = df, aes(x = nodeID, y = get(mean_scalar), color = Dataset),size = 1) +
+    scale_fill_manual(values = c("HCPD" = color1, "HBN" = color2, "PNC" = color3)) +
+    scale_color_manual(values = c("HCPD" = color1, "HBN" = color2, "PNC" = color3)) +
+    theme(legend.position = "bottom",
+          legend.text = element_text(size = 20),
+          legend.title = element_text(size = 20),
+          axis.text.x = element_text(size = 20),
+          axis.text.y = element_text(size = 20),
+          axis.title.x = element_blank(),
+          axis.title.y = element_blank(),
+          plot.title = element_text(size=20, hjust=0.5),
+          plot.margin = unit(c(1, 1, 0.2, 0.2), "cm")) + labs(title = tract) + ylim(ylim3, ylim4)
+    
+  } else {
+    plot <- ggplot(data = df, aes(x = nodeID, y = get(mean_scalar), linetype = hemi)) +
+    geom_ribbon(data = df, aes_string(x = "nodeID", ymin = paste0("ymin_", variance_measure), ymax = paste0("ymax_", variance_measure), fill = "Dataset"), alpha = .3) + 
+    geom_line(data = df, aes(x = nodeID, y = get(mean_scalar), color = Dataset),size = 1) +
+      guides(linetype = guide_legend("Hemi", override.aes = list(fill = "white"))) + 
+    scale_fill_manual(values = c("HCPD" = color1, "HBN" = color2, "PNC" = color3)) +
+    scale_color_manual(values = c("HCPD" = color1, "HBN" = color2, "PNC" = color3)) +
+    theme(legend.position = "bottom",
+          legend.text = element_text(size = 20),
+          legend.title = element_text(size = 20),
+          legend.box = "vertical",
+          axis.text.x = element_text(size = 20),
+          axis.text.y = element_text(size = 20),
+          axis.title.x = element_blank(),
+          axis.title.y = element_blank(),
+          plot.title = element_text(size=20, hjust=0.5),
+          plot.margin = unit(c(1, 1, 0.2, 0.2), "cm")) + labs(title = tract) + ylim(if (str_detect(tract, "Corticospinal") | str_detect(tract, "Inferior Fronto")) 
+            ylim3 else ylim1, if (str_detect(tract, "Corticospinal") | str_detect(tract, "Inferior Fronto")) ylim4 else ylim2)
+  }
+  return(plot)
+}
+
+
+plot_cv <- function(tract, scalar, variance_measure, color1, color2, color3, ylim1 = 0, ylim2 = 1, ylim3 = NULL, ylim4 = NULL, clipEnds) {
+  mean_scalar <- paste0("mean_", scalar)
+  summary_HCPD <- get(paste0("summary_HCPD_", scalar)) %>% filter(nodeID > (clipEnds-1) & nodeID < (99-clipEnds+1))
+  summary_HBN <- get(paste0("summary_HBN_", scalar)) %>% filter(nodeID > (clipEnds-1) & nodeID < (99-clipEnds+1))
+  summary_PNC <- get(paste0("summary_PNC_", scalar)) %>% filter(nodeID > (clipEnds-1) & nodeID < (99-clipEnds+1))
+  
+  df_profiles <- rbind(summary_HCPD, summary_HBN, summary_PNC)
+  df <- df_profiles %>% filter(tract_label == tract)
+
+  # plot
+  if(str_detect(tract, "Callosum")) {
+    plot <- ggplot(data = df, aes(x = nodeID, y = get(variance_measure))) +
+    geom_line(data = df, aes(x = nodeID, y = get(variance_measure), color = Dataset),size = 1) +
+    scale_fill_manual(values = c("HCPD" = color1, "HBN" = color2, "PNC" = color3)) +
+    scale_color_manual(values = c("HCPD" = color1, "HBN" = color2, "PNC" = color3)) +
+    theme(legend.position = "bottom",
+          legend.text = element_text(size = 20),
+          legend.title = element_text(size = 20),
+          axis.text.x = element_text(size = 20),
+          axis.text.y = element_text(size = 20),
+          axis.title.x = element_blank(),
+          axis.title.y = element_blank(),
+          plot.title = element_text(size=20, hjust=0.5),
+          plot.margin = unit(c(1, 1, 0.2, 0.2), "cm")) + labs(title = tract) + ylim(ylim3, ylim4)
+    
+  } else {
+    plot <- ggplot(data = df, aes(x = nodeID, y = get(variance_measure), linetype = hemi)) +
+    geom_line(data = df, aes(x = nodeID, y = get(variance_measure), color = Dataset),size = 1) +
+      guides(linetype = guide_legend("Hemi", override.aes = list(fill = "white"))) + 
+    scale_fill_manual(values = c("HCPD" = color1, "HBN" = color2, "PNC" = color3)) +
+    scale_color_manual(values = c("HCPD" = color1, "HBN" = color2, "PNC" = color3)) +
+    theme(legend.position = "bottom",
+          legend.text = element_text(size = 20),
+          legend.title = element_text(size = 20),
+          legend.box = "vertical",
+          axis.text.x = element_text(size = 20),
+          axis.text.y = element_text(size = 20),
+          axis.title.x = element_blank(),
+          axis.title.y = element_blank(),
+          plot.title = element_text(size=20, hjust=0.5),
+          plot.margin = unit(c(1, 1, 0.2, 0.2), "cm")) + labs(title = tract) + ylim(if (str_detect(tract, "Corticospinal") | str_detect(tract, "Inferior Fronto")) 
+            ylim3 else ylim1, if (str_detect(tract, "Corticospinal") | str_detect(tract, "Inferior Fronto")) ylim4 else ylim2)
+  }
+  return(plot)
+}
+
+ 
+arrange_callosum_plots <- function(list_figures, title) {
+  callosum1_plots <- ggarrange(list_figures$`Callosum Orbital` + theme(legend.position = "none"), 
+                              list_figures$`Callosum Anterior Frontal` + theme(legend.position = "none"),  
+                              list_figures$`Callosum Superior Frontal`+ theme(legend.position = "none"), 
+                              list_figures$`Callosum Motor`+ theme(legend.position = "none"), ncol = 1, nrow = 4)
+  callosum1_plots <- annotate_figure(callosum1_plots, bottom = text_grob("Position on Tract (Node ID)", color = "black", size = 20, hjust = 0.3))
+  
+  callosum2_plots <- ggarrange(list_figures$`Callosum Superior Parietal`+ theme(legend.position = "none"), 
+                              list_figures$`Callosum Posterior Parietal`+ theme(legend.position = "none"), 
+                              list_figures$`Callosum Temporal`+ theme(legend.position = "none"), 
+                              list_figures$`Callosum Occipital`+ theme(legend.position = "none"),  ncol = 1, nrow = 4)
+  callosum2_plots <- annotate_figure(callosum2_plots, bottom = text_grob("Position on Tract (Node ID)", color = "black", size = 20, hjust = 0.3))
+  
+  callosum_plots <- ggarrange(callosum1_plots, callosum2_plots)
+  legend <- get_legend(list_figures$`Callosum Orbital`)
+  callosum_plot_final <- ggarrange(callosum_plots, legend, nrow=2, heights = c(2, 0.2))
+   return(callosum_plot_final)
+}
+ 
+ 
+arrange_tract_plots <- function(list_figures) {
+  AP_plots <- ggarrange(list_figures$`Arcuate` + theme(legend.position = "none"),
+                        list_figures$`Inferior Fronto-occipital`+ theme(legend.position = "none"), 
+                        list_figures$`Inferior Longitudinal`+ theme(legend.position = "none"), 
+                        list_figures$`Superior Longitudinal` + theme(legend.position = "none"), ncol=1, nrow = 4)
+  AP_plots_final <- annotate_figure(AP_plots, top = text_grob("Anterior - Posterior", 
+                 color = "black", face = "bold", size = 20, hjust = 0.4), 
+                 bottom = text_grob("Position on Tract (Node ID)", color = "black", size = 20, hjust = 0.3))
+  
+   
+  SI_plots <- ggarrange(list_figures$`Posterior Arcuate` + theme(legend.position = "none"), 
+                        list_figures$`Vertical Occipital` + theme(legend.position = "none"), 
+                        list_figures$`Corticospinal` + theme(legend.position = "none"),
+                           ncol=1, nrow = 3)
+  legend <- get_legend(list_figures$`Posterior Arcuate`)
+ 
+  SI_plots <- annotate_figure(SI_plots, top = text_grob("Superior - Inferior", 
+                 color = "black", face = "bold", size = 20, hjust = 0.4),
+                 bottom = text_grob("Position on Tract (Node ID)", color = "black", size = 20, hjust = 0.3))
+
+  SI_plots_final <- ggarrange(SI_plots, NULL, legend, heights = c(2.1, 0.67, 0.5))
+  tractprofiles_plot_final <- ggarrange(AP_plots_final, SI_plots_final, ncol = 2, widths = c(1, 2))
+   
+ 
+   return(tractprofiles_plot_final) 
+}
+```
+
+```{r make summary dfs}
+datasets <- list(HCPD = HCPD, HBN = HBN, PNC = PNC)
+
+# create summary dfs
+for (dataset_name in names(datasets)) {
+  dataset <- datasets[[dataset_name]]
+  make_summary_dfs("dti_md", dataset_name, dataset) # this creates summary_[dataset]_[scalar] dataframes that include mean, sd, se  
+}
+```
+
+```{r functions for saving average tp across datasets for glass brain}
+# compute average tract profiles across datasets for glass brain
+
+##############
+# functions
+##############
+compute_avg_tp <- function(tract, scalar, clipEnds) {
+  
+  summary_HCPD <- get(paste0("summary_HCPD_", scalar))
+  summary_HBN <- get(paste0("summary_HBN_", scalar))
+  summary_PNC <- get(paste0("summary_PNC_", scalar))
+  
+  HCPD_tp <- summary_HCPD %>% filter(tractID == tract) %>% mutate(HCPD_tp = get(paste0("mean_", scalar))) %>% select(HCPD_tp, nodeID) 
+  HBN_tp <- summary_HBN %>% filter(tractID == tract) %>% mutate(HBN_tp = get(paste0("mean_", scalar))) %>% select(HBN_tp, nodeID) 
+  PNC_tp <- summary_PNC %>% filter(tractID == tract) %>% mutate(PNC_tp = get(paste0("mean_", scalar))) %>% select(PNC_tp, nodeID) 
+  
+  avg_tp <- HCPD_tp %>%
+    inner_join(HBN_tp, by = "nodeID") %>%
+    inner_join(PNC_tp, by = "nodeID")
+  
+  mean_tp <- avg_tp %>% group_by(nodeID) %>% summarise(mean_scalar = (HCPD_tp + HBN_tp + PNC_tp) /3)
+  mean_tp <- mean_tp %>%
+    mutate(mean_scalar = case_when(
+    nodeID < clipEnds | nodeID > (99-clipEnds) ~ NA_real_,  # set NA in mean_scalar for clipped nodes 
+    TRUE ~ mean_scalar  
+  ))
+  #mean_tp <- mean_tp %>% filter(nodeID >= clipEnds & nodeID < (100 - clipEnds))
+  return(mean_tp)
+
+}
+
+normalize_tp <- function(avgs_df, min_val, max_val) {
+  for(i in 1:length(avgs_df)) {
+   avgs_df[[i]] <- avgs_df[[i]] %>% mutate(normalized_values = (mean_scalar - min_val) / (max_val - min_val))
+  }
+  return(avgs_df)
+}
+ 
+```
+
+```{r save average tp across datasets for glass brain}
+
+callosum_bundles <- unique(summary_HCPD_dti_md$tractID[str_detect(summary_HCPD_dti_md$tractID, "Callosum")])
+association_bundles <- unique(summary_HCPD_dti_md$tractID[!str_detect(summary_HCPD_dti_md$tractID, "Callosum") & !str_detect(summary_HCPD_dti_md$tractID,"Corticospinal")])
+cst_bundle <- unique(summary_HCPD_dti_md$tractID[str_detect(summary_HCPD_dti_md$tractID, "Corticospinal")])
+
+callosum_avgs <- lapply(callosum_bundles, compute_avg_tp, scalar = "dti_md", clipEnds = 3)
+names(callosum_avgs) <- callosum_bundles
+
+association_avgs <- lapply(association_bundles, compute_avg_tp, scalar = "dti_md", clipEnds = 3)
+names(association_avgs) <- association_bundles
+
+cst_avgs <- lapply(cst_bundle, compute_avg_tp, scalar = "dti_md", clipEnds = 3)
+names(cst_avgs) <- cst_bundle
+
+# normalize across callosum + association bundles separately for glass brain plotting/coloring purposes
+cc_min <- bind_rows(callosum_avgs) %>% select(mean_scalar) %>% min(., na.rm=TRUE)
+cc_max <- bind_rows(callosum_avgs) %>% select(mean_scalar) %>% max(., na.rm=TRUE)
+callosum_norm_avgs <- normalize_tp(callosum_avgs, cc_min, cc_max)
+
+#assoc_min <- bind_rows(association_avgs) %>% select(mean_scalar) %>% min(., na.rm=TRUE)
+#assoc_max <- bind_rows(association_avgs) %>% select(mean_scalar) %>% max(., na.rm=TRUE)
+#association_norm_avgs <- normalize_tp(association_avgs, assoc_min, assoc_max)
+
+#cst_avgs[[1]] <- cst_avgs[[1]] %>% mutate(mean_scalar = case_when(nodeID > 88 ~ NA, TRUE ~ mean_scalar)) # additional clipping for CST due to brainstem
+#cst_avgs[[2]] <- cst_avgs[[2]] %>% mutate(mean_scalar = case_when(nodeID > 88 ~ NA, TRUE ~ mean_scalar))
+#cst_min <- bind_rows(cst_avgs) %>% select(mean_scalar) %>% min(., na.rm=TRUE)
+#cst_max <- bind_rows(cst_avgs) %>% select(mean_scalar) %>% max(., na.rm=TRUE)
+#cst_norm_avgs <- normalize_tp(cst_avgs, cst_min, cst_max) 
+
+
+assoc_cst <- c(association_avgs, cst_avgs)
+assoc_cst_min <- bind_rows(assoc_cst) %>% select(mean_scalar) %>% min(., na.rm=TRUE)
+assoc_cst_max <- bind_rows(assoc_cst) %>% select(mean_scalar) %>% max(., na.rm=TRUE)
+assoc_cst_avgs <- normalize_tp(assoc_cst, assoc_cst_min, assoc_cst_max)
+ 
+
+# save out
+glass_brain_dir <- "/Users/audluo/PennLINC/luowm_local/tract_profiles/qsirecon/sub-0041822/average_tract_profiles/"
+for (df_name in names(callosum_norm_avgs)) {
+  write.csv(callosum_norm_avgs[[df_name]], paste0(glass_brain_dir, "/", df_name, "_avg_tp.csv"), row.names = FALSE)
+}
+
+#for (df_name in names(association_norm_avgs)) {
+  #write.csv(association_norm_avgs[[df_name]], paste0(glass_brain_dir, "/", df_name, "_avg_tp.csv"), row.names = FALSE)
+#}
+
+for (df_name in names(assoc_cst_avgs)) {
+  write.csv(assoc_cst_avgs[[df_name]], paste0(glass_brain_dir, "/", df_name, "_avg_tp.csv"), row.names = FALSE)
+}
+
+
+```
+
+```{r set colors}
+color1 = "#3FB8AFFF"
+color2 = "#FF9E9DFF"
+color3 = "#cc0468"
+```
+
+## DTI MD
+```{r run dti md sd plotting}
+variance_measure = "sd"
+dti_md_sd_plots <- lapply(unique(HCPD$tract_label), plot_mean_var, scalar = "dti_md", variance_measure = variance_measure, 
+                                color1 = color1, color2 = color2, color3 = color3, ylim1 = 0.00058, ylim2 = 0.001, ylim3 = 0.0005, ylim4 = 0.0012, clipEnds = 3)
+names(dti_md_sd_plots) <- unique(HCPD$tract_label)
+```
+
+```{r dti md tracts sd, fig.height = 20, fig.width = 16}
+dti_md_final <- arrange_tract_plots(dti_md_sd_plots)
+title.grob <- textGrob("DTI MD: Mean +/- 1SD", 
+                   gp=gpar(col="black", fontsize=20, face = "italic"), hjust = 1.2)
+y.grob <- textGrob("Mean Diffusivity", 
+                   gp=gpar(col="black", fontsize=20), rot=90)
+
+grid.arrange(arrangeGrob(dti_md_final, left = y.grob, top = title.grob))
+
+ggsave(paste0(png_dir, "dti_md_baseline_association.png"), grid.arrange(arrangeGrob(dti_md_final, left = y.grob, top = title.grob)), height = 20, width = 16, units = "in")
+```
+
+```{r dti md tracts sd callosum, fig.height = 20, fig.width = 10}
+dti_md_callosum_final <- arrange_callosum_plots(dti_md_sd_plots)
+title.grob <- textGrob("DTI MD: Mean +/- 1SD", 
+                   gp=gpar(col="black", fontsize=20, face = "italic"), hjust = 0.5)
+y.grob <- textGrob("Mean Diffusivity", 
+                   gp=gpar(col="black", fontsize=20), rot=90)
+
+grid.arrange(arrangeGrob(dti_md_callosum_final, left = y.grob, top = title.grob))
+
+ggsave(paste0(png_dir, "dti_md_baseline_callosum.png"), grid.arrange(arrangeGrob(dti_md_callosum_final, left = y.grob, top = title.grob)), height = 20, width = 10, units = "in")
+```
+ 
+ 
+```{r run dti md cv plotting}
+variance_measure = "cv"
+ 
+dti_md_cv_plots <- lapply(unique(HCPD$tract_label), plot_cv, scalar = "dti_md", variance_measure = variance_measure, 
+                                color1 = color1, color2 = color2, color3 = color3, ylim1 = 2, ylim2 = 23, ylim3 = 2, ylim4 = 23, clipEnds = 3)
+names(dti_md_cv_plots) <- unique(HCPD$tract_label)
+ 
+```
+
+```{r dti md tracts cv, fig.height = 20, fig.width = 16}
+dti_md_final <- arrange_tract_plots(dti_md_cv_plots)
+title.grob <- textGrob("DTI MD: CV", 
+                   gp=gpar(col="black", fontsize=20, face = "italic"), hjust = 1.2)
+y.grob <- textGrob("Mean Diffusivity", 
+                   gp=gpar(col="black", fontsize=20), rot=90)
+
+grid.arrange(arrangeGrob(dti_md_final, left = y.grob, top = title.grob))
+
+ggsave(paste0(png_dir, "dti_md_baseline_association_cv.png"), grid.arrange(arrangeGrob(dti_md_final, left = y.grob, top = title.grob)), height = 20, width = 16, units = "in")
+```
+
+```{r dti md tracts cv callosum, fig.height = 20, fig.width = 10}
+dti_md_callosum_final <- arrange_callosum_plots(dti_md_cv_plots)
+title.grob <- textGrob("DTI MD: CV", 
+                   gp=gpar(col="black", fontsize=20, face = "italic"), hjust = 0.5)
+y.grob <- textGrob("Mean Diffusivity", 
+                   gp=gpar(col="black", fontsize=20), rot=90)
+
+grid.arrange(arrangeGrob(dti_md_callosum_final, left = y.grob, top = title.grob))
+
+ggsave(paste0(png_dir, "dti_md_baseline_callosum_cv.png"), grid.arrange(arrangeGrob(dti_md_callosum_final, left = y.grob, top = title.grob)), height = 20, width = 10, units = "in")
+```
+
+correlations between datasets
+```{r tp correlations, fig.height = 8, fig.width = 24}
+cor_HCPD_HBN <- round(cor.test(summary_HCPD_dti_md$mean_dti_md, summary_HBN_dti_md$mean_dti_md)$estimate, 2)
+cor_HCPD_PNC <- round(cor.test(summary_HCPD_dti_md$mean_dti_md, summary_PNC_dti_md$mean_dti_md)$estimate, 2)
+cor_HBN_PNC <- round(cor.test(summary_HBN_dti_md$mean_dti_md, summary_PNC_dti_md$mean_dti_md)$estimate, 2)
+
+HCPD_to_corr <- summary_HCPD_dti_md %>% mutate(HCPD = mean_dti_md) %>% mutate(tract_node = paste0(tractID, "_", nodeID)) %>% select(tract_node, HCPD)
+HBN_to_corr <- summary_HBN_dti_md %>% mutate(HBN = mean_dti_md) %>% mutate(tract_node = paste0(tractID, "_", nodeID)) %>% select(tract_node, HBN)
+PNC_to_corr <- summary_PNC_dti_md %>% mutate(PNC = mean_dti_md) %>% mutate(tract_node = paste0(tractID, "_", nodeID)) %>% select(tract_node, PNC)
+
+HCPD_HBN_tp <- merge(HCPD_to_corr, HBN_to_corr, by = "tract_node")
+HCPD_PNC_tp <- merge(HCPD_to_corr, PNC_to_corr, by = "tract_node")
+HBN_PNC_tp <- merge(HBN_to_corr, PNC_to_corr, by = "tract_node")
+
+
+###
+
+text_HCPD_HBN <- bquote(italic(r) == .(cor_HCPD_HBN) * "," ~ italic(p) < "0.0001")
+HCPD_HBN_tp_plot <- ggplot(HCPD_HBN_tp, aes(x = HCPD, y = HBN)) +
+ geom_hex(bins = 10) +
+  paletteer::scale_fill_paletteer_c("ggthemes::Blue-Green Sequential", direction = -1) +
+  geom_smooth(method = "lm", color = "black", se = FALSE) +   
+  annotate("text", x = 0.0006, y = 0.00109, 
+           label = text_HCPD_HBN, 
+           hjust = 0, vjust = 1, size = 7, color = "black") + 
+  theme(legend.position = "bottom",
+        legend.key.width = unit(2, 'cm'), legend.key.height = unit(1, 'cm'),
+        legend.text = element_text(size = 20),
+        legend.title = element_text(size = 20),
+        axis.text.x = element_text(size = 20),
+        axis.text.y = element_text(size = 20),
+        axis.title.x = element_text(size = 20),
+        axis.title.y = element_text(size = 20),
+        plot.margin = unit(c(0.2, 0.2, 0.2, 1), "cm")) + 
+  labs(x = "HCP-D", y = "HBN", fill = "Count") + ylim(0.00061, 0.0011) + xlim(0.00060, 0.0011) 
+ 
+ 
+text_HCPD_PNC <- bquote(italic(r) == .(cor_HCPD_PNC) * "," ~ italic(p) < "0.0001")
+HCPD_PNC_tp_plot <- ggplot(HCPD_PNC_tp, aes(x = HCPD, y = PNC)) +
+ geom_hex(bins = 10) +
+  paletteer::scale_fill_paletteer_c("ggthemes::Blue-Green Sequential", direction = -1) +
+  geom_smooth(method = "lm", color = "black", se = FALSE) +   
+  annotate("text", x = 0.0006, y = 0.00109, 
+           label = text_HCPD_PNC, 
+           hjust = 0, vjust = 1, size = 7, color = "black") + 
+  theme(legend.position = "bottom",
+        legend.key.width = unit(2, 'cm'), legend.key.height = unit(1, 'cm'),
+        legend.text = element_text(size = 20),
+        legend.title = element_text(size = 20),
+        axis.text.x = element_text(size = 20),
+        axis.text.y = element_text(size = 20),
+        axis.title.x = element_text(size = 20),
+        axis.title.y = element_text(size = 20),
+        plot.margin = unit(c(0.2, 0.2, 0.2, 1), "cm")) + 
+  labs(x = "HCP-D", y = "PNC", fill = "Count") + ylim(0.00061, 0.0011) + xlim(0.00060, 0.0011) 
+ 
+text_HBN_PNC <- bquote(italic(r) == .(cor_HBN_PNC) * "," ~ italic(p) < "0.0001")
+HBN_PNC_tp_plot <- ggplot(HBN_PNC_tp, aes(x = HBN, y = PNC)) +
+ geom_hex(bins = 10) +
+  paletteer::scale_fill_paletteer_c("ggthemes::Blue-Green Sequential", direction = -1) +
+  geom_smooth(method = "lm", color = "black", se = FALSE) +   
+  annotate("text", x = 0.0006, y = 0.00109, 
+           label = text_HBN_PNC, 
+           hjust = 0, vjust = 1, size = 7, color = "black") + 
+  theme(legend.position = "bottom", 
+        legend.key.width = unit(2, 'cm'), legend.key.height = unit(1, 'cm'),
+        legend.text = element_text(size = 20),
+        legend.title = element_text(size = 20),
+        axis.text.x = element_text(size = 20),
+        axis.text.y = element_text(size = 20),
+        axis.title.x = element_text(size = 20),
+        axis.title.y = element_text(size = 20),
+        plot.margin = unit(c(0.2, 0.2, 0.2, 1), "cm")) + 
+  labs(x = "HBN", y = "PNC", fill = "Count") + ylim(0.00061, 0.0011) + xlim(0.00060, 0.0011)  
+
+# make bin colors the same across plots
+# get the maximum bin counts from all datasets
+max_count_HCPD_HBN <- max(ggplot_build(HCPD_HBN_tp_plot)$data[[1]]$count, na.rm = TRUE)
+max_count_HCPD_PNC <- max(ggplot_build(HCPD_PNC_tp_plot)$data[[1]]$count, na.rm = TRUE)
+max_count_HBN_PNC  <- max(ggplot_build(HBN_PNC_tp_plot)$data[[1]]$count, na.rm = TRUE)
+global_max_count <- max(max_count_HCPD_HBN, max_count_HCPD_PNC, max_count_HBN_PNC)
+scale_limits <- c(0, global_max_count-100)
+HCPD_HBN_tp_plot <- HCPD_HBN_tp_plot +
+  paletteer::scale_fill_paletteer_c("ggthemes::Blue-Green Sequential", 
+                                    direction = -1, 
+                                    limits = scale_limits, 
+                                    oob = scales::squish)
+HCPD_PNC_tp_plot <- HCPD_PNC_tp_plot +
+  paletteer::scale_fill_paletteer_c("ggthemes::Blue-Green Sequential", 
+                                    direction = -1, 
+                                    limits = scale_limits, 
+                                    oob = scales::squish)
+
+HBN_PNC_tp_plot <- HBN_PNC_tp_plot +
+  paletteer::scale_fill_paletteer_c("ggthemes::Blue-Green Sequential", 
+                                    direction = -1, 
+                                    limits = scale_limits, 
+                                    oob = scales::squish)
+
+
+tp_plots <- ggarrange(HCPD_PNC_tp_plot, HCPD_HBN_tp_plot, HBN_PNC_tp_plot, nrow = 1, common.legend=T, legend = c("bottom"))
+
+title.grob <- textGrob("Tract Profiles of Mean Diffusivity Across Datasets", 
+                   gp=gpar(col="black", fontsize = 24, face = "bold"), hjust = 0.5)
+ 
+grid.arrange(arrangeGrob(tp_plots, top = title.grob))
+
+ggsave(paste0(png_dir, "tract_profiles_hexplots.png"), grid.arrange(arrangeGrob(tp_plots, top = title.grob)), height = 8, width = 24, units = "in")
+
+```
+
+
+```{r baseline corrplot}
+######
+
+# make correlation matrix
+dat2 <- bind_cols(HCPD_to_corr$tract_node, as.numeric(HCPD_to_corr$HCPD), HBN_to_corr$HBN, PNC_to_corr$PNC)
+names(dat2) <- c("label", "HCP-D", "HBN", "PNC")
+corr <- round(cor(dat2[,-1], use = "complete.obs"), 5)
+
+p.mat <- matrix(NA, nrow = 3, ncol = 3)
+row.names(p.mat) <- c("HCP-D", "HBN", "PNC")
+colnames(p.mat) <- c("HCP-D", "HBN", "PNC")
+
+p.mat[1,1] <- 0 # HCPD-HCPD
+p.mat[1,2] <- cor.test(summary_HCPD_dti_md$mean_dti_md, summary_HBN_dti_md$mean_dti_md)$p.value # HCPD-HBN
+p.mat[1,3] <- cor.test(summary_HCPD_dti_md$mean_dti_md, summary_PNC_dti_md$mean_dti_md)$p.value # HCPD-PNC
+ 
+p.mat[2,1] <- cor.test(summary_HCPD_dti_md$mean_dti_md, summary_HBN_dti_md$mean_dti_md)$p.value# HBN-HCPD
+p.mat[2,2] <- 0 # HBN-HBN
+p.mat[2,3] <- cor.test(summary_HBN_dti_md$mean_dti_md, summary_PNC_dti_md$mean_dti_md)$p.value # HBN-PNC
+  
+
+p.mat[3,1] <- cor.test(summary_HCPD_dti_md$mean_dti_md, summary_PNC_dti_md$mean_dti_md)$p.value # PNC-HCPD
+p.mat[3,2] <- cor.test(summary_HBN_dti_md$mean_dti_md, summary_PNC_dti_md$mean_dti_md)$p.value # PNC-HBN
+p.mat[3,3] <- 0 # PNC-PNC
+ 
+ 
+
+library(ggcorrplot)
+# Visualize the correlation matrix
+correlation_matrix <- ggcorrplot(corr,  
+   lab = TRUE, lab_col = "white", type = "lower",
+   outline.col = "white",
+   ggtheme = ggplot2::theme_void, lab_size = 8, 
+   hc.order = FALSE, insig = "blank", p.mat=p.mat)  +
+   scale_fill_gradient2(low = "white",
+  mid = "#E5B9ADFF",
+  high = "#A50026FF", midpoint=0.5,limit= c(0, 1)) + 
+ theme(legend.text = element_text(size = 18), 
+       legend.title = element_blank(), 
+       legend.key.height = unit(1, 'cm'),
+       legend.key.width = unit(1.5, 'cm'),
+       legend.position = "bottom",
+       legend.margin=margin(10,0,0,0),
+       axis.text=element_text(size=22, color = "black"),
+       axis.text.y = element_text(hjust = 0, size = 22),
+       axis.text.x = element_text(hjust = 0.5, angle=0, size = 22),
+       plot.margin = margin(1, 1, 1, 1, "cm"))
+
+
+ 
+
+# plot 
+grid.arrange(arrangeGrob(correlation_matrix, bottom = textGrob("Correlation", 
+                                                     gp=gpar(col="black", fontsize=22), x = 0.6, y = 1.5)))
+ggsave(paste0(png_dir, "tract_profiles_corrplot.png"), grid.arrange(arrangeGrob(correlation_matrix, bottom = textGrob("Correlation", 
+                                                     gp=gpar(col="black", fontsize=22), x = 0.6, y = 1.5))), width = 5, height = 5, units = "in")
+```
+
+
+
+
+# age effects
+```{r load dev effects files}
+scalar = "dti_md"
+HCPD_ageeffects <- read.csv(paste0(output_root, "/", "HCPD", "/tract_profiles/GAM/", scalar, "/HCPD_GAM_dev_measures.csv"))
+HBN_ageeffects <- read.csv(paste0(output_root, "/", "HBN", "/tract_profiles/GAM/", scalar, "/HBN_GAM_dev_measures.csv"))
+PNC_ageeffects <- read.csv(paste0(output_root, "/", "PNC", "/tract_profiles/GAM/", scalar, "/PNC_GAM_dev_measures.csv"))
+```
+
+```{r function for formatting age effects}
+# make a list of the different df names: [dataset]_GAM_ageeffects_[scalar]
+datasets <- c("HCPD", "HBN", "PNC")
+ageeffect_df_names <- c()
+for (dataset in datasets) {
+  ageeffect_df_names <- append(ageeffect_df_names, paste0(dataset, "_ageeffects"))
+}
+
+ 
+# format age effect df's
+format_ageeffect <- function(df) {
+  df <- get(df)
+  # add tractID, tract_label, and nodeID
+  df <- df %>% mutate(hemi = ifelse(grepl("Left", tract_node), "Left", 
+                                    ifelse(grepl("Right", tract_node), "Right", NA))) %>%
+    mutate(tractID = gsub("_[0-9]+", "", tract_node)) %>%
+    mutate(tract_label = gsub("Left |Right ", "", gsub("_", " ", gsub("Fronto.", "Fronto-", tractID)))) %>%
+    mutate(nodeID = str_extract(tract_node, "[0-9]+")) 
+  df$nodeID <- as.numeric(df$nodeID)
+  
+  # label main orientation
+  df <- df %>% 
+  mutate(main_orientation = case_when(
+    tract_label %in% c("Inferior Fronto-occipital",
+                   "Inferior Longitudinal", "Superior Longitudinal") ~ "AP",
+    tract_label %in% c("Arcuate") ~ "AP_frontal_temporal",
+    tract_label %in% c("Callosum Anterior Frontal", "Callosum Motor", "Callosum Occipital", "Callosum Orbital", 
+                       "Callosum Posterior Parietal", "Callosum Superior Frontal", "Callosum Superior Parietal", "Callosum Temporal") ~ "RL",
+    tract_label %in% c("Corticospinal", "Posterior Arcuate","Vertical Occipital") ~ "SI",
+    TRUE ~ NA_character_
+  ))
+  df$main_orientation <- as.factor(df$main_orientation)
+  df <- df %>% relocate(tract_label, tractID, nodeID, tract_node, hemi, main_orientation)
+  return(df)
+}
+
+ageeffect_dfs <- lapply(ageeffect_df_names, format_ageeffect)
+ 
+```
+
+```{r fdr correction}
+# Function for calculating number of significant nodes (FDR corrected)
+# @param df A dataframe with GAM results
+sig_nodes <- function(df) {
+
+  df$Anova.age.pvalue.fdr <- p.adjust(df$Anova.smooth.pvalue, method=c("fdr"))
+  cat(sprintf("There are %s/%s significant nodes\n", sum(df$Anova.age.pvalue.fdr < 0.05, na.rm=TRUE), nrow(df)))
+  df$significant.fdr <- df$Anova.age.pvalue.fdr < 0.05
+  df$significant.fdr[df$significant.fdr == TRUE] <- 1
+  df$significant.fdr[df$significant.fdr == FALSE] <- 0
+  return(df)
+}
+
+ageeffect.fdr_dfs <- lapply(ageeffect_dfs, sig_nodes)
+names(ageeffect.fdr_dfs) <- ageeffect_df_names
+  
+
+```
+
+```{r functions for saving average tp across datasets for glass brain}
+# compute average tract profiles across datasets for glass brain
+
+##############
+# functions
+##############
+compute_avg_ageeffect <- function(tract, scalar, clipEnds) {
+  
+  HCPD_dev <- ageeffect.fdr_dfs$HCPD_ageeffects %>% filter(tractID == tract) %>% mutate(HCPD_dev = abs(get(ageeffect_measure))) %>% select(HCPD_dev, nodeID) %>%
+    group_by(nodeID) %>% summarize(HCPD_dev = mean(HCPD_dev))
+  HBN_dev <- ageeffect.fdr_dfs$HBN_ageeffects %>% filter(tractID == tract) %>% mutate(HBN_dev = abs(get(ageeffect_measure))) %>% select(HBN_dev, nodeID) %>%
+     group_by(nodeID) %>% summarize(HBN_dev = mean(HBN_dev))
+  PNC_dev <- ageeffect.fdr_dfs$PNC_ageeffects %>% filter(tractID == tract) %>% mutate(PNC_dev = abs(get(ageeffect_measure))) %>% select(PNC_dev, nodeID) %>%
+    group_by(nodeID) %>% summarize(PNC_dev = mean(PNC_dev))
+
+ 
+  avg_dev <- HCPD_dev %>%
+    inner_join(HBN_dev, by = "nodeID") %>%
+    inner_join(PNC_dev, by = "nodeID")
+  
+  mean_dev <- avg_dev %>% group_by(nodeID) %>% summarise(mean_scalar = (HCPD_dev + HBN_dev + PNC_dev) /3)
+  mean_dev <- mean_dev %>%
+    mutate(mean_scalar = case_when(
+    nodeID < clipEnds | nodeID > (99-clipEnds) ~ NA_real_,  # set NA in mean_scalar for clipped nodes 
+    TRUE ~ mean_scalar  
+  ))
+  #mean_dev <- mean_dev %>% filter(nodeID >= clipEnds & nodeID < (100 - clipEnds))
+  return(mean_dev)
+
+}
+
+normalize_dev <- function(avgs_df, min_val, max_val) {
+  for(i in 1:length(avgs_df)) {
+   avgs_df[[i]] <- avgs_df[[i]] %>% mutate(normalized_values = (mean_scalar - min_val) / (max_val - min_val))
+  }
+  return(avgs_df)
+}
+ 
+```
+
+```{r save average tp across datasets for glass brain}
+
+callosum_bundles <- unique(ageeffect.fdr_dfs$HCPD_ageeffects$tractID[str_detect(ageeffect.fdr_dfs$HCPD_ageeffects$tractID, "Callosum")])
+association_bundles <- unique(ageeffect.fdr_dfs$HCPD_ageeffects$tractID[!str_detect(ageeffect.fdr_dfs$HCPD_ageeffects$tractID, "Callosum") & !str_detect(ageeffect.fdr_dfs$HCPD_ageeffects$tractID,"Corticospinal")])
+cst_bundle <- unique(ageeffect.fdr_dfs$HCPD_ageeffects$tractID[str_detect(ageeffect.fdr_dfs$HCPD_ageeffects$tractID, "Corticospinal")])
+
+callosum_avgs <- lapply(callosum_bundles, compute_avg_ageeffect, scalar = "dti_md", clipEnds = 3)
+names(callosum_avgs) <- callosum_bundles
+
+association_avgs <- lapply(association_bundles, compute_avg_ageeffect, scalar = "dti_md", clipEnds = 3)
+names(association_avgs) <- association_bundles
+
+cst_avgs <- lapply(cst_bundle, compute_avg_ageeffect, scalar = "dti_md", clipEnds = 3)
+names(cst_avgs) <- cst_bundle
+
+# normalize across callosum + association bundles separately for glass brain plotting/coloring purposes
+cc_min <- bind_rows(callosum_avgs) %>% select(mean_scalar) %>% min(., na.rm=TRUE)
+cc_max <- bind_rows(callosum_avgs) %>% select(mean_scalar) %>% max(., na.rm=TRUE)
+callosum_norm_avgs <- normalize_dev(callosum_avgs, cc_min, cc_max)
+
+#assoc_min <- bind_rows(association_avgs) %>% select(mean_scalar) %>% min(., na.rm=TRUE)
+#assoc_max <- bind_rows(association_avgs) %>% select(mean_scalar) %>% max(., na.rm=TRUE)
+#association_norm_avgs <- normalize_dev(association_avgs, assoc_min, assoc_max)
+
+#cst_avgs[[1]] <- cst_avgs[[1]] %>% mutate(mean_scalar = case_when(nodeID > 88 ~ NA, TRUE ~ mean_scalar)) # additional clipping for CST due to brainstem
+#cst_avgs[[2]] <- cst_avgs[[2]] %>% mutate(mean_scalar = case_when(nodeID > 88 ~ NA, TRUE ~ mean_scalar))
+#cst_min <- bind_rows(cst_avgs) %>% select(mean_scalar) %>% min(., na.rm=TRUE)
+#cst_max <- bind_rows(cst_avgs) %>% select(mean_scalar) %>% max(., na.rm=TRUE)
+#cst_norm_avgs <- normalize_dev(cst_avgs, cst_min, cst_max) 
+
+
+assoc_cst <- c(association_avgs, cst_avgs) 
+assoc_cst_min <- bind_rows(assoc_cst) %>% select(mean_scalar) %>% min(., na.rm=TRUE)
+assoc_cst_max <- bind_rows(assoc_cst) %>% select(mean_scalar) %>% max(., na.rm=TRUE)
+assoc_cst_avgs <- normalize_dev(assoc_cst, assoc_cst_min, assoc_cst_max)
+ 
+
+# save out
+glass_brain_dir <- "/Users/audluo/PennLINC/luowm_local/tract_profiles/qsirecon/sub-0041822/average_tract_profiles/"
+for (df_name in names(callosum_norm_avgs)) {
+  write.csv(callosum_norm_avgs[[df_name]], paste0(glass_brain_dir, "/", df_name, "_avg_dev.csv"), row.names = FALSE)
+}
+
+#for (df_name in names(association_norm_avgs)) {
+  #write.csv(association_norm_avgs[[df_name]], paste0(glass_brain_dir, "/", df_name, "_avg_dev.csv"), row.names = FALSE)
+#}
+
+for (df_name in names(assoc_cst_avgs)) {
+  write.csv(assoc_cst_avgs[[df_name]], paste0(glass_brain_dir, "/", df_name, "_avg_dev.csv"), row.names = FALSE)
+}
+
+
+```
+
+
+```{r plot age effect function}
+
+# function for plotting age effect
+plot_age_effect_clipEnds <- function(tract, scalar, ageeffect_measure, color1, color2, color3, clipEnds, ylim1, ylim2) {
+  # ageeffect_measure = GAM.smooth.AdjRsq or GAM.smooth.partialR2
+    HCPD <- ageeffect.fdr_dfs$HCPD_ageeffects %>% filter(tract_label == tract) %>% filter(nodeID > (clipEnds-1) & nodeID < (99-clipEnds+1)) %>%
+      mutate(Dataset = "HCPD")
+    HBN <- ageeffect.fdr_dfs$HBN_ageeffects %>% filter(tract_label == tract) %>% filter(nodeID > (clipEnds-1) & nodeID < (99-clipEnds+1)) %>%
+      mutate(Dataset = "HBN")
+    PNC <- ageeffect.fdr_dfs$PNC_ageeffects %>% filter(tract_label == tract) %>% filter(nodeID > (clipEnds-1) & nodeID < (99-clipEnds+1)) %>%
+      mutate(Dataset = "PNC")
+   
+    # NA out color/fill aes if adj rsq = 0 or if p-value doesn't survive FDR correction (makes the color gray)
+    if (ageeffect_measure == "GAM.smooth.AdjRsq" | ageeffect_measure == "GAM.smooth.partialR2") {
+      includes_zero_HCPD <- which(HCPD[[ageeffect_measure]]==0 | HCPD$Anova.age.pvalue.fdr > 0.05)
+      includes_zero_HBN <- which(HBN[[ageeffect_measure]]==0 | HBN$Anova.age.pvalue.fdr > 0.05)
+      includes_zero_PNC <- which(PNC[[ageeffect_measure]]==0 | PNC$Anova.age.pvalue.fdr > 0.05)
+    } else {
+      includes_zero_HCPD <- which(is.na(HCPD[[ageeffect_measure]]) | HCPD[[ageeffect_measure]]==0 | HCPD$Anova.age.pvalue.fdr > 0.05)
+      includes_zero_HBN <- which(is.na(HBN[[ageeffect_measure]]) | HBN[[ageeffect_measure]]==0 | HBN$Anova.age.pvalue.fdr > 0.05)
+      includes_zero_PNC <- which(is.na(PNC[[ageeffect_measure]]) | PNC[[ageeffect_measure]]==0 | PNC$Anova.age.pvalue.fdr > 0.05)
+    }
+    
+    HCPD$Dataset[includes_zero_HCPD] <- NA
+    HBN$Dataset[includes_zero_HBN] <- NA
+    PNC$Dataset[includes_zero_PNC] <- NA
+    
+    # make df to plot
+    df <- rbind(HCPD, HBN, PNC)
+  
+    if(str_detect(tract, "Callosum")) {
+      plot <- ggplot(data = df, aes(x = nodeID, y = abs(get(ageeffect_measure)), colour = Dataset, fill = Dataset)) +
+        geom_point(size=2, alpha = 0.4) + 
+        geom_smooth(aes(group = 1), method = "loess", color = "gray40", fill = "gray50", alpha = 0.2, se = FALSE, size = 3) +
+        scale_colour_manual(values = c("HCPD" = color1, "HBN" = color2, "PNC" = color3), na.value = "grey50") +
+        scale_fill_manual(values = c("HCPD" = color1, "HBN" = color2, "PNC" = color3), na.value = "grey50") + 
+        theme(legend.position = "bottom",
+          legend.text = element_text(size = 20),
+          legend.title = element_text(size = 20),
+          legend.box = "vertical",
+          axis.text.x = element_text(size = 20),
+          axis.text.y = element_text(size = 20),
+          axis.title.x = element_blank(),
+          axis.title.y = element_blank(),
+          plot.title = element_text(size=20, hjust=0.5),
+           plot.margin = unit(c(1, 1, 0.2, 0.2), "cm")) + labs(title = tract) + ylim(ylim1, ylim2) +
+        guides(shape = guide_legend("Hemi", override.aes = list(alpha = 1, size = 6)),  # Ensure alpha = 1 in legend for shape
+         colour = guide_legend(override.aes = list(alpha = 1, size = 6)))
+      } else {
+        plot <- ggplot(data = df, aes(x = nodeID, y = abs(get(ageeffect_measure)), colour = Dataset, 
+                                      fill = Dataset, shape = hemi)) +
+        geom_point(size=2, alpha = 0.4) + 
+        geom_smooth(aes(group = 1), method = "loess", color = "gray40", fill = "gray50", alpha = 0.2, se = FALSE, size = 3) +
+        scale_colour_manual(values = c("HCPD" = color1, "HBN" = color2, "PNC" = color3), na.value = "grey50") +
+        scale_fill_manual(values = c("HCPD" = color1, "HBN" = color2, "PNC" = color3), na.value = "grey50") +
+        scale_shape_manual(values = c(19,1)) + guides(shape = guide_legend("Hemi")) + 
+        theme(legend.position = "bottom",
+          legend.text = element_text(size = 20),
+          legend.title = element_text(size = 20),
+          legend.box = "vertical",
+          axis.text.x = element_text(size = 20),
+          axis.text.y = element_text(size = 20),
+          axis.title.x = element_blank(),
+          axis.title.y = element_blank(),
+          plot.title = element_text(size=20, hjust=0.5),
+          plot.margin = unit(c(1, 1, 0.2, 0.2), "cm")) + labs(title = gsub("\\.", "-", tract)) + ylim(ylim1, ylim2) +
+           guides(shape = guide_legend("Hemi", override.aes = list(alpha = 1, size = 6)),  # Ensure alpha = 1 in legend for shape
+         colour = guide_legend(override.aes = list(alpha = 1, size = 6)))
+      }
+       
+    return(plot)
+}
+
+```
+
+
+
+```{r run dti age effect plotting}
+ageeffect_measure = "GAM.smooth.AdjRsq"
+tracts = unique(ageeffect.fdr_dfs$HCPD_ageeffects$tract_label)
+dti_md_ageeffects_plots <- lapply(tracts, plot_age_effect_clipEnds, scalar = "dti_md", ageeffect_measure = ageeffect_measure, 
+                                color1 = color1, color2 = color2, color3 = color3, clipEnds = 3, ylim2 = 0.5, ylim1 = 0)
+names(dti_md_ageeffects_plots) <- tracts
+```
+
+```{r dti md tracts association age effects, fig.height = 20, fig.width = 16}
+dti_md_ageeffects_assoc_plots <- arrange_tract_plots(dti_md_ageeffects_plots)
+ 
+y.grob <- textGrob(expression("Magnitude of Age Effect (" * Delta * " Adjusted " * R^2 * ")"), 
+                   gp=gpar(col="black", fontsize=20), rot=90)
+
+grid.arrange(arrangeGrob(dti_md_ageeffects_assoc_plots, left = y.grob))
+
+ggsave(paste0(png_dir, "dti_md_ageeffect_association.png"), grid.arrange(arrangeGrob(dti_md_ageeffects_assoc_plots, left = y.grob)), height = 20, width = 16, units = "in")
+```
+
+```{r dti md tracts age effects callosum, fig.height = 20, fig.width = 10}
+dti_md_ageeffects_callosum_plots <- arrange_callosum_plots(dti_md_ageeffects_plots)
+ 
+y.grob <- textGrob(expression("Magnitude of Age Effect (" * Delta * " Adjusted " * R^2 * ")"), 
+                   gp=gpar(col="black", fontsize=20), rot=90)
+
+grid.arrange(arrangeGrob(dti_md_ageeffects_callosum_plots, left = y.grob))
+
+ggsave(paste0(png_dir, "dti_md_ageeffect_callosum.png"), grid.arrange(arrangeGrob(dti_md_ageeffects_callosum_plots, left = y.grob)), height = 20, width = 10, units = "in")
+```
+ 
+correlations between datasets
+ 
+```{r tp correlations, fig.height = 7, fig.width = 20}
+cor_HCPD_HBN <- round(cor.test(ageeffect.fdr_dfs$HCPD_ageeffects$GAM.smooth.AdjRsq, ageeffect.fdr_dfs$HBN_ageeffects$GAM.smooth.AdjRsq)$estimate, 2)
+cor_HCPD_PNC <- round(cor.test(ageeffect.fdr_dfs$HCPD_ageeffects$GAM.smooth.AdjRsq, ageeffect.fdr_dfs$PNC_ageeffects$GAM.smooth.AdjRsq)$estimate, 2)
+cor_HBN_PNC <- round(cor.test(ageeffect.fdr_dfs$HBN_ageeffects$GAM.smooth.AdjRsq, ageeffect.fdr_dfs$PNC_ageeffects$GAM.smooth.AdjRsq)$estimate, 2)
+
+
+HCPD_to_corr <- ageeffect.fdr_dfs$HCPD_ageeffects %>% mutate(HCPD = abs(GAM.smooth.AdjRsq)) %>% mutate(tract_node = paste0(tractID, "_", nodeID)) %>% select(tract_node, HCPD)
+HBN_to_corr <- ageeffect.fdr_dfs$HBN_ageeffects %>% mutate(HBN = abs(GAM.smooth.AdjRsq)) %>% mutate(tract_node = paste0(tractID, "_", nodeID)) %>% select(tract_node, HBN)
+PNC_to_corr <- ageeffect.fdr_dfs$PNC_ageeffects %>% mutate(PNC = abs(GAM.smooth.AdjRsq)) %>% mutate(tract_node = paste0(tractID, "_", nodeID)) %>% select(tract_node, PNC)
+
+HCPD_HBN_ageeffects <- merge(HCPD_to_corr, HBN_to_corr, by = "tract_node")
+HCPD_PNC_ageeffects <- merge(HCPD_to_corr, PNC_to_corr, by = "tract_node")
+HBN_PNC_ageeffects <- merge(HBN_to_corr, PNC_to_corr, by = "tract_node")
+ 
+
+text_HCPD_HBN <- bquote(italic(r) == .(cor_HCPD_HBN) * "," ~ italic(p) < "0.0001")
+HCPD_HBN_ageeffects_plot <- ggplot(HCPD_HBN_ageeffects, aes(x = HCPD, y = HBN)) +
+ geom_hex(bins = 8) +
+  paletteer::scale_fill_paletteer_c("ggthemes::Blue-Green Sequential", direction = -1) +
+  geom_smooth(method = "lm", color = "black", se = FALSE) +   
+  annotate("text", x = 0, y = 0.55, 
+           label = text_HCPD_HBN, 
+           hjust = 0, vjust = 1, size = 8, color = "black") + 
+  theme(legend.position = "bottom",
+        legend.key.width = unit(2, 'cm'), legend.key.height = unit(1, 'cm'),
+        legend.text = element_text(size = 24),
+        legend.title = element_text(size = 24),
+        axis.text.x = element_text(size = 24),
+        axis.text.y = element_text(size = 24),
+        axis.title.x = element_text(size = 24),
+        axis.title.y = element_text(size = 24),
+        plot.margin = unit(c(0.2, 0.2, 0.2, 1), "cm")) + 
+  labs(x = "HCP-D", y = "HBN", fill = "Count") + ylim(0, 0.57) + xlim(0, 0.57) 
+ 
+ 
+text_HCPD_PNC <- bquote(italic(r) == .(cor_HCPD_PNC) * "," ~ italic(p) < "0.0001")
+HCPD_PNC_ageeffects_plot <- ggplot(HCPD_PNC_ageeffects, aes(x = HCPD, y = PNC)) +
+ geom_hex(bins = 8) +
+  paletteer::scale_fill_paletteer_c("ggthemes::Blue-Green Sequential", direction = -1) +
+  geom_smooth(method = "lm", color = "black", se = FALSE) +   
+  annotate("text", x = 0, y = 0.55, 
+           label = text_HCPD_PNC, 
+           hjust = 0, vjust = 1, size = 8, color = "black") + 
+  theme(legend.position = "bottom",
+        legend.key.width = unit(2, 'cm'), legend.key.height = unit(1, 'cm'),
+        legend.text = element_text(size = 24),
+        legend.title = element_text(size = 24),
+        axis.text.x = element_text(size = 24),
+        axis.text.y = element_text(size = 24),
+        axis.title.x = element_text(size = 24),
+        axis.title.y = element_text(size = 24),
+        plot.margin = unit(c(0.2, 0.2, 0.2, 1), "cm")) + 
+  labs(x = "HCP-D", y = "PNC", fill = "Count") + ylim(0, 0.57) + xlim(0, 0.57)
+ 
+text_HBN_PNC <- bquote(italic(r) == .(cor_HBN_PNC) * "," ~ italic(p) < "0.0001")
+HBN_PNC_ageeffects_plot <- ggplot(HBN_PNC_ageeffects, aes(x = HBN, y = PNC)) +
+ geom_hex(bins = 8) +
+  paletteer::scale_fill_paletteer_c("ggthemes::Blue-Green Sequential", direction = -1) +
+  geom_smooth(method = "lm", color = "black", se = FALSE) +   
+  annotate("text", x = 0, y = 0.55, 
+           label = text_HBN_PNC, 
+           hjust = 0, vjust = 1, size = 8, color = "black") + 
+  theme(legend.position = "bottom", 
+        legend.key.width = unit(2, 'cm'), legend.key.height = unit(1, 'cm'),
+        legend.text = element_text(size = 24),
+        legend.title = element_text(size = 24),
+        axis.text.x = element_text(size = 24),
+        axis.text.y = element_text(size = 24),
+        axis.title.x = element_text(size = 24),
+        axis.title.y = element_text(size = 24),
+        plot.margin = unit(c(0.2, 0.2, 0.2, 1), "cm")) + 
+  labs(x = "HBN", y = "PNC", fill = "Count") + ylim(0, 0.57) + xlim(0, 0.57)
+
+# make bin colors the same across plots
+# get the maximum bin counts from all datasets
+max_count_HCPD_HBN <- max(ggplot_build(HCPD_HBN_ageeffects_plot)$data[[1]]$count, na.rm = TRUE)
+max_count_HCPD_PNC <- max(ggplot_build(HCPD_PNC_ageeffects_plot)$data[[1]]$count, na.rm = TRUE)
+max_count_HBN_PNC  <- max(ggplot_build(HBN_PNC_ageeffects_plot)$data[[1]]$count, na.rm = TRUE)
+global_max_count <- max(max_count_HCPD_HBN, max_count_HCPD_PNC, max_count_HBN_PNC)
+scale_limits <- c(0, global_max_count)
+HCPD_HBN_ageeffects_plot <- HCPD_HBN_ageeffects_plot +
+  paletteer::scale_fill_paletteer_c("ggthemes::Blue-Green Sequential", 
+                                    direction = -1, 
+                                    limits = scale_limits, 
+                                    oob = scales::squish)
+HCPD_PNC_ageeffects_plot <- HCPD_PNC_ageeffects_plot +
+  paletteer::scale_fill_paletteer_c("ggthemes::Blue-Green Sequential", 
+                                    direction = -1, 
+                                    limits = scale_limits, 
+                                    oob = scales::squish)
+
+HBN_PNC_ageeffects_plot <- HBN_PNC_ageeffects_plot +
+  paletteer::scale_fill_paletteer_c("ggthemes::Blue-Green Sequential", 
+                                    direction = -1, 
+                                    limits = scale_limits, 
+                                    oob = scales::squish)
+
+
+ageeffects_plots <- ggarrange(HCPD_PNC_ageeffects_plot, HCPD_HBN_ageeffects_plot, HBN_PNC_ageeffects_plot, nrow = 1, common.legend=T, legend = c("bottom"))
+
+title.grob <- textGrob("Age Effect Magnitude of Mean Diffusivity Across Datasets", 
+                   gp=gpar(col="black", fontsize = 24, face = "bold"), hjust = 0.5)
+ 
+grid.arrange(arrangeGrob(ageeffects_plots, top = title.grob))
+
+ggsave(paste0(png_dir, "ageeffect_hexplots.png"), grid.arrange(arrangeGrob(ageeffects_plots, top = title.grob)), height = 7, width = 20, units = "in")
+
+
+
+
+```
+
+
+```{r scatterplot corr}
+
+ggplot(HCPD_HBN_ageeffects, aes(x = HCPD, y = HBN)) + 
+  geom_point()
+
+ggplot(HCPD_PNC_ageeffects, aes(x = HCPD, y = PNC)) + 
+  geom_point()
+
+ggplot(HBN_PNC_ageeffects, aes(x = HBN, y = PNC)) + 
+  geom_point()
+```
+
+
+```{r tp correlations, fig.height = 5, fig.width = 5}
+cor_HCPD_HBN <- cor.test(ageeffect.fdr_dfs$HCPD_ageeffects$GAM.smooth.AdjRsq, ageeffect.fdr_dfs$HBN_ageeffects$GAM.smooth.AdjRsq)$estimate
+cor_HCPD_PNC <- cor.test(ageeffect.fdr_dfs$HCPD_ageeffects$GAM.smooth.AdjRsq, ageeffect.fdr_dfs$PNC_ageeffects$GAM.smooth.AdjRsq)$estimate
+cor_HBN_PNC <- cor.test(ageeffect.fdr_dfs$HBN_ageeffects$GAM.smooth.AdjRsq, ageeffect.fdr_dfs$PNC_ageeffects$GAM.smooth.AdjRsq)$estimate
+
+
+HCPD_to_corr <- ageeffect.fdr_dfs$HCPD_ageeffects %>% mutate(HCPD = GAM.smooth.AdjRsq) %>% mutate(tract_node = paste0(tractID, "_", nodeID)) %>% select(tract_node, HCPD)
+HBN_to_corr <- ageeffect.fdr_dfs$HBN_ageeffects %>% mutate(HBN = GAM.smooth.AdjRsq) %>% mutate(tract_node = paste0(tractID, "_", nodeID)) %>% select(tract_node, HBN)
+PNC_to_corr <- ageeffect.fdr_dfs$PNC_ageeffects %>% mutate(PNC = GAM.smooth.AdjRsq) %>% mutate(tract_node = paste0(tractID, "_", nodeID)) %>% select(tract_node, PNC)
+
+HCPD_HBN_tp <- merge(HCPD_to_corr, HBN_to_corr, by = "tract_node")
+HCPD_PNC_tp <- merge(HCPD_to_corr, PNC_to_corr, by = "tract_node")
+HBN_PNC_tp <- merge(HBN_to_corr, PNC_to_corr, by = "tract_node")
+
+ 
+
+# make correlation matrix
+dat2 <- bind_cols(HCPD_to_corr$tract_node, as.numeric(HCPD_to_corr$HCPD), HBN_to_corr$HBN, PNC_to_corr$PNC)
+names(dat2) <- c("label", "HCP-D", "HBN", "PNC")
+corr <- round(cor(dat2[,-1], use = "complete.obs"), 5)
+
+p.mat <- matrix(NA, nrow = 3, ncol = 3)
+row.names(p.mat) <- c("HCP-D", "HBN", "PNC")
+colnames(p.mat) <- c("HCP-D", "HBN", "PNC")
+
+p.mat[1,1] <- 0 # HCPD-HCPD
+p.mat[1,2] <- cor.test(summary_HCPD_dti_md$mean_dti_md, summary_HBN_dti_md$mean_dti_md)$p.value # HCPD-HBN
+p.mat[1,3] <- cor.test(summary_HCPD_dti_md$mean_dti_md, summary_PNC_dti_md$mean_dti_md)$p.value # HCPD-PNC
+ 
+p.mat[2,1] <- cor.test(summary_HCPD_dti_md$mean_dti_md, summary_HBN_dti_md$mean_dti_md)$p.value# HBN-HCPD
+p.mat[2,2] <- 0 # HBN-HBN
+p.mat[2,3] <- cor.test(summary_HBN_dti_md$mean_dti_md, summary_PNC_dti_md$mean_dti_md)$p.value # HBN-PNC
+  
+
+p.mat[3,1] <- cor.test(summary_HCPD_dti_md$mean_dti_md, summary_PNC_dti_md$mean_dti_md)$p.value # PNC-HCPD
+p.mat[3,2] <- cor.test(summary_HBN_dti_md$mean_dti_md, summary_PNC_dti_md$mean_dti_md)$p.value # PNC-HBN
+p.mat[3,3] <- 0 # PNC-PNC
+ 
+ 
+
+library(ggcorrplot)
+# Visualize the correlation matrix
+correlation_matrix <- ggcorrplot(corr,  
+   lab = TRUE, lab_col = "white", type = "lower",
+   outline.col = "white",
+   ggtheme = ggplot2::theme_void, lab_size = 8, 
+   hc.order = FALSE, insig = "blank", p.mat=p.mat)  +
+   scale_fill_gradient2(low = "white",
+  mid = "#E5B9ADFF",
+  high = "#A50026FF", midpoint=0.5,limit= c(0, 1)) + 
+ theme(legend.text = element_text(size = 18), 
+       legend.title = element_blank(), 
+       legend.key.height = unit(1, 'cm'),
+       legend.key.width = unit(1.5, 'cm'),
+       legend.position = "bottom",
+       legend.margin=margin(10,0,0,0),
+       axis.text=element_text(size=22, color = "black"),
+       axis.text.y = element_text(hjust = 0, size = 22),
+       axis.text.x = element_text(hjust = 0.5, angle=0, size = 22),
+       plot.margin = margin(1, 1, 1, 1, "cm"))
+
+
+ 
+
+# plot 
+grid.arrange(arrangeGrob(correlation_matrix, bottom = textGrob("Correlation", 
+                                                     gp=gpar(col="black", fontsize=22), x = 0.6, y = 1.5)))
+ggsave(paste0(png_dir, "dev_corrplot.png"), grid.arrange(arrangeGrob(correlation_matrix, bottom = textGrob("Correlation", 
+                                                     gp=gpar(col="black", fontsize=22), x = 0.6, y = 1.5))), width = 5, height = 5, units = "in")
+```
+
+
+
+
+
+lollipop plots
+```{r}
+library(ggplot2)
+library(dplyr)
+
+# Define colors for datasets
+colors <- c("#3FB8AFFF", "#FF9E9DFF", "#cc0468")
+names(colors) <- c("HCP-D", "HBN", "PNC")
+bin_num_nodes = 5
+clipEnds = 3
+
+format_deep_peripheral <- function(df, ageeffect_measure, bin_num_nodes, clipEnds) {
+  sqrt_n <- sqrt(bin_num_nodes) # n = number of nodes included in each bin (or level of node_position)
+  df <- df %>% filter(nodeID > (clipEnds-1) & nodeID < (99-clipEnds+1))
+  df_binned <- df %>%
+        filter(
+          nodeID < (bin_num_nodes + clipEnds) |  # Start of the tract
+          nodeID > (99 - bin_num_nodes - clipEnds) |  # End of the tract
+          (nodeID > (50-bin_num_nodes) & nodeID <= (50+bin_num_nodes))  # Deep WM nodes: the  nodes in the center
+        ) %>%
+        mutate(
+        node_position = case_when(
+            tract_label == "Corticospinal" & nodeID < (bin_num_nodes + clipEnds) ~ "Peripheral",
+            tract_label == "Corticospinal" & nodeID > (99 - bin_num_nodes - clipEnds) ~ "Deep",
+            tract_label != "Corticospinal" & nodeID < (bin_num_nodes + clipEnds) ~ "Peripheral",
+            tract_label != "Corticospinal" & nodeID > (99 - bin_num_nodes - clipEnds) ~ "Peripheral",
+            tract_label != "Corticospinal" & (nodeID > (50-bin_num_nodes) & nodeID <= (50+bin_num_nodes)) ~ "Deep",
+            TRUE ~ NA_character_
+        )
+    ) %>%
+        #group_by(tract_label, node_position) %>%
+        group_by(tract_label, node_position, Dataset) %>% # removed hemi
+        summarise(
+          mean_ageeffect = abs(mean(get(ageeffect_measure), na.rm = TRUE)),
+          sd = abs(sd(get(ageeffect_measure), na.rm = TRUE)),
+          ymin_sd = abs(mean(get(ageeffect_measure), na.rm = TRUE)) - sd,
+          ymax_sd = abs(mean(get(ageeffect_measure), na.rm = TRUE)) + sd, 
+          se = sd(get(ageeffect_measure), na.rm = TRUE) / sqrt_n,
+          ymin_se = abs(mean(get(ageeffect_measure), na.rm = TRUE)) - se,
+          ymax_se = abs(mean(get(ageeffect_measure), na.rm = TRUE)) + se
+        )
+  df_binned$node_position <- factor(df_binned$node_position, levels = c("Peripheral", "Deep"))
+  
+  return(df_binned)
+}
+
+
+# Function to prepare and format data with optional exclusion
+prepare_data <- function(df_all, callosum = NULL) {
+  df_all <- df_all %>%
+  filter(if (!is.null(callosum)) str_detect(tract_label, callosum) else !str_detect(tract_label, "Callosum")) %>%  # Filter for callosum or association tracts
+  pivot_wider(id_cols = c(tract_label, Dataset), names_from = node_position, values_from = mean_ageeffect) %>%
+  
+  # Conditional mutate based on callosum
+  mutate(
+    tract_label = if (!is.null(callosum)) {
+      factor(tract_label, levels = c(
+        "Callosum Orbital", "Callosum Anterior Frontal", "Callosum Superior Frontal", 
+        "Callosum Motor", "Callosum Superior Parietal", "Callosum Posterior Parietal", 
+        "Callosum Temporal", "Callosum Occipital"
+      ))
+    } else {
+      factor(tract_label)
+    }
+  ) %>%
+  
+  mutate(
+    tract_numeric = as.numeric(tract_label),
+    tract_spaced = tract_numeric * 1,  # Space between tracts
+    tract_node_dodged = tract_spaced + as.numeric(Dataset) * 0.2 - (0.2 * 2) / 2
+  ) %>%
+  arrange(tract_label)
+ 
+  tract_labels <- df_all %>%
+    group_by(tract_label) %>%
+    summarise(tract_label_pos = mean(tract_node_dodged))
+
+  return(list(data = df_all, tract_labels = tract_labels))
+}
+
+# Function to create the plot
+create_plot <- function(data, tract_labels, title) {
+  ggplot(data) +
+    geom_segment(aes(x = tract_node_dodged, xend = tract_node_dodged, 
+                     y = Peripheral - 0.0175, yend = Deep + 0.0175), color = "gray40", size = 1) +
+    geom_point(aes(x = tract_node_dodged, y = Peripheral, fill = Dataset, color = Dataset, shape = "Peripheral"), 
+               size = 10, stroke = 2, alpha = 0.9) +
+    geom_point(aes(x = tract_node_dodged, y = Deep, color = Dataset, shape = "Deep"), 
+               size = 10, stroke = 2, alpha = 0.9) +
+    scale_shape_manual(values = c("Peripheral" = 19, "Deep" = 1)) +
+    scale_fill_manual(values = colors) +
+    scale_color_manual(values = colors) +
+    theme_classic() +
+    labs(y = "Magnitude of Age Effect", fill = "Dataset", shape = "Tract Region", title = title) +
+    ylim(0, 0.45) +
+    theme(
+      legend.position = "bottom",
+      legend.title = element_text(size = 16),
+      legend.text = element_text(size = 16),
+      legend.box = "vertical",
+      axis.text.x = element_text(size = 16, hjust = 1, angle = 30),
+      axis.text.y = element_text(size = 16),
+      axis.title.x = element_blank(),
+      axis.title.y = element_blank(),
+      plot.title = element_text(size = 16, hjust = 0.5, face = "bold")) +
+    scale_x_continuous(breaks = tract_labels$tract_label_pos, labels = gsub("Callosum", "", tract_labels$tract_label))
+}
+
+# Prepare the data
+df_all <- bind_rows(
+  ageeffect.fdr_dfs$HCPD_ageeffects %>% mutate(Dataset = "HCP-D"),
+  ageeffect.fdr_dfs$HBN_ageeffects  %>% mutate(Dataset = "HBN"),
+  ageeffect.fdr_dfs$PNC_ageeffects  %>% mutate(Dataset = "PNC")
+)
+
+df_all$Dataset <- factor(df_all$Dataset, levels = c("HCP-D", "PNC", "HBN"))
+df_formatted <- format_deep_peripheral(df_all, ageeffect_measure, bin_num_nodes, clipEnds)  
+df_formatted <- df_formatted[complete.cases(df_formatted), ]
+
+# Prepare and plot for Callosum tracts (only include Callosum)
+callosum_data <- prepare_data(df_formatted, callosum = "Callosum")  # Include only Callosum
+callosum_plot <- create_plot(callosum_data$data, callosum_data$tract_labels, "Callosum Bundles")
+
+# Prepare and plot for Main tracts (exclude Callosum)
+main_data <- prepare_data(df_formatted, callosum = NULL)  # Exclude Callosum
+main_plot <- create_plot(main_data$data, main_data$tract_labels, "Association Bundles + Corticospinal Tract")
+
+```
+
+
+```{r, fig.height = 14, fig.width = 15}
+lollipop_plot <- ggarrange(callosum_plot, main_plot, nrow = 2, common.legend = TRUE, legend = "bottom")
+y.grob <- textGrob(expression("Magnitude of Mean Age Effect (" * Delta * " Adjusted " * R^2 * ")"), 
+                   gp=gpar(col="black", fontsize=16), rot=90)
+
+grid.arrange(arrangeGrob(lollipop_plot, left = y.grob))
+
+ggsave(paste0(png_dir, "dti_md_lollipop.png"), grid.arrange(arrangeGrob(lollipop_plot, left = y.grob)), width = 15, height = 14, units = "in")
+
+
+```

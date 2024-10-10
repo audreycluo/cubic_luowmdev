@@ -1,6 +1,7 @@
 library(data.table)
 library(dplyr)
 library(mgcv)
+library(parallel)
 library(rjson)
 library(stringr)
 library(tidyr)
@@ -21,8 +22,10 @@ source("/cbica/projects/luo_wm_dev/code/tract_profiles/fit_GAMs/gam_functions/GA
 
 # 2) run gam.derivatives to compute derivatives for my smooth (age) at each age  
 
-# 3) run gam.estimate.smooth to estimate zero-centered smooths for each node 
+# 3) run gam.estimate.smooth to estimate zero-centered age smooths for each node 
 # which will be used to create my twizzler plots :) aka developmental trajectories lol
+
+# 4) run gam.estimate.smooth to estimate age smooths (non-centered) for each node 
 
 ################## 
 # Set Variables 
@@ -54,19 +57,20 @@ if (dir.exists(GAM_outputs_dir)) {
 ###################
 # 1) run gam.fit.smooth to compute developmental measures + model checks
 run_gam.fit.smooth <- function(gam_df, smooth.var, covs, k, set.fx) {
-  GAM_dev_measures <- map_dfr(tract_node_labels, 
+  GAM_dev_measures <- mclapply(tract_node_labels, 
                                     function(x){as.data.frame(gam.fit.smooth(gam.data = gam_df, 
                                                                              tract_node = as.character(x), 
                                                                              smooth_var = smooth.var, 
                                                                              covariates = covs, 
                                                                              knots = k, 
-                                                                             set_fx = set.fx))}) 
+                                                                             set_fx = set.fx))}, mc.cores = 4) 
+  GAM_dev_measures <- do.call(rbind, GAM_dev_measures)
   write.csv(GAM_dev_measures, sprintf("%1$s/%2$s_GAM_dev_measures.csv", GAM_outputs_dir, dataset), quote = F, row.names =F)
 }
 
 # 2) run gam.derivatives to compute derivatives for my smooth (age) at each age  
 run_gam.derivatives <- function(gam_df, smooth.var, covs, k, set.fx, num.draws, num.pred, credible.interval) {
-    smooth.derivatives <- map_dfr(tract_node_labels, 
+    smooth.derivatives <- mclapply(tract_node_labels, 
                                   function(x){as.data.frame(gam.derivatives(gam.data = gam_df, 
                                                                             tract_node = as.character(x), 
                                                                             smooth_var = smooth.var, 
@@ -76,16 +80,14 @@ run_gam.derivatives <- function(gam_df, smooth.var, covs, k, set.fx, num.draws, 
                                                                             draws = num.draws, 
                                                                             increments = num.pred, 
                                                                             return_posterior_derivatives = credible.interval)) %>% 
-                                      mutate(tract_node = x)
-                                    }
-                                  )
-    
+                                      mutate(tract_node = x)}, mc.cores = 4)
+    smooth.derivatives <- do.call(rbind, smooth.derivatives)
     write.csv(smooth.derivatives, sprintf("%1$s/%2$s_GAM_derivatives.csv", GAM_outputs_dir, dataset), quote = F, row.names =F)
 }
 
-# 3) run gam.estimate.smooth to estimate zero-centered smooths for each node 
+# 3) run gam.estimate.smooth to estimate zero-centered age smooths for each node 
 run_gam.estimate.smooth <- function(gam_df, smooth.var, covs, k, set.fx, num.draws, num.pred, start_age, end_age){
-  smooth.centered <- map_dfr(tract_node_labels, 
+  smooth.centered <- mclapply(tract_node_labels, 
                              function(x){as.data.frame(gam.estimate.smooth(gam.data = gam_df, 
                                                                            tract_node = as.character(x), 
                                                                            smooth_var = smooth.var, 
@@ -94,12 +96,28 @@ run_gam.estimate.smooth <- function(gam_df, smooth.var, covs, k, set.fx, num.dra
                                                                            set_fx = set.fx, 
                                                                            increments = num.pred, 
                                                                            age1 = start_age,
-                                                                           age2 = end_age)) %>% 
-                                 mutate(tract_node = x)
-                               }
-                             )
+                                                                           age2 = end_age)) %>% mutate(tract_node = x)}, mc.cores = 4)
+  smooth.centered <- do.call(rbind, smooth.centered)
   write.csv(smooth.centered, sprintf("%1$s/%2$s_GAM_smoothcentered.csv", GAM_outputs_dir, dataset), quote = F, row.names =F)
 }
+
+
+# 4) run_gam.fitted_values to estimate age smooths (non-centered) for each node
+run_gam.smooth.predict <- function(gam_df, smooth.var, covs, k, set.fx, num.pred, start_age, end_age){
+  smooth.fittedvals <- mclapply(tract_node_labels, 
+                               function(x){as.data.frame(gam.smooth.predict(gam.data = gam_df, 
+                                                                            tract_node = as.character(x), 
+                                                                            smooth_var = smooth.var, 
+                                                                            covariates = covs, 
+                                                                            knots = k, 
+                                                                            set_fx = set.fx, 
+                                                                            increments = num.pred,
+                                                                            age1 = start_age,
+                                                                            age2 = end_age)) %>% mutate(tract = x)}, mc.cores = 4)
+  smooth.fittedvals <- do.call(rbind, smooth.fittedvals)
+  write.csv(smooth.fittedvals, sprintf("%1$s/%2$s_GAM_smooth_fittedvalues.csv", GAM_outputs_dir, dataset), quote = F, row.names =F)
+}
+
 
 ################### 
 # Load files  
@@ -140,7 +158,7 @@ gam_df <- merge(tract_profiles_wide, demographics, by = "sub")
 ################### 
 # Fit da GAMz 
 ###################
-# set variables for all the gamssss
+# set variables for all the gams
 tract_node_labels = names(tract_profiles_wide)[-1]
 #sanity checks
 #tract_node_labels_PNC = names(tract_profiles_wide)[-1]
@@ -171,14 +189,18 @@ if(dataset =="PNC") {
 
 # 1) run gam.fit.smooth to compute temporal measures + model checks
 print("Running gam.fit.smooth")
-#run_gam.fit.smooth(gam_df, smooth.var, covs, k, set.fx)
+run_gam.fit.smooth(gam_df, smooth.var, covs, k, set.fx)
 
 # 2) run gam.derivatives to compute derivatives for my smooth (age) at each age  
 print("Running gam.derivatives")
-#run_gam.derivatives(gam_df, smooth.var, covs, k, set.fx, num.draws, num.pred, credible.interval) 
+run_gam.derivatives(gam_df, smooth.var, covs, k, set.fx, num.draws, num.pred, credible.interval) 
 
-# 3) run gam.estimate.smooth to estimate zero-centered smooths for each node 
+# 3) run gam.estimate.smooth to estimate zero-centered age smooths for each node 
 print("Running gam.estimate.smooth")
 run_gam.estimate.smooth(gam_df, smooth.var, covs, k, set.fx, num.draws, num.pred, start_age, end_age)
+
+# 4) run gam.estimate.smooth to estimate age smooths (non-centered) for each node 
+print("Running gam.smooth.predict")
+run_gam.smooth.predict(gam_df, smooth.var, covs, k, set.fx, num.pred, start_age, end_age)
 
 print("Script finished!")

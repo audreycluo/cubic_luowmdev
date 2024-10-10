@@ -1,8 +1,41 @@
 #!/bin/bash
-
+#SBATCH --nodes=1
+#SBATCH --ntasks=1                           
+#SBATCH --cpus-per-task=1                   
+#SBATCH --time=01:00:00                    
+#SBATCH --output=/dev/null    # suppress default output file
+#SBATCH --error=/dev/null     # suppress default error file
 
 # Adapted from Marc Jaskir's excellent code: https://github.com/marcjaskir/tracts/blob/main/04-map_tract_volumes_to_surfaces.sh
 
+######################
+# setup for job array 
+######################
+# define variables passed from the submission script
+subjects_file=$1  
+config_file=$2
+logs_dir=$3
+job_name=$4
+
+mapfile -t subjects_array < <(tail -n +2 ${subjects_file}) # skip header
+for i in "${!subjects_array[@]}"; do
+    subjects_array[$i]=$(echo "${subjects_array[$i]}" | tr -d '"') # remove quotes
+done
+
+# get the subject corresponding to my job array element
+subject=${subjects_array[$SLURM_ARRAY_TASK_ID]}
+
+# define the log filenames dynamically based on subject
+output_file="${logs_dir}/${job_name}_${subject}_${SLURM_JOB_ID}_${SLURM_ARRAY_TASK_ID}.out"
+error_file="${logs_dir}/${job_name}_${subject}_${SLURM_JOB_ID}_${SLURM_ARRAY_TASK_ID}.err"
+
+# Redirect stdout and stderr to the desired log files
+exec > "${output_file}"
+exec 2> "${error_file}"
+
+########################################
+# Load modules
+########################################
 module load connectome_workbench/1.4.2
 
 ########################################
@@ -18,9 +51,8 @@ proj_root="/cbica/projects/luo_wm_dev/"
 dataset=$(jq -r '.dataset' "$config_file")
 data_root=$(jq -r '.data_root' "$config_file")
 derivs_root="${data_root}/derivatives"
-xfms_root="${derivs_root}/${dataset}_fs_qsiprep_xfm"
-cortical_maps_root="${derivs_root}/${dataset}_vol_to_surf"
- 
+xfms_root="${derivs_root}/fs_qsiprep_xfm"
+cortical_maps_root="${derivs_root}/vol_to_surf"
 
 # Create output directory for fslr_32 outputs
 if [ ! -d ${cortical_maps_root}/${subject}/fslr_32k ]; then
@@ -55,7 +87,6 @@ wb_shortcuts -freesurfer-resample-prep \
     ${outputs_dir_fslr_32k}/rh.midthickness.fslr_32k.surf.gii \
     ${outputs_dir_fslr_32k}/rh.sphere.reg.surf.gii
 
-
 ########################################
 # Warp tract surfaces to fsLR
 ########################################
@@ -64,37 +95,60 @@ for tract_file in ${outputs_dir_native_acpc}/*.shape.gii; do
 
     # Extract tract label
     tract_fname=$(basename ${tract_file})
-    tract_label=$(echo ${tract_fname} | cut -d '_' -f2)
+    tract_label=$(echo ${tract_fname} | grep -oP '(?<=sub-\d{7}_)[^_]+')
     depth=$(echo "${tract_fname}" | sed -n 's/.*_\([0-9]*\.[0-9]*\)\.shape\.gii/\1/p')
 
     echo "Warping ${tract_label} ${depth} to fsLR"
 
     # Extract hemisphere
-    hemi=$(echo ${tract_label} | rev | cut -c1-1 | rev)
+    hemi=$(echo "$tract_label" | grep -oE 'Left|Right')
+
    
     ###############
     # fsLR 32k
     ###############
-        # Left hemisphere
-    if [ ${hemi} == 'L' ]; then
+    # if callosum bundles:
+    if [[ "$tract_label" == *Callosum* ]]; then
         wb_command -metric-resample \
-            ${tract_file} \
-            ${xfms_root}/${subject}/surfaces/freesurfer/${subject}.lh.sphere.freesurfer.surf.gii \
-            ${proj_root}/templates/fslr_32k/fs_LR-deformed_to-fsaverage.L.sphere.32k_fs_LR.surf.gii \
-            ADAP_BARY_AREA \
-            ${outputs_dir_fslr_32k}/${subject}.${tract_label}_${depth}.shape.gii \
-            -area-surfs ${outputs_dir_fslr_32k}/lh.midthickness.surf.gii ${outputs_dir_fslr_32k}/lh.midthickness.fslr_32k.surf.gii
+                ${tract_file} \
+                ${xfms_root}/${subject}/surfaces/freesurfer/${subject}.lh.sphere.freesurfer.surf.gii \
+                ${proj_root}/templates/fslr_32k/fs_LR-deformed_to-fsaverage.L.sphere.32k_fs_LR.surf.gii \
+                ADAP_BARY_AREA \
+                ${outputs_dir_fslr_32k}/${subject}.Left${tract_label}_${depth}.shape.gii \
+                -area-surfs ${outputs_dir_fslr_32k}/lh.midthickness.surf.gii ${outputs_dir_fslr_32k}/lh.midthickness.fslr_32k.surf.gii
 
-    # Right hemisphere
-    elif [ ${hemi} == 'R' ]; then
         wb_command -metric-resample \
-            ${tract_file} \
-            ${xfms_root}/${subject}/surfaces/freesurfer/${subject}.rh.sphere.freesurfer.surf.gii \
-            ${proj_root}/templates/fslr_32k/fs_LR-deformed_to-fsaverage.R.sphere.32k_fs_LR.surf.gii \
-            ADAP_BARY_AREA \
-            ${outputs_dir_fslr_32k}/${subject}.${tract_label}_${depth}.shape.gii \
-            -area-surfs ${outputs_dir_fslr_32k}/rh.midthickness.surf.gii ${outputs_dir_fslr_32k}/rh.midthickness.fslr_32k.surf.gii
-    fi       
+                ${tract_file} \
+                ${xfms_root}/${subject}/surfaces/freesurfer/${subject}.rh.sphere.freesurfer.surf.gii \
+                ${proj_root}/templates/fslr_32k/fs_LR-deformed_to-fsaverage.R.sphere.32k_fs_LR.surf.gii \
+                ADAP_BARY_AREA \
+                ${outputs_dir_fslr_32k}/${subject}.Right${tract_label}_${depth}.shape.gii \
+                -area-surfs ${outputs_dir_fslr_32k}/rh.midthickness.surf.gii ${outputs_dir_fslr_32k}/rh.midthickness.fslr_32k.surf.gii
+    else # if other tracts: 
+        # Left hemisphere
+        if [ ${hemi} == 'Left' ]; then
+            wb_command -metric-resample \
+                ${tract_file} \
+                ${xfms_root}/${subject}/surfaces/freesurfer/${subject}.lh.sphere.freesurfer.surf.gii \
+                ${proj_root}/templates/fslr_32k/fs_LR-deformed_to-fsaverage.L.sphere.32k_fs_LR.surf.gii \
+                ADAP_BARY_AREA \
+                ${outputs_dir_fslr_32k}/${subject}.${tract_label}_${depth}.shape.gii \
+                -area-surfs ${outputs_dir_fslr_32k}/lh.midthickness.surf.gii ${outputs_dir_fslr_32k}/lh.midthickness.fslr_32k.surf.gii
+
+        # Right hemisphere
+        elif [ ${hemi} == 'Right' ]; then
+            wb_command -metric-resample \
+                ${tract_file} \
+                ${xfms_root}/${subject}/surfaces/freesurfer/${subject}.rh.sphere.freesurfer.surf.gii \
+                ${proj_root}/templates/fslr_32k/fs_LR-deformed_to-fsaverage.R.sphere.32k_fs_LR.surf.gii \
+                ADAP_BARY_AREA \
+                ${outputs_dir_fslr_32k}/${subject}.${tract_label}_${depth}.shape.gii \
+                -area-surfs ${outputs_dir_fslr_32k}/rh.midthickness.surf.gii ${outputs_dir_fslr_32k}/rh.midthickness.fslr_32k.surf.gii
+        fi    
+        
+    fi
+
+       
 done
 
 # Clean up intermediary files

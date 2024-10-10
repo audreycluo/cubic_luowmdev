@@ -1,0 +1,444 @@
+---
+title: 'Covariate Analyses: Sex'
+author: "Audrey Luo"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(cowplot)
+library(data.table)
+library(dplyr)
+library(ggplot2)
+library(ggpubr)
+library(grid)
+library(gridExtra)
+library(gratia) 
+library(knitr)
+library(kableExtra)
+library(mgcv)
+library(RColorBrewer)
+library(scales)
+library(stringr)
+library(rjson)
+library(tidyr)
+
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE, include = TRUE) 
+
+font_size <- 20
+theme_set(theme_classic(base_family = "sans",base_size = font_size))
+line_size <- 1
+point_size <- 2
+
+proj_root <- "/cbica/projects/luo_wm_dev/"
+input_root <- paste0(proj_root, "input")
+output_root <- paste0(proj_root, "output")
+png_dir <- "/Users/audluo/PennLINC/luowm_local/output/tract_profiles_testing/all_datasets/flux/"
+local_dir <- "/Users/audluo/Desktop/temp_code"
+ 
+text_size <- 20
+default <- theme_set(theme_classic() + 
+  theme(
+    plot.title = element_text(size = text_size, hjust = 0.5),
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank(),
+    axis.text.x = element_text(size = text_size),
+    axis.text.y = element_text(size = text_size)
+  ) 
+) 
+```
+
+# age by sex interaction
+```{r load age by sex interaction}
+HCPD_sex_int <- read.csv("/cbica/projects/luo_wm_dev/output/HCPD/tract_profiles/GAM/dti_md/HCPD_GAM_agebysex_interaction.csv")
+HBN_sex_int <- read.csv("/cbica/projects/luo_wm_dev/output/HBN/tract_profiles/GAM/dti_md/HBN_GAM_agebysex_interaction.csv")
+PNC_sex_int <- read.csv("/cbica/projects/luo_wm_dev/output/PNC/tract_profiles/GAM/dti_md/PNC_GAM_agebysex_interaction.csv")
+```
+
+
+```{r fdr sex interaction}
+# Function for calculating number of significant nodes (FDR corrected)
+# @param df A dataframe with GAM results
+sig_nodes <- function(df, pval_var) {
+
+  df[[paste0(pval_var, ".fdr")]] <- p.adjust(df[[pval_var]], method=c("fdr"))
+  
+  df$significant.fdr <- df[[paste0(pval_var, ".fdr")]] < 0.05
+  df$significant.fdr[df$significant.fdr == TRUE] <- 1
+  df$significant.fdr[df$significant.fdr == FALSE] <- 0
+  
+  sigeffect.totaln <- sum(df$significant.fdr) #total number of significant connections 
+  sigeffect.percent <- round(sigeffect.totaln/length(df$significant)*100, 2) #percent of significant connections
+  cat(sprintf("There are %s/%s nodes that survive FDR (%s percent)\n", sum(df$significant.fdr == 1, na.rm=TRUE), nrow(df), sigeffect.percent))
+  return(df)
+}
+ 
+
+sex_int_fdr <- lapply(list(HCPD_sex_int, HBN_sex_int, PNC_sex_int), sig_nodes, pval_var="GAM.int.pvalue")
+names(sex_int_fdr) <- c("HCPD", "HBN", "PNC")
+# HCPD: 63/2200 = 2.86% have significant age*sex interaction
+# HBN: 0/2200 = 0% have significant age*sex interaction
+# PNC: 957/2200 = 43.5% have significant age*sex interaction  
+```
+
+# sex main effect
+```{r load sex main}
+HCPD_sex_main <- read.csv("/cbica/projects/luo_wm_dev/output/HCPD/tract_profiles/GAM/dti_md/HCPD_GAM_sex_maineffects.csv")
+HBN_sex_main <- read.csv("/cbica/projects/luo_wm_dev/output/HBN/tract_profiles/GAM/dti_md/HBN_GAM_sex_maineffects.csv")
+PNC_sex_main <- read.csv("/cbica/projects/luo_wm_dev/output/PNC/tract_profiles/GAM/dti_md/PNC_GAM_sex_maineffects.csv")
+```
+
+```{r fdr sex main}
+sex_main_fdr <- lapply(list(HCPD_sex_main, HBN_sex_main, PNC_sex_main), sig_nodes, pval_var="GAM.cov.pvalue")
+names(sex_main_fdr) <- c("HCPD", "HBN", "PNC")
+# HCPD: 773/2200 = 35.14% have significant main effect of sex 
+# HBN: 1470/2200 = 66.82% have significant main effect of sex 
+# PNC: 802/2200 = 36.45% have significant main effect of sex 
+
+range(sex_main_fdr$HCPD$GAM.cov.tvalue)
+range(sex_main_fdr$HBN$GAM.cov.tvalue)
+range(sex_main_fdr$PNC$GAM.cov.tvalue)
+
+```
+```{r format sex effect dfs}
+# format sex effect df's
+format_sexeffect <- function(df) {
+  # add tractID, tract_label, and nodeID
+  df <- df %>% mutate(hemi = ifelse(grepl("Left", tract_node), "Left", 
+                                    ifelse(grepl("Right", tract_node), "Right", NA))) %>%
+    mutate(tractID = gsub("_[0-9]+", "", tract_node)) %>%
+    mutate(tract_label = gsub("Left |Right ", "", gsub("_", " ", gsub("Fronto.", "Fronto-", tractID)))) %>%
+    mutate(nodeID = str_extract(tract_node, "[0-9]+")) 
+  df$nodeID <- as.numeric(df$nodeID)
+  
+  # label main orientation
+  df <- df %>% 
+  mutate(main_orientation = case_when(
+    tract_label %in% c("Inferior Fronto-occipital",
+                   "Inferior Longitudinal", "Superior Longitudinal") ~ "AP",
+    tract_label %in% c("Arcuate") ~ "AP_frontal_temporal",
+    tract_label %in% c("Callosum Anterior Frontal", "Callosum Motor", "Callosum Occipital", "Callosum Orbital", 
+                       "Callosum Posterior Parietal", "Callosum Superior Frontal", "Callosum Superior Parietal", "Callosum Temporal") ~ "RL",
+    tract_label %in% c("Corticospinal", "Posterior Arcuate","Vertical Occipital") ~ "SI",
+    TRUE ~ NA_character_
+  ))
+  df$main_orientation <- as.factor(df$main_orientation)
+  df <- df %>% relocate(tract_label, tractID, nodeID, tract_node, hemi, main_orientation)
+  return(df)
+}
+
+sexeffect_dfs <- lapply(sex_main_fdr, format_sexeffect)
+```
+
+1) sex effect plot: GAM.cov.tvalue in y-axis, node position for each tract in x-axis
+```{r plot sex effect function}
+
+# function for plotting sex effect
+plot_sex_effect_clipEnds <- function(tract, scalar, sexeffect_measure, color1, color2, color3, clipEnds, ylim1, ylim2) {
+  # sexeffect_measure = GAM.smooth.AdjRsq or GAM.smooth.partialR2
+    HCPD <- sexeffect_dfs$HCPD %>% filter(tract_label == {{tract}}) %>% filter(nodeID > (clipEnds-1) & nodeID < (99-clipEnds+1)) %>%
+      mutate(Dataset = "HCPD")
+    HBN <- sexeffect_dfs$HBN %>% filter(tract_label == {{tract}}) %>% filter(nodeID > (clipEnds-1) & nodeID < (99-clipEnds+1)) %>%
+      mutate(Dataset = "HBN")
+    PNC <- sexeffect_dfs$PNC %>% filter(tract_label == {{tract}}) %>% filter(nodeID > (clipEnds-1) & nodeID < (99-clipEnds+1)) %>%
+      mutate(Dataset = "PNC")
+   
+    # NA out color/fill aes if adj rsq = 0 or if p-value doesn't survive FDR correction (makes the color gray)
+    if (sexeffect_measure == "GAM.smooth.AdjRsq" | sexeffect_measure == "GAM.smooth.partialR2") {
+      includes_zero_HCPD <- which(HCPD[[sexeffect_measure]]==0 | HCPD$GAM.cov.pvalue.fdr > 0.05)
+      includes_zero_HBN <- which(HBN[[sexeffect_measure]]==0 | HBN$GAM.cov.pvalue.fdr > 0.05)
+      includes_zero_PNC <- which(PNC[[sexeffect_measure]]==0 | PNC$GAM.cov.pvalue.fdr > 0.05)
+    } else {
+      includes_zero_HCPD <- which(is.na(HCPD[[sexeffect_measure]]) | HCPD[[sexeffect_measure]]==0 | HCPD$GAM.cov.pvalue.fdr > 0.05)
+      includes_zero_HBN <- which(is.na(HBN[[sexeffect_measure]]) | HBN[[sexeffect_measure]]==0 | HBN$GAM.cov.pvalue.fdr > 0.05)
+      includes_zero_PNC <- which(is.na(PNC[[sexeffect_measure]]) | PNC[[sexeffect_measure]]==0 | PNC$GAM.cov.pvalue.fdr > 0.05)
+    }
+    
+    HCPD$Dataset[includes_zero_HCPD] <- NA
+    HBN$Dataset[includes_zero_HBN] <- NA
+    PNC$Dataset[includes_zero_PNC] <- NA
+    
+    # make df to plot
+    df <- rbind(HCPD, HBN, PNC)
+    
+    if(str_detect(tract, "Callosum")) {
+      plot <- ggplot(data = df, aes(x = nodeID, y = get(sexeffect_measure), colour = Dataset, fill = Dataset)) +
+        geom_point(size=2, alpha = 0.8) + 
+        geom_smooth(aes(group = 1), method = "loess", color = "gray40", fill = "gray50", alpha = 0.2, se = FALSE, size = 3) +
+        scale_colour_manual(values = c("HCPD" = color1, "HBN" = color2, "PNC" = color3), na.value = "grey50") +
+        scale_fill_manual(values = c("HCPD" = color1, "HBN" = color2, "PNC" = color3), na.value = "grey50") + 
+        theme(legend.position = "bottom",
+          legend.text = element_text(size = 20),
+          legend.title = element_text(size = 20),
+          legend.box = "vertical",
+          axis.text.x = element_text(size = 20),
+          axis.text.y = element_text(size = 20),
+          axis.title.x = element_blank(),
+          axis.title.y = element_blank(),
+          plot.title = element_text(size=20, hjust=0.5),
+           plot.margin = unit(c(1, 1, 0.2, 0.2), "cm")) + labs(title = tract) + ylim(ylim1, ylim2) +
+        guides(shape = guide_legend("Hemi", override.aes = list(alpha = 1, size = 6)),  # Ensure alpha = 1 in legend for shape
+         colour = guide_legend(override.aes = list(alpha = 1, size = 6)))
+      } else {
+        plot <- ggplot(data = df, aes(x = nodeID, y = get(sexeffect_measure), colour = Dataset, 
+                                      fill = Dataset, shape = hemi)) +
+        geom_point(size=2, alpha = 0.8) + 
+        geom_smooth(aes(group = 1), method = "loess", color = "gray40", fill = "gray50", alpha = 0.2, se = FALSE, size = 3) +
+        scale_colour_manual(values = c("HCPD" = color1, "HBN" = color2, "PNC" = color3), na.value = "grey50") +
+        scale_fill_manual(values = c("HCPD" = color1, "HBN" = color2, "PNC" = color3), na.value = "grey50") +
+        scale_shape_manual(values = c(19,1)) + guides(shape = guide_legend("Hemi")) + 
+        theme(legend.position = "bottom",
+          legend.text = element_text(size = 20),
+          legend.title = element_text(size = 20),
+          legend.box = "vertical",
+          axis.text.x = element_text(size = 20),
+          axis.text.y = element_text(size = 20),
+          axis.title.x = element_blank(),
+          axis.title.y = element_blank(),
+          plot.title = element_text(size=20, hjust=0.5),
+          plot.margin = unit(c(1, 1, 0.2, 0.2), "cm")) + labs(title = gsub("\\.", "-", tract)) + ylim(ylim1, ylim2) +
+           guides(shape = guide_legend("Hemi", override.aes = list(alpha = 1, size = 6)),  # Ensure alpha = 1 in legend for shape
+         colour = guide_legend(override.aes = list(alpha = 1, size = 6)))
+        
+
+      }
+       
+    return(plot)
+}
+
+arrange_callosum_plots <- function(list_figures, x_axis_grob, grob_hjust) {
+  callosum1_plots <- ggarrange(list_figures$`Callosum Orbital` + theme(legend.position = "none"), 
+                              list_figures$`Callosum Anterior Frontal` + theme(legend.position = "none"),  
+                              list_figures$`Callosum Superior Frontal`+ theme(legend.position = "none"), 
+                              list_figures$`Callosum Motor`+ theme(legend.position = "none"), ncol = 1, nrow = 4)
+  callosum1_plots <- annotate_figure(callosum1_plots, bottom = text_grob(x_axis_grob, color = "black", size = 20, hjust = grob_hjust))
+  
+  callosum2_plots <- ggarrange(list_figures$`Callosum Superior Parietal`+ theme(legend.position = "none"), 
+                              list_figures$`Callosum Posterior Parietal`+ theme(legend.position = "none"), 
+                              list_figures$`Callosum Temporal`+ theme(legend.position = "none"), 
+                              list_figures$`Callosum Occipital`+ theme(legend.position = "none"),  ncol = 1, nrow = 4)
+  callosum2_plots <- annotate_figure(callosum2_plots, bottom = text_grob(x_axis_grob, color = "black", size = 20, hjust = grob_hjust))
+  
+  callosum_plots <- ggarrange(callosum1_plots, callosum2_plots)
+  legend <- get_legend(list_figures$`Callosum Motor`)
+  callosum_plot_final <- ggarrange(callosum_plots, legend, nrow=2, heights = c(2, 0.2))
+   return(callosum_plot_final)
+}
+ 
+ 
+arrange_tract_plots <- function(list_figures, x_axis_grob, grob_hjust) {
+  AP_plots <- ggarrange(list_figures$`Arcuate` + theme(legend.position = "none"),
+                        list_figures$`Inferior Fronto-occipital`+ theme(legend.position = "none"), 
+                        list_figures$`Inferior Longitudinal`+ theme(legend.position = "none"), 
+                        list_figures$`Superior Longitudinal` + theme(legend.position = "none"), ncol=1, nrow = 4)
+  AP_plots_final <- annotate_figure(AP_plots, top = text_grob("Anterior - Posterior", 
+                 color = "black", face = "bold", size = 20, hjust = 0.4), 
+                 bottom = text_grob(x_axis_grob, color = "black", size = 20, hjust = grob_hjust))
+  
+   
+  SI_plots <- ggarrange(list_figures$`Posterior Arcuate` + theme(legend.position = "none"), 
+                        list_figures$`Vertical Occipital` + theme(legend.position = "none"), 
+                        list_figures$`Corticospinal` + theme(legend.position = "none"),
+                           ncol=1, nrow = 3)
+  legend <- get_legend(list_figures$`Posterior Arcuate`)
+ 
+  SI_plots <- annotate_figure(SI_plots, top = text_grob("Superior - Inferior", 
+                 color = "black", face = "bold", size = 20, hjust = 0.4),
+                 bottom = text_grob(x_axis_grob, color = "black", size = 20, hjust = grob_hjust))
+
+  SI_plots_final <- ggarrange(SI_plots, NULL, legend, heights = c(2.1, 0.67, 0.5))
+  tractprofiles_plot_final <- ggarrange(AP_plots_final, SI_plots_final, ncol = 2, widths = c(1, 2))
+   
+ 
+   return(tractprofiles_plot_final) 
+}
+```
+
+
+```{r set colors}
+color1 = "#3FB8AFFF"
+color2 = "#FF9E9DFF"
+color3 = "#cc0468"
+```
+
+```{r run sex effect plotting}
+sexeffect_measure = "GAM.cov.tvalue"
+tracts = unique(sexeffect_dfs$HCPD$tract_label)
+sexeffects_plots <- lapply(tracts, plot_sex_effect_clipEnds, scalar = "dti_md", sexeffect_measure = sexeffect_measure, 
+                                color1 = color1, color2 = color2, color3 = color3, clipEnds = 3, ylim2 = 8, ylim1 = -8)
+names(sexeffects_plots) <- tracts
+```
+
+
+fyi: "F" is reference levels in model. Positive t-val: MD higher in males. Negative t-val: MD higher in females.
+```{r sex effects, fig.height = 20, fig.width = 16}
+sexeffects_assoc_plots <- arrange_tract_plots(sexeffects_plots, "Position on Tract (Node ID)", 0.3)
+ 
+y.grob <- textGrob(expression("Sex Effect (t-value)"), 
+                   gp=gpar(col="black", fontsize=20), rot=90)
+
+grid.arrange(arrangeGrob(sexeffects_assoc_plots, left = y.grob))
+
+ggsave(paste0(png_dir, "sexeffect_association.png"), grid.arrange(arrangeGrob(sexeffects_assoc_plots, left = y.grob)), height = 20, width = 16, units = "in")
+```
+
+```{r dti md tracts sd callosum, fig.height = 20, fig.width = 10}
+
+sexeffects_callosum_plots <- arrange_callosum_plots(sexeffects_plots, "Position on Tract (Node ID)", 0.3)
+ 
+y.grob <- textGrob(expression("Sex Effect (t-value)"), 
+                   gp=gpar(col="black", fontsize=20), rot=90)
+
+grid.arrange(arrangeGrob(sexeffects_callosum_plots, left = y.grob))
+
+ggsave(paste0(png_dir, "sexeffect_callosum.png"), grid.arrange(arrangeGrob(sexeffects_callosum_plots, left = y.grob)), height = 20, width = 10, units = "in")
+```
+
+2) developmental trajectories separate for females and males. 
+  - a: for all nodes for each tract
+  - b: do f/m for each end and deep WM. So, end1: f/m, end2: f/m, deep: f/m. where are the differences the greatest? guessing peripheral.
+```{r load files for dev traj all nodes}
+HCPD_smooths <- read.csv("/cbica/projects/luo_wm_dev/output/HCPD/tract_profiles/GAM/dti_md/HCPD_GAM_agebysex_interaction_fits.csv")
+HBN_smooths <- read.csv("/cbica/projects/luo_wm_dev/output/HBN/tract_profiles/GAM/dti_md/HBN_GAM_agebysex_interaction_fits.csv")
+PNC_smooths <- read.csv("/cbica/projects/luo_wm_dev/output/PNC/tract_profiles/GAM/dti_md/PNC_GAM_agebysex_interaction_fits.csv")
+
+HCPD.smooths <- format_sexeffect(HCPD_smooths %>% rename(tract_node = tract, age = smooth_var))
+HBN.smooths <- format_sexeffect(HBN_smooths %>% rename(tract_node = tract, age = smooth_var))
+PNC.smooths <- format_sexeffect(PNC_smooths %>% rename(tract_node = tract, age = smooth_var))
+```
+
+```{r dev traj all nodes female}
+```
+
+```{r dev traj all nodes male}
+# maybe not do bc this is a lot to visualize right now
+ 
+```
+
+
+```{r dev traj ends and deep}
+
+color1 = "#009DA8FF"
+color2 = "#F0BA52FF"
+color3 = "#C73000FF"
+
+plot_smooths_binned <- function(tract, df, bin_num_nodes, clipEnds) {
+  df$nodeID <- as.numeric(df$nodeID)
+  df <- df %>% filter(tract_label == tract) %>% 
+    filter(nodeID > (clipEnds-1) & nodeID < (99-clipEnds+1)) %>%
+    group_by(tract_node)
+  
+ 
+  df_binned <- df %>%
+        filter(
+          nodeID < (bin_num_nodes + clipEnds) |  # Start of the tract
+          nodeID > (99 - bin_num_nodes - clipEnds) |  # End of the tract
+         (nodeID > (50-bin_num_nodes) & nodeID <= (50+bin_num_nodes)) # Deep WM nodes: the 30 nodes in the center
+        )  %>%
+        mutate(
+          node_position = case_when(
+            nodeID < bin_num_nodes + clipEnds ~ "end1",
+            nodeID > 99 - bin_num_nodes - clipEnds ~ "end2",
+            (nodeID > (50-bin_num_nodes) & nodeID <= (50+bin_num_nodes)) ~ "deep",
+            TRUE ~ NA_character_
+          )
+        ) %>%
+        group_by(node_position, age, sex) %>% # removed hemi
+        summarise(
+          mean_est = mean(fitted, na.rm = TRUE)
+        )
+  
+  plot <- ggplot(df_binned, aes(x = age, y = mean_est, linetype = sex, group = interaction(sex, node_position))) +
+      geom_line(aes(colour = node_position), size = 3.5, alpha = 0.9) + 
+      theme_classic() +                         
+      theme(text=element_text(size=24),
+            axis.text.x = element_text(size=24),
+            axis.text.y = element_text(size=24),
+            legend.position = "bottom",
+            legend.box = "vertical", 
+            plot.title = element_text(hjust=0.5, size = 24)) + 
+      scale_colour_manual(values = c("end1" = color1, "deep" = color2, "end2" = color3), na.value = "grey50") + 
+      labs(x="", y="", title=tract, colour="Tract Region") + guides(linetype=guide_legend(keywidth = 4, keyheight = 1))
+
+   return(plot)
+}
+```
+
+
+
+```{r plot binned smooths}
+bin_num_nodes = 10
+clipEnds = 3
+
+tracts <- unique(HCPD.smooths$tract_label)
+
+binned_smooths_HCPD <- lapply(tracts, plot_smooths_binned, df = HCPD.smooths, 
+                              bin_num_nodes = bin_num_nodes, clipEnds = clipEnds)
+names(binned_smooths_HCPD) <- tracts
+
+binned_smooths_HBN <- lapply(tracts, plot_smooths_binned, df = HBN.smooths, 
+                             bin_num_nodes = bin_num_nodes, clipEnds = clipEnds)
+names(binned_smooths_HBN) <- tracts
+
+binned_smooths_PNC <- lapply(tracts, plot_smooths_binned, df = PNC.smooths, 
+                             bin_num_nodes = bin_num_nodes, clipEnds = clipEnds)
+names(binned_smooths_PNC) <- tracts
+
+```
+
+
+
+```{r arrange binned smooths HCPD, fig.height = 20, fig.width = 20}
+y.grob <- textGrob("Fitted DTI MD", 
+                   gp=gpar(col="black", fontsize=24), rot=90)
+
+binned_smooths_HCPD_main <- arrange_tract_plots(binned_smooths_HCPD, "Age", -1)
+filename <- "fitted_sex"
+ggsave(paste0(png_dir, "dti_md_", filename, "_HCPD.png"), grid.arrange(arrangeGrob(binned_smooths_HCPD_main, left = y.grob)), width = 20, height = 20, units = "in")
+```
+
+```{r arrange binned smooths callosum HCPD, fig.height = 20, fig.width = 12}
+y.grob <- textGrob("Fitted DTI MD", 
+                   gp=gpar(col="black", fontsize=24), rot=90)
+
+binned_smooths_HCPD_callosum <- arrange_callosum_plots(binned_smooths_HCPD, "Age", -1)
+filename <- "fitted_sex_callosum"
+ggsave(paste0(png_dir, "dti_md_", filename, "_HCPD.png"), grid.arrange(arrangeGrob(binned_smooths_HCPD_callosum, left = y.grob)), width = 12, height = 20, units = "in")
+```
+
+
+```{r arrange binned smooths HBN, fig.height = 20, fig.width = 20}
+y.grob <- textGrob("Fitted DTI MD", 
+                   gp=gpar(col="black", fontsize=24), rot=90)
+
+binned_smooths_HBN_main <- arrange_tract_plots(binned_smooths_HBN, "Age", -1)
+filename <- "fitted_sex"
+ggsave(paste0(png_dir, "dti_md_", filename, "_HBN.png"), grid.arrange(arrangeGrob(binned_smooths_HBN_main, left = y.grob)), width = 20, height = 20, units = "in")
+```
+
+```{r arrange binned smooths callosum HBN, fig.height = 20, fig.width = 12}
+y.grob <- textGrob("Fitted DTI MD", 
+                   gp=gpar(col="black", fontsize=24), rot=90)
+
+binned_smooths_HBN_callosum <- arrange_callosum_plots(binned_smooths_HBN, "Age", -1)
+filename <- "fitted_sex_callosum"
+ggsave(paste0(png_dir, "dti_md_", filename, "_HBN.png"), grid.arrange(arrangeGrob(binned_smooths_HBN_callosum, left = y.grob)), width = 12, height = 20, units = "in")
+```
+
+
+```{r arrange binned smooths PNC, fig.height = 20, fig.width = 20}
+y.grob <- textGrob("Fitted DTI MD", 
+                   gp=gpar(col="black", fontsize=24), rot=90)
+
+binned_smooths_PNC_main <- arrange_tract_plots(binned_smooths_PNC, "Age", -1)
+filename <- "fitted_sex"
+ggsave(paste0(png_dir, "dti_md_", filename, "_PNC.png"), grid.arrange(arrangeGrob(binned_smooths_PNC_main, left = y.grob)), width = 20, height = 20, units = "in")
+```
+
+```{r arrange binned smooths callosum PNC, fig.height = 20, fig.width = 12}
+y.grob <- textGrob("Fitted DTI MD", 
+                   gp=gpar(col="black", fontsize=24), rot=90)
+
+binned_smooths_PNC_callosum <- arrange_callosum_plots(binned_smooths_PNC, "Age", -1)
+filename <- "fitted_sex_callosum"
+ggsave(paste0(png_dir, "dti_md_", filename, "_PNC.png"), grid.arrange(arrangeGrob(binned_smooths_PNC_callosum, left = y.grob)), width = 12, height = 20, units = "in")
+```

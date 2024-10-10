@@ -13,7 +13,9 @@ source("/cbica/projects/luo_wm_dev/code/tract_profiles/explore_tract_profiles/NE
 ################## 
 args <- commandArgs(trailingOnly = TRUE) 
 dataset = args[1]
-print(paste("Running NEST for", dataset))
+tract = args[2]
+print(paste("Running NEST for", dataset, tract))
+
 
 ################## 
 # Set Directories 
@@ -34,81 +36,130 @@ if (dir.exists(NEST_outputs_dir)) {
 ################### 
 # Define functions 
 ###################
+# function for clipping ends
+clip_ends <- function(nodes_to_clip, nodes_per_tract) {
+  c(0:(nodes_to_clip - 1), (nodes_per_tract - nodes_to_clip):(nodes_per_tract - 1))
+}
+# function for identifying peripheral nodes
+label_peripheral <- function(bin_size, nodes_per_tract, nodes_to_clip) {
+  c((nodes_to_clip):(nodes_to_clip + bin_size - 1), 
+    (nodes_per_tract - nodes_to_clip - bin_size):(nodes_per_tract - nodes_to_clip - 1))
+}
+
 # a wrapper function for running NEST on each tract
-NEST_wrapper <- function(tract, dataset, bin_num_nodes, clipEnds) {
-  #clipEnds <- clipEnds - 1 # if want to remove the first 3 nodes, would want to remove nodes 0, 1, and 2. Thus add "-1" for easier coding down the line
-  df <- get(paste0(dataset))
+NEST_wrapper <- function(tract, df, bin_size, nodes_to_clip) {
   df_tract <- df %>% filter(tract_label == tract)
   df_wide <- df_tract %>% select(sub, tract_node, all_of("dti_md")) %>% pivot_wider(names_from = "tract_node", values_from = "dti_md") 
-  tract_filename <- gsub(" ", "_", tract)
+   
   if(!identical(demographics$sub, as.character(df_wide$sub))) {
     stop("Error: The 'sub' columns in 'demographics' and 'df_wide' do not match.")
   }
   
   df_wide <- df_wide %>% select(-sub)
+  
   # set phenotype of interest (age) and covariates (sex + mean_fd)
   demographics$sex <- as.numeric(as.factor(demographics$sex))
   # 1 = F, 2 = M
   covs <- as.matrix(cbind( demographics$age, demographics$sex, as.numeric(demographics$mean_fd))) # matrix dimensions = N x 3
   colnames(covs) <- c("age", "sex", "mean_fd")
   
+  # get column names
+  colnames_df <- names(df_wide)
   
-  # idx = identify which locations should be ignored. E.g. nodes that are neither deep nor peripheral
-  # i'm keeping the deep wm nodes as the central 10 nodes 
-  # but varying which nodes we consider 'peripheral'
-  if(tract == "Corticospinal") { # for CST, peripheral = tract by motor cortex, deep = the other end of the tract
-    if(bin_num_nodes == 5) {
-      idx <- c(1:(clipEnds), 11:90, (100-clipEnds+1):100, # only keep the tract ends for CST
-               101:(100+clipEnds), 111:190, (200-clipEnds+1):200) 
-      
-      # indicate where peripheral WM is (0 = deep, 1 = peripheral) ## start here
-      peripheral_idx <-  as.numeric(grepl("_([1-9]|1[0-4])$", names(df_wide[, -idx]))) # nodes 5-9 = peripheral
-      
-    } else if (bin_num_nodes == 10) {
-      idx <- c(1:(clipEnds), (11+clipEnds):(90-clipEnds), (100-clipEnds+1):100, # only keep the tract ends for CST
-               101:(100+clipEnds), (111+clipEnds):(190-clipEnds), (200-clipEnds+1):200) 
-      
-      # indicate where peripheral WM is (0 = deep, 1 = peripheral) ## start here
-      peripheral_idx <-  as.numeric(grepl("_([1-9]|1[0-4])$", names(df_wide[, -idx]))) # nodes 5-14 = peripheral
-      
-    } else if (bin_num_nodes == 15) { 
-      idx <- c(1:(clipEnds), (16+clipEnds):(85-clipEnds), (100-clipEnds+1):100, # only keep the tract ends for CST
-               101:(100+clipEnds), (116+clipEnds):(185-clipEnds), (200-clipEnds+1):200) 
-      
-      # indicate where peripheral WM is (0 = deep, 1 = peripheral) ## start here
-      peripheral_idx <-  as.numeric(grepl("_([1-9]|1[0-9])$", names(df_wide[, -idx]))) # nodes 5-29 = peripheral
-      
-    }
-  } else {
-    if(bin_num_nodes == 5) {
-      idx <- c(1:(clipEnds), 11:40, 61:90, (100-clipEnds+1):100, 
-               101:(100+clipEnds), 111:140, 161:190, (200-clipEnds+1):200) 
-      # 'network of interest': indicate where peripheral WM is (0 = deep, 1 = peripheral)
-      peripheral_idx <-  as.numeric(grepl("_([5-9]|9[0-4])$", names(df_wide[, -idx])))  # nodes 5-9 and 90-94 = peripheral
-      
-    } else if (bin_num_nodes == 10) {
-      idx <- c(1:(clipEnds), 16:40, 61:85, (100-clipEnds+1):100, 
-               101:(100+clipEnds), 116:140, 161:185, (200-clipEnds+1):200) 
-      # 'network of interest': indicate where peripheral WM is (0 = deep, 1 = peripheral)
-      peripheral_idx <-  as.numeric(grepl("_([5-9]|1[0-4]|8[5-9]|9[0-4])$", names(df_wide[, -idx])))  # nodes 5-14 and 85-94 = peripheral
-      
-    } else if (bin_num_nodes == 15) {
-      idx <- c(1:(clipEnds), 21:40, 61:80, (100-clipEnds+1):100, 
-               101:(100+clipEnds), 121:140, 161:180, (200-clipEnds+1):200) 
-      # 'network of interest': indicate where peripheral WM is (0 = deep, 1 = peripheral)
-      peripheral_idx <-  as.numeric(grepl("_([5-9]|1[0-9]|8[0-9]|9[0-4])$", names(df_wide[, -idx])))  # nodes 5-14 and 80-94 = peripheral
-      
-    }
+  # get node IDs from column names
+  node_ids <- as.numeric(sub(".*_(\\d+)$", "\\1", colnames_df))
+  
+  # identify left and right tracts for appropriate tracts
+  if (str_detect(tract, "Callosum")) {
+    total_node_ids <- node_ids
+  } else { # all other tracts including CST
+    is_left <- grepl("^Left_", colnames_df)
+    is_right <- grepl("^Right_", colnames_df)
+    # Create total node IDs: 0-99 for left, 100-199 for right
+    total_node_ids <- ifelse(is_left, node_ids, node_ids + nodes_per_tract)
   }
   
-  # final variables for NEST
-  X <- as.matrix(df_wide[, -idx])
+  # mapping from total_node_ids to column names
+  node_id_to_colname <- setNames(colnames_df, total_node_ids)
+  
+  # clips the ends of tracts and label peripheral vs. deep WM nodes
+  if (str_detect(tract, "Callosum")) {
+    # Total nodes (0 to 99)
+    total_nodes <- nodes_per_tract
+    
+    # clip ends
+    clipped_nodes <- clip_ends(nodes_to_clip, nodes_per_tract)
+    
+    # identify peripheral nodes
+    peripheral_nodes <- label_peripheral(bin_size, nodes_per_tract, nodes_to_clip)
+    
+    # identify deep nodes
+    deep_nodes <- c((50-bin_size+1):(50+bin_size))
+  } else if (str_detect(tract, "Corticospinal")) {
+    # Total nodes (0 to 199 for both hemispheres)
+    total_nodes <- nodes_per_tract * 2  
+    
+    # clip ends
+    clipped_nodes_left <- clip_ends(nodes_to_clip, nodes_per_tract)
+    clipped_nodes_right <- clip_ends(nodes_to_clip, nodes_per_tract) + nodes_per_tract
+    clipped_nodes <- c(clipped_nodes_left, clipped_nodes_right)
+    
+    # identify peripheral nodes (motor cortex only)
+    peripheral_nodes_left <- (nodes_to_clip):(nodes_to_clip + bin_size - 1)
+    peripheral_nodes_right <- (nodes_to_clip):(nodes_to_clip + bin_size - 1) + nodes_per_tract
+    peripheral_nodes <- c(peripheral_nodes_left, peripheral_nodes_right)
+    
+    # identify deep nodes (brainstem only)
+    deep_nodes_left <- (nodes_per_tract - nodes_to_clip - bin_size):(nodes_per_tract - nodes_to_clip - 1)
+    deep_nodes_right <- (nodes_per_tract - nodes_to_clip - bin_size):(nodes_per_tract - nodes_to_clip - 1) + nodes_per_tract
+    deep_nodes <- c(deep_nodes_left, deep_nodes_right)
+    
+  } else {
+    # Total nodes (0 to 199 for both hemispheres)
+    total_nodes <- nodes_per_tract * 2  
+    
+    # clip ends
+    clipped_nodes_left <- clip_ends(nodes_to_clip, nodes_per_tract)
+    clipped_nodes_right <- clip_ends(nodes_to_clip, nodes_per_tract) + nodes_per_tract
+    clipped_nodes <- c(clipped_nodes_left, clipped_nodes_right)
+    
+    # identify peripheral nodes
+    peripheral_nodes_left <- label_peripheral(bin_size, nodes_per_tract, nodes_to_clip)
+    peripheral_nodes_right <- label_peripheral(bin_size, nodes_per_tract, nodes_to_clip) + nodes_per_tract
+    peripheral_nodes <- c(peripheral_nodes_left, peripheral_nodes_right)
+    
+    # identify deep nodes
+    deep_nodes_left <- c((50-bin_size+1):(50+bin_size))
+    deep_nodes_right <- c((50-bin_size+1):(50+bin_size)) + nodes_per_tract
+    deep_nodes <- c(deep_nodes_left, deep_nodes_right)
+  }
+  
+  # node type identifier (peripheral = 1, deep = 2, clip or exclude = 0)
+  node_type <- rep(0, total_nodes)
+  node_type[peripheral_nodes + 1] <- 1  # Peripheral nodes
+  node_type[deep_nodes + 1] <- 2        # Deep nodes
+  
+  # keep only peripheral and deep nodes
+  nodes_to_keep <- setdiff(0:(total_nodes - 1), clipped_nodes)
+  final_nodes <- nodes_to_keep[node_type[nodes_to_keep + 1] > 0]
+  
+  # map final_nodes to column names using node_id_to_colname
+  final_colnames <- node_id_to_colname[as.character(final_nodes)]
+  
+  # make final df
+  df_final <- df_wide[, final_colnames]
+  
+  # final variables for NEST. See https://github.com/smweinst/NEST/blob/main/R/readme.md 
+  X <- as.matrix(df_final)
   colnames(X) <- NULL
   dat <- covs
-  net <- list(peripheral_nodes <- peripheral_idx)
+  peripheral_idx <- rep(1, length(final_nodes))
+  peripheral_idx[final_nodes %in% deep_nodes] <- 0 # set indices corresponding to deep nodes to 0
+  net <- list(peripheral_nodes <- peripheral_idx) # list of nodes of interest (peripheral nodes)
+  cbind(names(df_final), unlist(net))
   
   print(paste("Running NEST for", tract))
-  print(paste("Number of nodes included as peripheral nodes:", bin_num_nodes))
+  print(paste("Number of nodes included as peripheral nodes:", bin_size))
   
   # one-sided: is delta adj rsq more extreme peripheral vs. deep nodes?
   print("Running one-sided NEST")
@@ -121,14 +172,14 @@ NEST_wrapper <- function(tract, dataset, bin_num_nodes, clipEnds) {
                 y.in.gam = "s(age)", 
                 y.in.lm = "age", 
                 y.permute = "age",  
-                n.perm = 999),
+                n.perm = 9999),
     net.maps = net,
     one.sided = TRUE,
-    n.cores = 8, 
+    n.cores = 4, 
     seed = 123, 
     what.to.return = "everything"
   )
-  saveRDS(result_onesided, paste0(NEST_outputs_dir, tract_filename, "_numNodes", bin_num_nodes, "_onesided_clipEnds", clipEnds, ".RData"))
+  saveRDS(result_onesided, paste0(NEST_outputs_dir, gsub(" ", "_", gsub("-", "_",tract)), "_bin", bin_size, "_clip", nodes_to_clip, "_1sided.RData"))
   
   # two-sided: is delta adj rsq different peripheral vs. deep nodes?
   print("Running two-sided NEST")
@@ -141,28 +192,36 @@ NEST_wrapper <- function(tract, dataset, bin_num_nodes, clipEnds) {
                 y.in.gam = "s(age)", 
                 y.in.lm = "age", 
                 y.permute = "age",  
-                n.perm = 999),
+                n.perm = 9999), 
     net.maps = net,
     one.sided = FALSE,
-    n.cores = 8, 
+    n.cores = 4, 
     seed = 123, 
     what.to.return = "everything"
   )
   
-  saveRDS(result_onesided, paste0(NEST_outputs_dir, tract_filename, "_numNodes", bin_num_nodes, "_twosided_clipEnds", clipEnds, ".RData"))
+  saveRDS(result_onesided, paste0(NEST_outputs_dir,  gsub(" ", "_", gsub("-", "_",tract)), "_bin", bin_size, "_clip", nodes_to_clip, "_2sided.RData"))
 }
 
 df <- readRDS(sprintf("%1$s/%2$s/tract_profiles/all_subjects/tract_profiles_for_viz.RData", outputs_root, dataset))
-assign(dataset, df)
 print(paste0(dataset, " df loaded"))
+df$tract_label <- gsub(" ", "_", df$tract_label)
+#tracts <- unique(df$tract_label)  
+#write.table(tracts, "/cbica/projects/luo_wm_dev/input/tract_list/tract_list.txt", row.names=F, col.names=F, quote=F)
 
-tracts <- unique(df$tract_label) #[!str_detect(unique(df$tract_label), "Callosum")]  
+# set var
+nodes_per_tract <- 100 # nodes per tract (nodeIDs from 0 to 99)
 
+
+################### 
 # Run NEST
+################### 
+NEST_wrapper(tract, df = df, bin_size = 5, nodes_to_clip = 3)
+NEST_wrapper(tract, df = df, bin_size = 10, nodes_to_clip = 3)
+#NEST_wrapper(tract, df = df, bin_size = 15, nodes_to_clip = 3)
 
-lapply(tracts, NEST_wrapper, dataset = dataset, bin_num_nodes = 5, clipEnds = 5)
-lapply(tracts, NEST_wrapper, dataset = dataset, bin_num_nodes = 10, clipEnds = 5)
-lapply(tracts, NEST_wrapper, dataset = dataset, bin_num_nodes = 25, clipEnds = 5)
-
+#NEST_wrapper(tract, df = df, bin_size = 5, nodes_to_clip = 5)
+#NEST_wrapper(tract, df = df, bin_size = 10, nodes_to_clip = 5)
+#NEST_wrapper(tract, df = df, bin_size = 15, nodes_to_clip = 5)
 
  

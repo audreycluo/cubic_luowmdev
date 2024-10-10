@@ -1,8 +1,10 @@
 #!/bin/bash
 
-# submit this with bash b00_wrapper_transforms.sh
+# submit this with ./b00_wrapper_transforms.sh
 
-datasets=("HCPD")  
+#datasets=("HCPD" "HBN" "PNC") 
+datasets=("PNC") 
+
 
 for dataset in "${datasets[@]}"; do
     config_file="/cbica/projects/luo_wm_dev/code/tract_profiles/config/config_${dataset}.json"
@@ -17,62 +19,26 @@ for dataset in "${datasets[@]}"; do
     data_root=$(jq -r '.data_root' ${config_file})
     
     # subjects file
-    #subjects_file="${data_root}/subject_list/${dataset}_tempsubject_list.txt"
+    subjects_file="${data_root}/subject_list/final_sample/${dataset}_WMDev_FinalSample.txt"
+    mapfile -t subjects_array < <(tail -n +2 ${subjects_file}) # skip header
+    for i in "${!subjects_array[@]}"; do
+        subjects_array[$i]=$(echo "${subjects_array[$i]}" | tr -d '"') # remove quotes
+    done
+    subject_count=${#subjects_array[@]} 
+
     #subjects_file="${data_root}/subject_list/${dataset}_subject_list_test.txt"
-    subjects_file="${data_root}/subject_list/${dataset}_subject_list_rerun.txt"
+    #mapfile -t subjects_array < <(cat ${subjects_file})
+    #subject_count=${#subjects_array[@]}
     
-    # Loop through subjects in the file
-    while IFS= read -r subject; do
-        echo "Processing ${subject}"
+    jid_b01=$(sbatch --parsable \
+        --array=0-$((subject_count-1))%2 \
+        --job-name="b01_determine_freesurfer-to-native_acpc_volume_xfm_${dataset}" \
+        ./b01_determine_freesurfer-to-native_acpc_volume_xfm.sh ${subjects_file} ${config_file} ${logs_dir} "b01_determine_freesurfer-to-native_acpc_volume_xfm_${dataset}")
 
-        # define variables for the SLURM directive
-        job_name="determine_freesurfer-to-native_acpc_volume_xfm"
-        output_file="${logs_dir}/${job_name}_${subject}.out"
-        error_file="${logs_dir}/${job_name}_${subject}.err"
-        
-        # create a unique temporary file for the first job
-        temp_file1=$(mktemp temp_sbatch_script_${subject}_XXXX.sh)
-        
-        # create and submit the first job
-        cat <<EOT > ${temp_file1}
-#!/bin/bash
-#SBATCH --job-name=${job_name}_${subject}
-#SBATCH --ntasks=1
-#SBATCH --cpus-per-task=1
-#SBATCH --mem=4G
-#SBATCH --output=${output_file}
-#SBATCH --error=${error_file}
+    sbatch --parsable \
+        --dependency=afterok:${jid_b01} \
+        --array=0-$((subject_count-1)) \
+        --job-name="b02_align_surfaces_with_tract_volumes_${dataset}" \
+        ./b02_align_surfaces_with_tract_volumes.sh ${subjects_file} ${config_file} ${logs_dir} "b02_align_surfaces_with_tract_volumes_${dataset}"
 
-./b01_determine_freesurfer-to-native_acpc_volume_xfm.sh ${subject} ${config_file} 
-EOT
-        jobid1=$(sbatch ${temp_file1} | awk '{print $4}')
-        echo "Submitted determine_freesurfer-to-native_acpc_volume_xfm.sh (Job ID: $jobid1)"
-
-        # create a unique temporary file for the second job
-        temp_file2=$(mktemp temp_sbatch_script_${subject}_XXXX.sh)
-        
-        # submit the second job
-        job_name="align_surfaces_with_tract_volumes"
-        output_file="${logs_dir}/${job_name}_${subject}.out"
-        error_file="${logs_dir}/${job_name}_${subject}.err"
-
-        cat <<EOT > ${temp_file2}
-#!/bin/bash
-#SBATCH --job-name=${job_name}_${subject}
-#SBATCH --ntasks=1
-#SBATCH --cpus-per-task=1
-#SBATCH --mem=4G
-#SBATCH --output=${output_file}
-#SBATCH --error=${error_file}
-#SBATCH --dependency=afterok:$jobid1
-
-./b02_align_surfaces_with_tract_volumes.sh ${subject} ${config_file} 
-EOT
-        jobid2=$(sbatch ${temp_file2} | awk '{print $4}')
-        echo "Submitted align_surfaces_with_tract_volumes.sh with dependency on determine_freesurfer-to-native_acpc_volume_xfm.sh (Job ID: $jobid2)"
-        
-        # remove the temporary files after submission
-        rm -f ${temp_file1} ${temp_file2}
-        
-    done < ${subjects_file}
 done

@@ -69,17 +69,7 @@ babs-init --where_project /cbica/projects/luo_wm_dev/input/HCPD/derivatives \
     --container_ds /cbica/projects/luo_wm_dev/software/qsiprep/qsiprep-container-0-22-0 \
     --container_name qsiprep-0-22-0 --container_config_yaml_file /cbica/projects/luo_wm_dev/code/tract_profiles/run_babs_qsirecon/babs_qsiprep-0-22-0_qsirecon_mrtrix_pyafq_dki.yaml \
     --type_session single-ses --type_system sge 
- 
-# HCPD - act-hsvs, dti
-babs-init --where_project /cbica/projects/luo_wm_dev/input/HCPD/derivatives \
-    --project_name babs_qsirecon_pyafq_act \
-    --input qsiprep /cbica/projects/luo_wm_dev/input/HCPD/raw/datalad_qsiprep \
-    --input freesurfer /cbica/projects/luo_wm_dev/input/HCPD/raw/datalad_freesurfer/inputs/data \
-    --list_sub_file /cbica/projects/luo_wm_dev/input/HCPD/subject_list/HCPD_subject_list_babs.txt \
-    --container_ds /cbica/projects/luo_wm_dev/software/qsiprep/qsiprep-container-0-22-0 \
-    --container_name qsiprep-0-22-0 \
-    --container_config_yaml_file /cbica/projects/luo_wm_dev/code/tract_profiles/run_babs_qsirecon/babs_qsiprep-0-22-0_qsirecon_mrtrix_ACT-hsvs_pyafq_dti.yaml \
-    --type_session single-ses --type_system slurm 
+
 
 # HCPD - regular dti, slurm
 babs-init --where_project /cbica/projects/luo_wm_dev/input/HCPD/derivatives \
@@ -91,6 +81,28 @@ babs-init --where_project /cbica/projects/luo_wm_dev/input/HCPD/derivatives \
     --container_config_yaml_file /cbica/projects/luo_wm_dev/code/tract_profiles/run_babs_qsirecon/babs_qsiprep-0-22-0_qsirecon_mrtrix_pyafq_dti_slurm.yaml \
     --type_session single-ses --type_system slurm 
  
+
+ # HCPD - regular dti, slurm - orig test
+babs-init --where_project /cbica/projects/luo_wm_dev/input/HCPD/derivatives \
+    --project_name babs_qsirecon_pyafq_orig \
+    --input qsiprep /cbica/projects/luo_wm_dev/input/HCPD/raw/datalad_qsiprep \
+    --list_sub_file /cbica/projects/luo_wm_dev/input/HCPD/subject_list/HCPD_subject_list_babs.txt \
+    --container_ds /cbica/projects/luo_wm_dev/software/qsiprep/qsiprep-container-0-22-0 \
+    --container_name qsiprep-0-22-0 \
+    --container_config_yaml_file /cbica/projects/luo_wm_dev/code/tract_profiles/run_babs_qsirecon/babs_qsiprep-0-22-0_qsirecon_mrtrix_pyafq_dti_slurm_orig.yaml \
+    --type_session single-ses --type_system slurm 
+ 
+
+ # HCPD - act-hsvs, dti
+babs-init --where_project /cbica/projects/luo_wm_dev/input/HCPD/derivatives \
+    --project_name babs_qsirecon_pyafq_act \
+    --input qsiprep /cbica/projects/luo_wm_dev/input/HCPD/raw/datalad_qsiprep \
+    --input freesurfer /cbica/projects/luo_wm_dev/input/HCPD/raw/datalad_freesurfer/inputs/data \
+    --list_sub_file /cbica/projects/luo_wm_dev/input/HCPD/subject_list/HCPD_subject_list_babs.txt \
+    --container_ds /cbica/projects/luo_wm_dev/software/qsiprep/qsiprep-container-0-22-0 \
+    --container_name qsiprep-0-22-0 \
+    --container_config_yaml_file /cbica/projects/luo_wm_dev/code/tract_profiles/run_babs_qsirecon/babs_qsiprep-0-22-0_qsirecon_mrtrix_ACT-hsvs_pyafq_dti.yaml \
+    --type_session single-ses --type_system slurm 
 ##########
 
 # PNC - doing this with qsiprep 0.21.4
@@ -109,6 +121,19 @@ babs-init --where_project /cbica/projects/luo_wm_dev/input/PNC/derivatives \
     --container_name qsiprep-0-22-0 --container_config_yaml_file /cbica/projects/luo_wm_dev/code/tract_profiles/run_babs_qsirecon/babs_qsiprep-0-22-0_qsirecon_mrtrix_pyafq_singleshell_slurm.yaml \
     --type_session single-ses --type_system slurm 
 
+
+# PNC - act-hsvs, dti
+babs-init --where_project /cbica/projects/luo_wm_dev/input/PNC/derivatives \
+    --project_name babs_qsirecon_pyafq_act \
+    --input qsiprep /cbica/projects/luo_wm_dev/input/PNC/raw/datalad_qsiprep \
+    --input freesurfer /cbica/projects/luo_wm_dev/input/PNC/raw/datalad_freesurfer/inputs/data \
+    --list_sub_file /cbica/projects/luo_wm_dev/input/PNC/subject_list/PNC_subject_list_babs.txt \
+    --container_ds /cbica/projects/luo_wm_dev/software/qsiprep/qsiprep-container-0-22-0 \
+    --container_name qsiprep-0-22-0 \
+    --container_config_yaml_file /cbica/projects/luo_wm_dev/code/tract_profiles/run_babs_qsirecon/babs_qsiprep-0-22-0_qsirecon_mrtrix_ACT-hsvs_pyafq_singleshell_dti.yaml \
+    --type_session single-ses --type_system slurm  
+
+
 # HBN
 babs-init --where_project /cbica/projects/luo_wm_dev/input/HBN \
     --project_name babs_qsirecon_pyafq --input qsiprep /cbica/projects/luo_wm_dev/input/HBN/datalad_qsiprep \
@@ -124,17 +149,6 @@ babs-init --where_project /cbica/projects/luo_wm_dev/input/HBN/derivatives \
     --container_ds /cbica/projects/luo_wm_dev/software/qsiprep/qsiprep-container-0-22-0 \
     --container_name qsiprep-0-22-0 --container_config_yaml_file /cbica/projects/luo_wm_dev/code/tract_profiles/run_babs_qsirecon/babs_qsiprep-0-22-0_qsirecon_mrtrix_pyafq_dki_slurm.yaml \
     --type_session single-ses --type_system slurm 
- 
-# HBN - act-hsvs, dti
-babs-init --where_project /cbica/projects/luo_wm_dev/input/HBN/derivatives \
-    --project_name babs_qsirecon_pyafq_act \
-    --input qsiprep /cbica/projects/luo_wm_dev/input/HBN/raw/datalad_qsiprep \
-    --input freesurfer /cbica/projects/luo_wm_dev/input/HBN/raw/datalad_freesurfer/inputs/data \
-    --list_sub_file /cbica/projects/luo_wm_dev/input/HBN/subject_list/HBN_subject_list_babs.txt \
-    --container_ds /cbica/projects/luo_wm_dev/software/qsiprep/qsiprep-container-0-22-0 \
-    --container_name qsiprep-0-22-0 \
-    --container_config_yaml_file /cbica/projects/luo_wm_dev/code/tract_profiles/run_babs_qsirecon/babs_qsiprep-0-22-0_qsirecon_mrtrix_ACT-hsvs_pyafq_dti.yaml \
-    --type_session single-ses --type_system slurm 
 
 # HBN - regular dti, slurm
 babs-init --where_project /cbica/projects/luo_wm_dev/input/HBN/derivatives \
@@ -146,6 +160,27 @@ babs-init --where_project /cbica/projects/luo_wm_dev/input/HBN/derivatives \
     --container_config_yaml_file /cbica/projects/luo_wm_dev/code/tract_profiles/run_babs_qsirecon/babs_qsiprep-0-22-0_qsirecon_mrtrix_pyafq_dti_slurm.yaml \
     --type_session single-ses --type_system slurm 
  
+# HBN - act-hsvs, dti
+babs-init --where_project /cbica/projects/luo_wm_dev/input/HBN/derivatives \
+    --project_name babs_qsirecon_pyafq_act \
+    --input qsiprep /cbica/projects/luo_wm_dev/input/HBN/raw/datalad_qsiprep \
+    --input freesurfer /cbica/projects/luo_wm_dev/input/HBN/raw/datalad_freesurfer/inputs/data \
+    --list_sub_file /cbica/projects/luo_wm_dev/input/HBN/subject_list/HBN_subject_list_babs_updated.txt \
+    --container_ds /cbica/projects/luo_wm_dev/software/qsiprep/qsiprep-container-0-22-0 \
+    --container_name qsiprep-0-22-0 \
+    --container_config_yaml_file /cbica/projects/luo_wm_dev/code/tract_profiles/run_babs_qsirecon/babs_qsiprep-0-22-0_qsirecon_mrtrix_ACT-hsvs_pyafq_dti.yaml \
+    --type_session single-ses --type_system slurm  
+
+# HBN - dti, slurm - test noACT
+babs-init --where_project /cbica/projects/luo_wm_dev/input/HBN/derivatives \
+    --project_name babs_qsirecon_pyafq_noACT \
+    --input qsiprep /cbica/projects/luo_wm_dev/input/HBN/raw/datalad_qsiprep \
+    --list_sub_file /cbica/projects/luo_wm_dev/input/HBN/sample_selection_files/subs_missing_tracts.txt \
+    --container_ds /cbica/projects/luo_wm_dev/software/qsiprep/qsiprep-container-0-22-0 \
+    --container_name qsiprep-0-22-0 \
+    --container_config_yaml_file /cbica/projects/luo_wm_dev/code/tract_profiles/run_babs_qsirecon/babs_qsiprep-0-22-0_qsirecon_mrtrix_msmt_pyafq_dti.yaml \
+    --type_session single-ses --type_system slurm 
+
 
 # note:
 # "Registering the input dataset(s)...
@@ -193,5 +228,5 @@ datalad clone \
 # Failed BABS projects #
 ########################
 cd /cbica/projects/luo_wm_dev/input/HBN/
-chmod -R +w babs_qsirecon_pyafq 
-rm -rf babs_qsirecon_pyafq
+chmod -R +w babs_qsirecon_pyafq_act
+rm -rf babs_qsirecon_pyafq_act

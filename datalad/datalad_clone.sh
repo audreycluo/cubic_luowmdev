@@ -1,6 +1,8 @@
 
 
-
+datalad clone ria+ssh://audluo@bblsub.pmacs.upenn.edu:/static/LINC_HCPD#~QSIPREP /cbica/projects/luo_wm_dev/input/HCPD/raw/datalad_qsiprep
+datalad clone ria+ssh://audluo@bblsub.pmacs.upenn.edu:/static/LINC_HBN#~QSIPREP /cbica/projects/luo_wm_dev/input/HBN/raw/datalad_qsiprep
+datalad clone ria+ssh://audluo@bblsub.pmacs.upenn.edu:/static/LINC_PNC#~QSIPREP /cbica/projects/luo_wm_dev/input/PNC/raw/datalad_qsiprep
 
 datalad clone ria+ssh://audluo@bblsub.pmacs.upenn.edu:/static/LINC_HCPD#~fstabulate /cbica/projects/luo_wm_dev/input/HCPD/raw/datalad_freesurfer
 datalad clone ria+ssh://audluo@bblsub.pmacs.upenn.edu:/static/LINC_HBN#~fstabulate /cbica/projects/luo_wm_dev/input/HBN/raw/datalad_freesurfer

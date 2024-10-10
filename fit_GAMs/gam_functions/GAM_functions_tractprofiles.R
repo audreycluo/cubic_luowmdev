@@ -270,17 +270,64 @@ gam.estimate.smooth <- function(gam.data, tract_node, smooth_var, covariates, kn
   return(estimated.smooth)
 }
 
+
+
+
+###################################### 
+# PREDICT GAM SMOOTH FITTED VALUES
+###################################### 
+##Function to predict fitted values of a measure based on a fitted GAM smooth (measure ~ s(smooth_var, k = knots, fx = set_fx) + covariates)) and a prediction df
+gam.smooth.predict <- function(gam.data, tract_node, smooth_var, covariates, knots, set_fx = FALSE, increments, age1, age2){
+  
+  # Fit the GAM
+  gam.data$sex <- as.factor(gam.data$sex)
+  modelformula <- as.formula(sprintf("%s ~ s(%s, k = %s, fx = %s) + %s", tract_node, smooth_var, knots, set_fx, covariates))  # 3 knots, fx = T should term be unpenalized  
+  gam.model <- gam(modelformula, method = "REML", data = gam.data)
+  gam.results <- summary(gam.model)
+
+  #Extract gam input data
+  df <- gam.model$model #extract the data used to build the gam, i.e., a df of y + predictor values 
+  
+  #Create a prediction data frame
+  np <- increments #number of predictions to make; predict at np increments of smooth_var
+  thisPred <- data.frame(init = rep(0,np)) #initiate a prediction df 
+  
+  theseVars <- attr(gam.model$terms,"term.labels") #gam model predictors (smooth_var + covariates)
+  varClasses <- attr(gam.model$terms,"dataClasses") #classes of the model predictors and y measure
+  thisResp <- as.character(gam.model$terms[[2]]) #the measure to predict
+  for (v in c(1:length(theseVars))) { #fill the prediction df with data for predictions. These data will be used to predict the output measure (y) at np increments of the smooth_var, holding other model terms constant
+    thisVar <- theseVars[[v]]
+    thisClass <- varClasses[thisVar]
+    if (thisVar == smooth_var) { 
+      thisPred[,smooth_var] = seq(age1, age2, length.out = np) #generate a range of np data points, from minimum of smooth term to maximum of smooth term
+    } else {
+      switch (thisClass,
+              "numeric" = {thisPred[,thisVar] = median(df[,thisVar])}, #make predictions based on median value
+              "factor" = {thisPred[,thisVar] = levels(df[,thisVar])[[1]]}, #make predictions based on first level of factor 
+              "ordered" = {thisPred[,thisVar] = levels(df[,thisVar])[[1]]} #make predictions based on first level of ordinal variable
+      )
+    }
+  }
+  pred <- thisPred %>% select(-init)
+  
+  #Generate predictions based on the gam model and predication data frame
+  predicted.smooth <- fitted_values(object = gam.model, data = pred)
+  predicted.smooth <- predicted.smooth %>% select(all_of(smooth_var), fitted, se, lower, upper)
+  
+  return(predicted.smooth)
+}
+
 ######################################################################################
 # PREDICT GAM SMOOTH FITTED VALUES FOR A SPECIFIED VALUE OF AN INTERACTING COVARIATE 
 ######################################################################################
 # note: for environment or cognition, potentially
 ## Function to predict fitted values of a measure for a given value of a covariate, using a varying coefficients smooth-by-linear covariate interaction
-gam.smooth.predict.covariateinteraction <- function(gam.data, tract_node, smooth_var, int_var, int_var.predict, covariates, knots, set_fx = FALSE, increments){
+gam.smooth.predict.covariateinteraction <- function(gam.data, tract_node, smooth_var, int_var, int_var.predict, covariates, knots, set_fx = FALSE, increments, age1, age2){
   # Fit the gam
   gam.data$sex <- as.factor(gam.data$sex)
   modelformula <- as.formula(sprintf("%1$s ~ s(%2$s, k=%3$s, fx=%4$s) + s(%2$s, by=%5$s, k=%3$s, fx=%4$s) + %6$s", tract_node, smooth_var, knots, set_fx, int_var, covariates))
   gam.model <- gam(modelformula, method = "REML", data=gam.data)
-  gam.results <- summary(gam.model)
+  gam.results <- summary(gam.model) 
   
   # Extract gam input data
   df <- gam.model$model #extract the data used to build the gam, i.e., a df of y + predictor values 
@@ -296,7 +343,7 @@ gam.smooth.predict.covariateinteraction <- function(gam.data, tract_node, smooth
     thisVar <- theseVars[[v]]
     thisClass <- varClasses[thisVar]
     if (thisVar == smooth_var) { 
-      thisPred[,smooth_var] = seq(8, 22, length.out = np) #generate a range of np data points, from minimum of smooth term to maximum of smooth term
+      thisPred[,smooth_var] = seq(age1, age2, length.out = np) #generate a range of np data points, from minimum of smooth term to maximum of smooth term
     } else {
       switch (thisClass,
               "numeric" = {thisPred[,thisVar] = median(df[,thisVar])}, #make predictions based on median value
@@ -313,6 +360,51 @@ gam.smooth.predict.covariateinteraction <- function(gam.data, tract_node, smooth
   predicted.smooth$fitted.centered <- (predicted.smooth$fitted-gam.results$p.table[1,1]) #subtract the intercept from fitted values
   predicted.smooth <- predicted.smooth %>% select(all_of(smooth_var), fitted, se, lower, upper, fitted.centered)
   
+  return(predicted.smooth)
+}
+
+# for sex - start here
+## Function to predict fitted values of a measure for a given value of a covariate, using a varying coefficients smooth-by-factor covariate interaction
+gam.smooth.predict.covariateinteraction.factor <- function(gam.data, tract_node, smooth_var, int_var, int_var.predict, covariates, knots, set_fx = FALSE, increments, age1, age2){
+  # Ensure int_var is a factor if not already
+  gam.data[[int_var]] <- as.factor(gam.data[[int_var]])
+  
+  # Fit the gam
+  modelformula <- as.formula(sprintf("%1$s ~ s(%2$s, k=%3$s, fx=%4$s) + s(%2$s, by=%5$s, k=%3$s, fx=%4$s) + %6$s", 
+                                     tract_node, smooth_var, knots, set_fx, int_var, covariates))
+  gam.model <- gam(modelformula, method = "REML", data=gam.data)
+  gam.results <- summary(gam.model)
+  
+  # Extract gam input data
+  df <- gam.model$model
+  
+  # Create a prediction data frame
+  np <- increments
+  thisPred <- data.frame(init = rep(0, np))
+  
+  theseVars <- attr(gam.model$terms, "term.labels")
+  varClasses <- attr(gam.model$terms, "dataClasses")
+  
+  for (v in c(1:length(theseVars))) {
+    thisVar <- theseVars[v]
+    thisClass <- varClasses[thisVar]
+    if (thisVar == smooth_var) {
+      thisPred[, smooth_var] = seq(age1, age2, length.out = np)
+    } else {
+      switch(thisClass,
+             "numeric" = {thisPred[, thisVar] = median(df[, thisVar], na.rm = TRUE)},
+             "factor" = {thisPred[, thisVar] = ifelse(thisVar == int_var, int_var.predict, levels(df[, thisVar])[[1]])},
+             "ordered" = {thisPred[, thisVar] = levels(df[, thisVar])[[1]]}
+      )
+    }
+  }
+  
+  pred <- thisPred %>% select(-init)
+  pred[,int_var] <- int_var.predict
+  
+  # Generate fitted (predicted) values based on the gam model and prediction data frame
+  predicted.smooth <- predict(gam.model, newdata = pred, type = "response")
+  predicted.smooth <- data.frame(smooth_var = pred[[smooth_var]], fitted = predicted.smooth)
   return(predicted.smooth)
 }
 
@@ -345,7 +437,7 @@ gam.factorsmooth.interaction <- function(gam.data, tract_node, smooth_var, int_v
 gam.fit.covariate <- function(gam.data, tract_node, smooth_var, covariate.interest, covariates.noninterest, knots, set_fx = FALSE){
   # Fit the gam
   gam.data$sex <- as.factor(gam.data$sex)
-  modelformula <- as.formula(sprintf("%1$s ~ s(%2$s, k=%3$s, fx=%4$s) + s(%2$s, by=%5$s, k=%3$s, fx=%4$s) + %6$s", tract_node, smooth_var, knots, set_fx, int_var, covariates))
+  modelformula <- as.formula(sprintf("%s ~ s(%s, k = %s, fx = %s) + %s + %s", tract_node, smooth_var, knots, set_fx, covariate.interest, covariates.noninterest))
   gam.model <- gam(modelformula, method = "REML", data=gam.data)
   gam.results <- summary(gam.model)
   
@@ -356,7 +448,7 @@ gam.fit.covariate <- function(gam.data, tract_node, smooth_var, covariate.intere
   gam.cov.pvalue <- gam.results$p.table[2,4]
   
   #Calculate the magnitude and significance of the covariate of interest effect by comparing full and reduced models
-  ##Compare a full model GAM (with the covariate of interst) to a nested, reduced model (without covariate of interst)
+  ##Compare a full model GAM (with the covariate of interest) to a nested, reduced model (without covariate of interest)
   nullmodel <- as.formula(sprintf("%s ~ s(%s, k = %s, fx = %s) + %s", tract_node, smooth_var, knots, set_fx, covariates.noninterest))
   gam.nullmodel <- gam(nullmodel, method = "REML", data=gam.data)
   gam.nullmodel.results <- summary(gam.nullmodel)
@@ -365,6 +457,15 @@ gam.fit.covariate <- function(gam.data, tract_node, smooth_var, covariate.intere
   anova.cov.pvalue <- anova.gam(gam.nullmodel,gam.model,test='F')$`Pr(>F)`[2]
   if(is.na(anova.cov.pvalue)){ #if residual deviance is exactly equal between full and reduced models and p=value = NA, set p = 1
     anova.cov.pvalue <- 1}
+  
+  ## Full versus reduced model: delta R.sq (adj)
+  ### effect size
+  adjRsq <- abs(gam.results$r.sq - gam.nullmodel.results$r.sq) 
+  ### effect direction
+  linearmodel <- as.formula(sprintf("%s ~ %s + %s + %s", tract_node, smooth_var, covariate.interest, covariates.noninterest))
+  lm.model.t <- summary(lm(linearmodel, data=gam.data))$coefficients[2,3] #t-value for smooth_var
+  if(lm.model.t < 0){ #if the linear model t-value for smooth_var is less than 0, make the delta adj R.sq negative
+    adjRsq <- adjRsq*-1}
   
   ##Full versus reduced model direction-dependent partial R squared
   ### effect size
@@ -375,7 +476,11 @@ gam.fit.covariate <- function(gam.data, tract_node, smooth_var, covariate.intere
   if(gam.cov.tvalue < 0){ #if the gam t-value for covariate of interest is less than 0, make the partialRsq negative
     partialRsq <- partialRsq*-1}
   
-  results <- data.frame(as.character(tract_node), as.numeric(gam.cov.tvalue), as.numeric(gam.cov.pvalue), as.numeric(gam.cov.pvalue), as.numeric(partialRsq))
-  colnames(results) <- c("tract_node", "GAM.cov.tvalue", "GAM.cov.pvalue", "ANOVA.cov.pvalue", "Effectsize.cov.partialRsq")
+  results <- data.frame(tract_node = as.character(tract_node), 
+                        GAM.cov.tvalue = as.numeric(gam.cov.tvalue), 
+                        GAM.cov.pvalue = as.numeric(gam.cov.pvalue), 
+                        ANOVA.cov.pvalue = as.numeric(anova.cov.pvalue), 
+                        Effectsize.cov.AdjRsq = as.numeric(adjRsq), 
+                        Effectsize.cov.partialRsq = as.numeric(partialRsq))
   return(results)
 }

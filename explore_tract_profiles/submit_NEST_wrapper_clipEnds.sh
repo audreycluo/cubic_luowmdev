@@ -3,17 +3,28 @@
 # set variables
 datasets=("HCPD" "HBN" "PNC")
 r_script="/cbica/projects/luo_wm_dev/code/tract_profiles/explore_tract_profiles/NEST_wrapper_clipEnds.R"
+tract_list="/cbica/projects/luo_wm_dev/input/tract_list/tract_list.txt"
 
-# loop through each dataset 
+inputarray=()
+while IFS= read -r line; do
+    inputarray+=("$line")
+done < "${tract_list}"
+
+tract_count=${#inputarray[@]}
+
+# submit job array for each dataset with elements in array being tracts
 for dataset in "${datasets[@]}"; do
-    # where to save output and error logs
     logs_dir="/cbica/projects/luo_wm_dev/code/tract_profiles/logs/NEST/${dataset}"
-    if [ ! -d "${logs_dir}" ]; then
-        mkdir -p ${logs_dir}
-    fi
+    mkdir -p ${logs_dir}
 
-    job_name="NEST_${dataset}"
-    sbatch --job-name=${job_name} --nodes=1 --ntasks=1 --cpus-per-task=8 --mem-per-cpu=3G --output=${logs_dir}/${job_name}.out --error=${logs_dir}/${job_name}.err --wrap="singularity run --cleanenv /cbica/projects/luo_wm_dev/software/docker/r-packages-for-cubic_0.0.6.sif Rscript --save ${r_script} ${dataset}"
-    echo "Submitted NEST for ${dataset}"
-   
+    sbatch --job-name=NEST_${dataset} \
+           --nodes=1 \
+           --ntasks=1 \
+           --cpus-per-task=4 \
+           --mem-per-cpu=2G \
+           --time=48:00:00  \
+           --array=0-$((tract_count-1)) \
+           --output=${logs_dir}/NEST_${dataset}_%A_%a.out \
+           --error=${logs_dir}/NEST_${dataset}_%A_%a.err \
+           singularity_NEST.sh ${dataset} ${tract_list} 
 done

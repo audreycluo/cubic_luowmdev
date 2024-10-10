@@ -5,6 +5,7 @@
 #   Which system:     SLURM
 
 singularity_run:
+    $INPUT_PATH: "inputs/data/qsiprep"
     -v: "-v"
     -w: "$BABS_TMPDIR"   # this is a placeholder. To be changed to `${PWD}/.git/tmp/wkdir`
     --n_cpus: "$SLURM_CPUS_PER_TASK"   
@@ -33,8 +34,7 @@ cluster_resources:
         #SBATCH --exclude=compute-fed1,compute-fed2,compute-fed3,compute-fed4,compute-fed5
         #SBATCH --time=24:00:00
         #SBATCH --propagate=NONE
-    # not sure if we need to exclude the problematic fed nodes if we're using slurm 
-
+ 
 # Necessary commands to be run first:
 script_preamble: |
     source /cbica/projects/luo_wm_dev/miniconda3/bin/activate babs

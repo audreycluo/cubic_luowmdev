@@ -66,7 +66,7 @@ statFun.gam.deltaRsq = function(X, dat, gam.formula, lm.formula, y.in.gam, y.in.
     gam.nullmodel.results = summary(gam.nullmodel)
     
     # Calculate delta adjusted R-squared (ΔR^2adj)
-    adjRsq = gam.fullmodel.results$r.sq - gam.nullmodel.results$r.sq
+    adjRsq = abs(gam.fullmodel.results$r.sq - gam.nullmodel.results$r.sq)
     
     # Determine the sign using the linear model
     lm.model = lm(lm.formula, data = data.frame(xyz))

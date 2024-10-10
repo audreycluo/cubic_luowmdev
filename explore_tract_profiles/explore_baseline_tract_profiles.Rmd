@@ -29,17 +29,14 @@ point_size <- 2
 
 input_root <- "/cbica/projects/luo_wm_dev/input"
 output_root <- "/cbica/projects/luo_wm_dev/output"
-png_dir <- "/Users/audluo/PennLINC/luowm_local/output/tract_profiles_testing/both_datasets/"
+png_dir <- "/Users/audluo/PennLINC/luowm_local/output/tract_profiles_testing/both_datasets/act_maxbval/"
   
 ```
 
 
 # Tract Names and Orientations
 https://yeatmanlab.github.io/pyAFQ/explanations/bundle_orientation.html#bundle-orientation 
-- Left Anterior Thalamic: anterior to posterior
-- Right Anterior Thalamic: anterior to posterior
-- Left Cingulum Cingulate: anterior to posterior
-- Right Cingulum Cingulate: anterior to posterior
+- All callosum bundles: right to left
 - Left Corticospinal: superior to inferior
 - Right Corticospinal: superior to inferior
 - Left Inferior Fronto-occipital: anterior to posterior
@@ -50,8 +47,6 @@ https://yeatmanlab.github.io/pyAFQ/explanations/bundle_orientation.html#bundle-o
 - Right Superior Longitudinal: anterior to posterior
 - Left Arcuate: anterior to posterior
 - Right Arcuate: anterior to posterior
-- Left Uncinate: superior to inferior
-- Right Uncinate: superior to inferior
 - Forceps Minor: right to left
 - Forceps Major: right to left
 - Left Posterior Arcuate: superior to inferior
@@ -119,9 +114,13 @@ plot_mean_var <- function(tract, scalar, variance_measure, color1, color2, color
         scale_fill_manual(values = c("HCPD" = color1, "HBN" = color2, "PNC" = color3)) +
         scale_color_manual(values = c("HCPD" = color1, "HBN" = color2, "PNC" = color3)) +
         theme(legend.position = "none",
+              legend.text = element_text(size = 20),
+              legend.title = element_text(size = 20),
+              axis.text.x = element_text(size = 20),
+              axis.text.y = element_text(size = 20),
               axis.title.x = element_blank(),
               axis.title.y = element_blank(),
-              plot.title = element_text(size=14, hjust=0.5)) + labs(title = tract) + ylim(ylim1, ylim2)
+              plot.title = element_text(size=20, hjust=0.5)) + labs(title = tract) + ylim(ylim1, ylim2)
         
       } else {
         plot <- ggplot(data = df, aes(x = nodeID, y = get(mean_scalar), linetype = hemi)) +
@@ -131,9 +130,13 @@ plot_mean_var <- function(tract, scalar, variance_measure, color1, color2, color
         scale_fill_manual(values = c("HCPD" = color1, "HBN" = color2, "PNC" = color3)) +
         scale_color_manual(values = c("HCPD" = color1, "HBN" = color2, "PNC" = color3)) +
         theme(legend.position = "none",
+              legend.text = element_text(size = 20),
+              legend.title = element_text(size = 20),
+              axis.text.x = element_text(size = 20),
+              axis.text.y = element_text(size = 20),
               axis.title.x = element_blank(),
               axis.title.y = element_blank(),
-              plot.title = element_text(size=14, hjust=0.5)) + labs(title = tract) + ylim(ylim1, ylim2)
+              plot.title = element_text(size=20, hjust=0.5)) + labs(title = tract) + ylim(ylim1, ylim2)
       }
     return(plot)
   } else {
@@ -150,9 +153,13 @@ plot_mean_var <- function(tract, scalar, variance_measure, color1, color2, color
       scale_fill_manual(values = c("HCPD" = color1, "HBN" = color2)) +
       scale_color_manual(values = c("HCPD" = color1, "HBN" = color2)) +
       theme(legend.position = "none",
+            legend.text = element_text(size = 20),
+            legend.title = element_text(size = 20),
+            axis.text.x = element_text(size = 20),
+            axis.text.y = element_text(size = 20),
             axis.title.x = element_blank(),
             axis.title.y = element_blank(),
-            plot.title = element_text(size=14, hjust=0.5)) + labs(title = tract) + ylim(ylim1, ylim2)
+            plot.title = element_text(size=20, hjust=0.5)) + labs(title = tract) + ylim(ylim1, ylim2)
       
     } else {
       plot <- ggplot(data = df, aes(x = nodeID, y = get(mean_scalar), linetype = hemi)) +
@@ -162,9 +169,13 @@ plot_mean_var <- function(tract, scalar, variance_measure, color1, color2, color
       scale_fill_manual(values = c("HCPD" = color1, "HBN" = color2)) +
       scale_color_manual(values = c("HCPD" = color1, "HBN" = color2)) +
       theme(legend.position = "none",
+            legend.text = element_text(size = 20),
+            legend.title = element_text(size = 20),
+            axis.text.x = element_text(size = 20),
+            axis.text.y = element_text(size = 20),
             axis.title.x = element_blank(),
             axis.title.y = element_blank(),
-            plot.title = element_text(size=14, hjust=0.5)) + labs(title = tract) + ylim(ylim1, ylim2)
+            plot.title = element_text(size=20, hjust=0.5)) + labs(title = tract) + ylim(ylim1, ylim2)
     }
     return(plot)
   }
@@ -174,36 +185,21 @@ plot_mean_var <- function(tract, scalar, variance_measure, color1, color2, color
 
 arrange_tract_plots <- function(list_figures, title) {
 
-  AP_plots <- ggarrange(list_figures$`Anterior Thalamic`, 
-                           list_figures$`Cingulum Cingulate`, 
-                           list_figures$`Inferior Fronto-occipital`, 
-                           list_figures$`Inferior Longitudinal`, 
-                           list_figures$`Superior Longitudinal`, ncol=5, nrow = 1)
+  AP_plots <- ggarrange(list_figures$`Arcuate`,
+                        list_figures$`Inferior Fronto-occipital`, 
+                        list_figures$`Inferior Longitudinal`, 
+                        list_figures$`Superior Longitudinal`, ncol=4, nrow = 1)
   AP_plots_final <- annotate_figure(AP_plots, top = text_grob("Anterior - Posterior", 
-                 color = "black", face = "bold", size = 14))
+                 color = "black", face = "bold", size = 20))
   
-  AP_frontotemp_plots <- ggarrange(list_figures$`Arcuate`,
-                                      list_figures$`Uncinate`, ncol=2, nrow = 1)
-  AP_frontotemp_plots_final <- annotate_figure(AP_frontotemp_plots, top = text_grob("Anterior - Posterior (Frontal - Temporal)", 
-                 color = "black", face = "bold", size = 14))
-
-  
+   
   SI_plots <- ggarrange(list_figures$`Corticospinal`, list_figures$`Posterior Arcuate`, 
                            list_figures$`Vertical Occipital`, common.legend=TRUE, legend=c("right"),
                            ncol=3, nrow = 1)
   SI_plots_final <- annotate_figure(SI_plots, top = text_grob("Superior - Inferior", 
-                 color = "black", face = "bold", size = 14))
+                 color = "black", face = "bold", size = 20))
   
   
-  tractprofiles_plot <- ggarrange(AP_plots_final, ggarrange(AP_frontotemp_plots_final, SI_plots_final, widths = c(1, 1.5)), nrow = 2)
-  
-  tractprofiles_plot_final <- annotate_figure(tractprofiles_plot, top = text_grob(title, 
-               color = "black", face = "italic", size = 18))
-   return(tractprofiles_plot_final)
-}
-
-
-arrange_callosum_plots <- function(list_figures, title) {
   callosum_plots <- ggarrange(list_figures$`Callosum Anterior Frontal`, 
                            list_figures$`Callosum Motor`, 
                            list_figures$`Callosum Occipital`, 
@@ -212,10 +208,17 @@ arrange_callosum_plots <- function(list_figures, title) {
                            list_figures$`Callosum Superior Frontal`, 
                            list_figures$`Callosum Superior Parietal`, 
                            list_figures$`Callosum Temporal`, ncol=4, nrow = 2)
-  tractprofiles_plot_final <- annotate_figure(callosum_plots, top = text_grob(title, 
-               color = "black", face = "italic", size = 18))
+  callosum_plots_final <- annotate_figure(callosum_plots, top = text_grob("Right - Left", 
+                 color = "black", face = "bold", size = 20))
+  
+  tractprofiles_plot <- ggarrange(callosum_plots_final, ggarrange(AP_plots_final, SI_plots_final, widths = c(1, 1.2), nrow = 2), heights = c(1, 1.2),nrow=2)
+  
+  tractprofiles_plot_final <- annotate_figure(tractprofiles_plot, top = text_grob(title, 
+               color = "black", face = "italic", size = 20))
    return(tractprofiles_plot_final)
 }
+
+
  
 ```
 
@@ -225,7 +228,8 @@ arrange_callosum_plots <- function(list_figures, title) {
 ```{r make summary dfs}
 
 datasets <- list(HCPD = HCPD, HBN = HBN, PNC = PNC)
-scalars <- c("dki_md", "dti_md", "dki_fa", "dti_fa")
+#scalars <- c("dki_md", "dti_md", "dki_fa", "dti_fa")
+scalars <- c("dti_md", "dti_fa")
 
 # create summary dfs
 for (dataset_name in names(datasets)) {
@@ -243,357 +247,48 @@ color2 = "#FF9E9DFF"
 color3 = "#cc0468"
 ```
 
-
-## DKI MD
-```{r run dki md sd plotting}
-variance_measure = "sd"
-dki_md_major_sd_plots <- lapply(unique(HCPD$tract_label), plot_mean_var, scalar = "dki_md", variance_measure = variance_measure, 
-                                color1 = color1, color2 = color2, color3 = color3, ylim1 = 0.0005, ylim2 = 0.00165)
-names(dki_md_major_sd_plots) <- unique(HCPD$tract_label)
-```
-
-```{r dki md major tracts sd, fig.height = 10, fig.width = 20}
-dki_md_major_final <- arrange_tract_plots(dki_md_major_sd_plots, "DKI MD: Mean +/- 1SD")
-x.grob <- textGrob("Position on Tract (Node ID)", 
-                   gp=gpar(col="black", fontsize=14))
-y.grob <- textGrob("DKI: Mean Diffusivity", 
-                   gp=gpar(col="black", fontsize=14), rot=90)
-
-ggsave(paste0(png_dir, "dki_md_main_tracts.png"), grid.arrange(arrangeGrob(dki_md_major_final, left = y.grob, bottom = x.grob)), width = 20, height = 10, units = "in")
-```
-
-
-```{r dki md callosum tracts sd, fig.height = 10, fig.width = 20}
-dki_md_callosum_final <- arrange_callosum_plots(dki_md_major_sd_plots, "DKI MD: Mean +/- 1SD")
-
-
-ggsave(paste0(png_dir, "dki_md_call_tracts.png"), grid.arrange(arrangeGrob(dki_md_callosum_final, left = y.grob, bottom = x.grob)), width = 20, height = 10, units = "in")
-```
-
-
-```{r run dki md se plotting}
-variance_measure = "se"
-dki_md_major_se_plots <- lapply(unique(HCPD$tract_label), plot_mean_var, scalar = "dki_md", variance_measure = variance_measure, 
-                                color1 = color1, color2 = color2, color3 = color3, ylim1 = 0.0005, ylim2 = 0.0015)
-names(dki_md_major_se_plots) <- unique(HCPD$tract_label)
-```
-
-```{r dki md major tracts se, fig.height = 10, fig.width = 20}
-arrange_tract_plots(dki_md_major_se_plots, "DKI MD: Mean +/- 1se")
-```
-
-```{r dki md callosum tracts se, fig.height = 10, fig.width = 20}
-arrange_callosum_plots(dki_md_major_se_plots, "DKI MD: Mean +/- 1se")
-```
-
+ 
 ## DTI MD
 ```{r run dti md sd plotting}
 variance_measure = "sd"
-dti_md_major_sd_plots <- lapply(unique(HCPD$tract_label), plot_mean_var, scalar = "dti_md", variance_measure = variance_measure, 
-                                color1 = color1, color2 = color2, color3 = color3, ylim1 = 0.0003, ylim2 = 0.0012)
-names(dti_md_major_sd_plots) <- unique(HCPD$tract_label)
+dti_md_sd_plots <- lapply(unique(HCPD$tract_label), plot_mean_var, scalar = "dti_md", variance_measure = variance_measure, 
+                                color1 = color1, color2 = color2, color3 = color3, ylim1 = 0.00058, ylim2 = 0.0012)
+names(dti_md_sd_plots) <- unique(HCPD$tract_label)
 ```
 
-```{r dti md major tracts sd, fig.height = 10, fig.width = 20}
-dti_md_major_final <- arrange_tract_plots(dti_md_major_sd_plots, "DTI MD: Mean +/- 1SD")
+```{r dti md tracts sd, fig.height = 20, fig.width = 20}
+dti_md_final <- arrange_tract_plots(dti_md_sd_plots, "DTI MD: Mean +/- 1SD")
+x.grob <- textGrob("Position on Tract (Node ID)", 
+                   gp=gpar(col="black", fontsize=20))
+y.grob <- textGrob("Mean Diffusivity", 
+                   gp=gpar(col="black", fontsize=20), rot=90)
 
-y.grob <- textGrob("DTI: Mean Diffusivity", 
-                   gp=gpar(col="black", fontsize=14), rot=90)
+grid.arrange(arrangeGrob(dti_md_final, left = y.grob, bottom = x.grob))
 
-ggsave(paste0(png_dir, "dti_md_main_tracts.png"), grid.arrange(arrangeGrob(dti_md_major_final, left = y.grob, bottom = x.grob)), width = 20, height = 10, units = "in")
+ggsave(paste0(png_dir, "dti_md_baseline_tracts.png"), grid.arrange(arrangeGrob(dti_md_final, left = y.grob, bottom = x.grob)), width = 20, height = 20, units = "in")
 ```
-
-```{r dti md callosum tracts sd, fig.height = 10, fig.width = 20}
-dti_md_callosum_final <- arrange_callosum_plots(dti_md_major_sd_plots, "DTI MD: Mean +/- 1SD")
-ggsave(paste0(png_dir, "dti_md_call_tracts.png"), grid.arrange(arrangeGrob(dti_md_callosum_final, left = y.grob, bottom = x.grob)), width = 20, height = 10, units = "in")
-```
-
-## DKI FA
-```{r run dki fa sd plotting}
-variance_measure = "sd"
-dki_fa_major_sd_plots <- lapply(unique(HCPD$tract_label), plot_mean_var, scalar = "dki_fa", variance_measure = variance_measure, color1 = color1, color2 = color2, color3 = color3)
-names(dki_fa_major_sd_plots) <- unique(HCPD$tract_label)
-```
-
-```{r dki fa major tracts sd, fig.height = 10, fig.width = 20}
-dki_fa_major_final <- arrange_tract_plots(dki_fa_major_sd_plots, "DKI FA: Mean +/- 1SD")
-
-y.grob <- textGrob("DKI: Fractional Anisotropy", 
-                   gp=gpar(col="black", fontsize=14), rot=90)
-ggsave(paste0(png_dir, "dki_fa_main_tracts.png"), grid.arrange(arrangeGrob(dki_fa_major_final, left = y.grob, bottom = x.grob)), width = 20, height = 10, units = "in")
-
-```
-
-```{r dki fa callosum tracts sd, fig.height = 10, fig.width = 20}
-dki_fa_callosum_final <- arrange_callosum_plots(dki_fa_major_sd_plots, "DKI FA: Mean +/- 1SD")
-
-ggsave(paste0(png_dir, "dki_fa_call_tracts.png"), grid.arrange(arrangeGrob(dki_fa_callosum_final, left = y.grob, bottom = x.grob)), width = 20, height = 10, units = "in")
-
-```
-
+  
 ## DTI FA
 ```{r run dti fa sd plotting}
 variance_measure = "sd"
-dti_fa_major_sd_plots <- lapply(unique(HCPD$tract_label), plot_mean_var, scalar = "dti_fa", variance_measure = variance_measure, color1 = color1, color2 = color2, color3 = color3)
-names(dti_fa_major_sd_plots) <- unique(HCPD$tract_label)
+dti_fa_sd_plots <- lapply(unique(HCPD$tract_label), plot_mean_var, scalar = "dti_fa", variance_measure = variance_measure, 
+                                color1 = color1, color2 = color2, color3 = color3, ylim1 = 0, ylim2 = 1)
+names(dti_fa_sd_plots) <- unique(HCPD$tract_label)
 ```
 
-```{r dti fa major tracts sd, fig.height = 10, fig.width = 20}
-dti_fa_main_final <- arrange_tract_plots(dti_fa_major_sd_plots, "DTI FA: Mean +/- 1SD")
+```{r dti fa tracts sd, fig.height = 20, fig.width = 20}
+dti_fa_final <- arrange_tract_plots(dti_fa_sd_plots, "DTI FA: Mean +/- 1SD")
+x.grob <- textGrob("Position on Tract (Node ID)", 
+                   gp=gpar(col="black", fontsize=20))
+y.grob <- textGrob("Fractional Anisotropy", 
+                   gp=gpar(col="black", fontsize=20), rot=90)
 
-y.grob <- textGrob("DTI: Fractional Anisotropy", 
-                   gp=gpar(col="black", fontsize=14), rot=90)
-ggsave(paste0(png_dir, "dti_fa_main_tracts.png"), grid.arrange(arrangeGrob(dti_fa_main_final, left = y.grob, bottom = x.grob)), width = 20, height = 10, units = "in")
+grid.arrange(arrangeGrob(dti_fa_final, left = y.grob, bottom = x.grob))
 
+ggsave(paste0(png_dir, "dti_fa_baseline_tracts.png"), grid.arrange(arrangeGrob(dti_fa_final, left = y.grob, bottom = x.grob)), width = 20, height = 20, units = "in")
 ```
 
-```{r dti fa callosum tracts sd, fig.height = 10, fig.width = 20}
-dti_fa_call_final <- arrange_callosum_plots(dti_fa_major_sd_plots, "DTI FA: Mean +/- 1SD")
-
-ggsave(paste0(png_dir, "dti_fa_call_tracts.png"), grid.arrange(arrangeGrob(dti_fa_call_final, left = y.grob, bottom = x.grob)), width = 20, height = 10, units = "in")
-
-```
-
-# check site differences
-
-```{r function for plotting by site}
-# function for plotting tractprofiles mean and sd or se for a given scalar
-plot_mean_by_site <- function(tract, dataset, scalar, variance_measure, color1, color2, color3, ylim1 = 0, ylim2 = 1) {
- 
-  mean_scalar <- paste0("mean_", scalar) 
-  df_profiles <- get(paste0("summary_", dataset, "_", scalar, "_site"))
-  df <- df_profiles %>% filter(tract_label == tract)
-   
-  if(str_detect(tract, "Callosum")) {
-    plot <- ggplot(data = df, aes(x = nodeID, y = get(mean_scalar)), group = site) +
-    geom_ribbon(data = df, aes_string(x = "nodeID", ymin = paste0("ymin_", variance_measure), ymax = paste0("ymax_", variance_measure), fill = "site"), alpha = .3) + 
-    geom_line(data = df, aes(x = nodeID, y = get(mean_scalar), color = site),size = 1) +
-   
-    theme(legend.position = "none",
-          axis.title.x = element_blank(),
-          axis.title.y = element_blank(),
-          plot.title = element_text(size=14, hjust=0.5)) + labs(title = tract) + ylim(ylim1, ylim2)
-    
-  } else {
-    plot <- ggplot(data = df, aes(x = nodeID, y = get(mean_scalar), , group = site)) +
-    geom_ribbon(data = df, aes_string(x = "nodeID", ymin = paste0("ymin_", variance_measure), ymax = paste0("ymax_", variance_measure), fill = "site"), alpha = .3) + 
-    geom_line(data = df, aes(x = nodeID, y = get(mean_scalar), color = site),size = 1) +
-      guides(linetype = guide_legend("Hemi",override.aes = list(fill = "white"))) + 
-     
-    theme(legend.position = "none",
-          axis.title.x = element_blank(),
-          axis.title.y = element_blank(),
-          plot.title = element_text(size=14, hjust=0.5)) + labs(title = tract) + ylim(ylim1, ylim2)
-  }
-  return(plot)
-  
-}
-```
-
-
-```{r function to make summary dfs for site}
-make_summary_dfs_site <- function(scalar, dataset_name, df) {
-  # set variables
-  mean_scalar <- paste0("mean_", scalar)
-  # Process the given dataset df
-  scalar_data <- df %>% select(sub, tractID, tract_label, nodeID, hemi, all_of(scalar), site)
-  sqrt_n <- sqrt(length(unique(scalar_data$sub)))
-  setDT(scalar_data)
-  summary_data <- scalar_data[, .(
-    mean_scalar = mean(.SD[[1]], na.rm = TRUE),
-    sd = sd(.SD[[1]], na.rm = TRUE),
-    se = sd(.SD[[1]], na.rm = TRUE) / sqrt_n,
-    ymin_sd = mean(.SD[[1]], na.rm = TRUE) - sd(.SD[[1]], na.rm = TRUE),
-    ymax_sd = mean(.SD[[1]], na.rm = TRUE) + sd(.SD[[1]], na.rm = TRUE),
-    ymin_se = mean(.SD[[1]], na.rm = TRUE) - (sd(.SD[[1]], na.rm = TRUE) / sqrt_n),
-    ymax_se = mean(.SD[[1]], na.rm = TRUE) + (sd(.SD[[1]], na.rm = TRUE) / sqrt_n)
-  ), by = .(tract_label, tractID, nodeID, hemi, site), .SDcols = scalar]
-
-  setnames(summary_data, "mean_scalar", paste0("mean_", scalar))
-  summary_data[, Dataset := dataset_name]
-  summary_dataset_scalar <- paste0("summary_", dataset_name, "_", scalar, "_site")
-  assign(summary_dataset_scalar, summary_data, envir = .GlobalEnv)
-}
-
- 
-```
-
-
-```{r make summary dfs for site}
-
-dem_HCPD <- read.csv("/cbica/projects/luo_wm_dev/input/HCPD/sample_selection_files/final_sample/HCPD_WMDev_FinalSampleDemoQC.csv")
-setDT(dem_HCPD)
-dem_HBN <- read.csv("/cbica/projects/luo_wm_dev/input/HBN/sample_selection_files/final_sample/HBN_WMDev_FinalSampleDemoQC.csv")
-setDT(dem_HBN)
-
-HCPD <- merge(HCPD, dem_HCPD[, .(sub, site)])
-HBN <- merge(HBN, dem_HBN[, .(sub, site)])
-
-datasets <- list(HCPD = HCPD, HBN = HBN)
-scalars <- c("dki_md", "dti_md", "dki_fa", "dti_fa")
-
-# create summary dfs
-for (dataset_name in names(datasets)) {
-  dataset <- datasets[[dataset_name]]
-  lapply(scalars, function(scalar) {
-    make_summary_dfs_site(scalar, dataset_name, dataset) # this creates summary_[dataset]_[scalar] dataframes that include mean, sd, se for each scalar
-  })
-}
- 
-```
-
-## DKI MD
-```{r run dki md major tracts site HCPD}
-variance_measure = "sd"
-dki_md_site_major_HCPD <- lapply(unique(HCPD$tract_label), plot_mean_by_site, dataset = "HCPD", scalar = "dki_md", variance_measure = variance_measure, ylim1 = 0.0003, ylim2 = 0.0016)
-names(dki_md_site_major_HCPD) <- unique(HCPD$tract_label)
-```
-
-```{r dki md major tracts site HCPD, fig.height = 10, fig.width = 20}
-arrange_tract_plots(dki_md_site_major_HCPD, "HCPD: DKI MD")
-```
-
-```{r dki md callosum tracts site HCPD, fig.height = 10, fig.width = 20}
-arrange_callosum_plots(dki_md_site_major_HCPD, "HCPD: DKI MD")
-```
-
-
-```{r run dki md major tracts site HBN}
-variance_measure = "sd"
-dki_md_site_major_HBN <- lapply(unique(HBN$tract_label), plot_mean_by_site, dataset = "HBN", scalar = "dki_md", variance_measure = variance_measure, ylim1 = 0.0003, ylim2 = 0.0016)
-names(dki_md_site_major_HBN) <- unique(HBN$tract_label)
-```
-
-```{r dki md major tracts site HBN, fig.height = 10, fig.width = 20}
-arrange_tract_plots(dki_md_site_major_HBN, "HBN: DKI MD")
-```
-
-```{r dki md callosum tracts site HBN, fig.height = 10, fig.width = 20}
-arrange_callosum_plots(dki_md_site_major_HBN, "HBN: DKI MD")
-```
-
-## DTI MD
-```{r run DTI md major tracts site HCPD}
-variance_measure = "sd"
-dti_md_site_major_HCPD <- lapply(unique(HCPD$tract_label), plot_mean_by_site, dataset = "HCPD", scalar = "dti_md", variance_measure = variance_measure, ylim1 = 0.0003, ylim2 = 0.0016)
-names(dti_md_site_major_HCPD) <- unique(HCPD$tract_label)
-```
-
-```{r DTI md major tracts site HCPD, fig.height = 10, fig.width = 20}
-arrange_tract_plots(dti_md_site_major_HCPD, "HCPD: DTI MD")
-```
-
-```{r DTI md callosum tracts site HCPD, fig.height = 10, fig.width = 20}
-arrange_callosum_plots(dti_md_site_major_HCPD, "HCPD: DTI MD")
-```
-
-
-```{r run DTI md major tracts site HBN}
-variance_measure = "sd"
-dti_md_site_major_HBN <- lapply(unique(HBN$tract_label), plot_mean_by_site, dataset = "HBN", scalar = "dti_md", variance_measure = variance_measure, ylim1 = 0.0003, ylim2 = 0.0016)
-names(dti_md_site_major_HBN) <- unique(HBN$tract_label)
-```
-
-```{r DTI md major tracts site HBN, fig.height = 10, fig.width = 20}
-arrange_tract_plots(dti_md_site_major_HBN, "HBN: DTI MD")
-```
-
-```{r DTI md callosum tracts site HBN, fig.height = 10, fig.width = 20}
-arrange_callosum_plots(dti_md_site_major_HBN, "HBN: DTI MD")
-```
-
-## DKI FA
-```{r run dki fa major tracts site HCPD}
-variance_measure = "sd"
-dki_fa_site_major_HCPD <- lapply(unique(HCPD$tract_label), plot_mean_by_site, dataset = "HCPD", scalar = "dki_fa", variance_measure = variance_measure)
-names(dki_fa_site_major_HCPD) <- unique(HCPD$tract_label)
-```
-
-```{r dki fa major tracts site HCPD, fig.height = 10, fig.width = 20}
-arrange_tract_plots(dki_fa_site_major_HCPD, "DKI FA: Mean +/- 1SD")
-```
-
-```{r dki fa callosum tracts site HCPD, fig.height = 10, fig.width = 20}
-arrange_callosum_plots(dki_fa_site_major_HCPD, "DKI FA: Mean +/- 1SD")
-```
-
-```{r run dki fa major tracts site HBN}
-variance_measure = "sd"
-dki_fa_site_major_HBN <- lapply(unique(HBN$tract_label), plot_mean_by_site, dataset = "HBN", scalar = "dki_fa", variance_measure = variance_measure)
-names(dki_fa_site_major_HBN) <- unique(HBN$tract_label)
-```
-
-```{r dki fa major tracts site HBN, fig.height = 10, fig.width = 20}
-arrange_tract_plots(dki_fa_site_major_HBN, "DKI FA: Mean +/- 1SD")
-```
-
-```{r dki fa callosum tracts site HBN, fig.height = 10, fig.width = 20}
-arrange_callosum_plots(dki_fa_site_major_HBN, "DKI FA: Mean +/- 1SD")
-```
-
-## DTI FA
-```{r run dti fa major tracts site HCPD}
-variance_measure = "sd"
-dti_fa_site_major_HCPD <- lapply(unique(HCPD$tract_label), plot_mean_by_site, dataset = "HCPD", scalar = "dti_fa", variance_measure = variance_measure)
-names(dti_fa_site_major_HCPD) <- unique(HCPD$tract_label)
-```
-
-```{r dti fa major tracts site HCPD, fig.height = 10, fig.width = 20}
-arrange_tract_plots(dti_fa_site_major_HCPD, "DTI FA: Mean +/- 1SD")
-```
-
-```{r dti fa callosum tracts site HCPD, fig.height = 10, fig.width = 20}
-arrange_callosum_plots(dti_fa_site_major_HCPD, "DTI FA: Mean +/- 1SD")
-```
-
-```{r run dti fa major tracts site HBN}
-variance_measure = "sd"
-dti_fa_site_major_HBN <- lapply(unique(HBN$tract_label), plot_mean_by_site, dataset = "HBN", scalar = "dti_fa", variance_measure = variance_measure)
-names(dti_fa_site_major_HBN) <- unique(HBN$tract_label)
-```
-
-```{r dti fa major tracts site HBN, fig.height = 10, fig.width = 20}
-arrange_tract_plots(dti_fa_site_major_HBN, "DTI FA: Mean +/- 1SD")
-```
-
-```{r dti fa callosum tracts site HBN, fig.height = 10, fig.width = 20}
-arrange_callosum_plots(dti_fa_site_major_HBN, "DTI FA: Mean +/- 1SD")
-```
 # consistency of measures across datasets
-```{r dki md across datasets}
- 
-cor_HCPD_HBN <- cor.test(summary_HCPD_dki_md$mean_dki_md, summary_HBN_dki_md$mean_dki_md)$estimate
-cor_HCPD_PNC <- NA  # Set to NA
-cor_HBN_PNC <- NA   # Set to NA
-
-cor_data <- data.frame(
-  Dataset1 = c("HCPD", "HCPD", "HBN"),
-  Dataset2 = c("HBN", "PNC", "PNC"),
-  Correlation = c(cor_HCPD_HBN, cor_HCPD_PNC, cor_HBN_PNC)
-)
-
-dki_md_corr <- ggplot(cor_data, aes(x = Dataset1, y = Dataset2, fill = Correlation)) +
-  geom_tile(color = "white", na.rm = TRUE) +
-  scale_fill_gradient2(low = "blue", high = "red", mid = "white", 
-                       midpoint = 0, limit = c(-1, 1), space = "Lab", 
-                       name="Correlation", na.value = "grey90") +
-  geom_text(aes(label = ifelse(is.na(Correlation), "NA", round(Correlation, 2))), 
-            color = "black", size = 7, na.rm = TRUE) +
-  theme_minimal() + 
-  theme(axis.title.x = element_blank(),
-        axis.title.y = element_blank(),
-        axis.text.x = element_text(vjust = 1, 
-                                   size = 12, hjust = 1),
-        axis.text.y = element_text(vjust = 1, 
-                                   size = 12, hjust = 1)) +
-  coord_fixed() +
-  labs(title = "Correlation of DKI MD Across Datasets") +
-  scale_y_discrete(limits = rev(levels(factor(cor_data$Dataset2))))
-
-
-ggsave(paste0(png_dir, "dki_md_corr.png"), dki_md_corr, width = 20, height = 10, units = "in")
-
-```
 
 
 ```{r dti md across datasets}
@@ -627,44 +322,11 @@ dti_md_corr <- ggplot(cor_data, aes(x = Dataset1, y = Dataset2, fill = Correlati
   labs(title = "Correlation of DTI MD Across Datasets") +
   scale_y_discrete(limits = rev(levels(factor(cor_data$Dataset2))))  
 
-ggsave(paste0(png_dir, "dti_md_corr.png"), dti_md_corr, width = 20, height = 10, units = "in")
+ggsave(paste0(png_dir, "dti_md_corr.png"), dti_md_corr, width = 5, height = 5, units = "in")
 
 ```
 
-```{r dki fa across datasets}
  
-cor_HCPD_HBN <- cor.test(summary_HCPD_dki_fa$mean_dki_fa, summary_HBN_dki_fa$mean_dki_fa)$estimate
-cor_HCPD_PNC <- NA  # Set to NA
-cor_HBN_PNC <- NA   # Set to NA
-
-cor_data <- data.frame(
-  Dataset1 = c("HCPD", "HCPD", "HBN"),
-  Dataset2 = c("HBN", "PNC", "PNC"),
-  Correlation = c(cor_HCPD_HBN, cor_HCPD_PNC, cor_HBN_PNC)
-)
-
-dki_fa_corr <- ggplot(cor_data, aes(x = Dataset1, y = Dataset2, fill = Correlation)) +
-  geom_tile(color = "white", na.rm = TRUE) +
-  scale_fill_gradient2(low = "blue", high = "red", mid = "white", 
-                       midpoint = 0, limit = c(-1, 1), space = "Lab", 
-                       name="Correlation", na.value = "grey90") +
-  geom_text(aes(label = ifelse(is.na(Correlation), "NA", round(Correlation, 2))), 
-            color = "black", size = 7, na.rm = TRUE) +
-  theme_minimal() + 
-  theme(axis.title.x = element_blank(),
-        axis.title.y = element_blank(),
-        axis.text.x = element_text(vjust = 1, 
-                                   size = 12, hjust = 1),
-        axis.text.y = element_text(vjust = 1, 
-                                   size = 12, hjust = 1)) +
-  coord_fixed() +
-  labs(title = "Correlation of DKI FA Across Datasets") +
-  scale_y_discrete(limits = rev(levels(factor(cor_data$Dataset2))))
-
-
-ggsave(paste0(png_dir, "dki_fa_corr.png"), dki_fa_corr, width = 20, height = 10, units = "in")
-
-```
 
 
 ```{r dti fa across datasets}
@@ -698,44 +360,94 @@ dti_fa_corr <- ggplot(cor_data, aes(x = Dataset1, y = Dataset2, fill = Correlati
   labs(title = "Correlation of DTI FA Across Datasets") +
   scale_y_discrete(limits = rev(levels(factor(cor_data$Dataset2))))  
 
-ggsave(paste0(png_dir, "dti_fa_corr.png"), dti_fa_corr, width = 20, height = 10, units = "in")
-
-```
-
- 
-```{r}
-
-
-# correlations
-cor_HCPD_md <- cor.test(summary_HCPD_dki_md$mean_dki_md, summary_HCPD_dti_md$mean_dti_md)
-cor_HCPD_fa <- cor.test(summary_HCPD_dki_fa$mean_dki_fa, summary_HCPD_dti_fa$mean_dti_fa)
-
-cor_HBN_md <- cor.test(summary_HBN_dki_md$mean_dki_md, summary_HBN_dti_md$mean_dti_md)
-cor_HBN_fa <- cor.test(summary_HBN_dki_fa$mean_dki_fa, summary_HBN_dti_fa$mean_dti_fa)
-
-# make tables 
-cor_table_HCPD <- data.frame(
-  Measure = c("MD", "FA"),
-  Correlation = c(cor_HCPD_md$estimate, cor_HCPD_fa$estimate),
-  P_Value = c(cor_HCPD_md$p.value, cor_HCPD_fa$p.value)
-)
-
-cor_table_HBN <- data.frame(
-  Measure = c("MD", "FA"),
-  Correlation = c(cor_HBN_md$estimate, cor_HBN_fa$estimate),
-  P_Value = c(cor_HBN_md$p.value, cor_HBN_fa$p.value)
-)
-
-# display tables 
-kable(cor_table_HCPD, caption = "<b style='color:black;'>Correlation Between DKI and DTI Measures (MD and FA) for HCPD</b>", escape = FALSE) %>%
-  kable_styling(bootstrap_options = c("condensed"), full_width = FALSE, position = "center", fixed_thead = TRUE, font_size = 16)
-
+ggsave(paste0(png_dir, "dti_fa_corr.png"), dti_fa_corr, width = 5, height = 5, units = "in")
 
 ```
  
-```{r}
-kable(cor_table_HBN, caption = "<b style='color:black;'>Correlation Between DKI and DTI Measures (MD and FA) for HBN</b>", escape = FALSE) %>%
-  kable_styling(bootstrap_options = c("condensed"), full_width = FALSE, position = "center", fixed_thead = TRUE, font_size = 16)
+
+
+# Tracts exhibit distinct mean diffusivity profiles
+
+```{r, fig.height = 15, fig.width = 20}
+# filter for central nodes
+HCPD <- HCPD %>% mutate(Dataset="HCPD")
+HBN <- HBN %>% mutate(Dataset="HBN")
+PNC <- PNC %>% mutate(Dataset="PNC")
+ 
+central_tract_profiles_HCPD <- HCPD %>% filter(nodeID > 39 & nodeID < 60)
+mycolors <- colorRampPalette(paletteer::paletteer_d("PNWColors::Sailboat"))(22)
+
+HCPD_boxplots <- central_tract_profiles_HCPD %>%
+  ggplot(aes(x = reorder(tractID, dti_md, fun = mean), y=dti_md, fill=tractID)) +
+    geom_boxplot(aes(color = tractID, fill = tractID), alpha=0.6) +
+    scale_fill_manual(values = mycolors) + 
+    scale_color_manual(values = mycolors) + 
+    theme(
+      legend.position="none",
+      plot.title = element_text(size=18,hjust=0.5),
+      axis.text.x = element_text(angle=45, hjust=0.95, size=18),
+      axis.text.y = element_text(size=18),
+      axis.title.y = element_blank()
+    ) +
+    ggtitle("HCP-D (N = 568)") +
+    xlab("") + ylim(0.0001, 0.001)
+
+
+central_tract_profiles <- HBN %>% filter(nodeID > 39 & nodeID < 60)
+mycolors <- colorRampPalette(paletteer::paletteer_d("PNWColors::Sailboat"))(22)
+ 
+HBN_boxplots <- central_tract_profiles %>%
+  ggplot(aes(x = reorder(tractID, dti_md, fun = mean), y=dti_md, fill=tractID)) +
+    geom_boxplot(aes(color = tractID, fill = tractID), alpha=0.6) +
+    scale_fill_manual(values = mycolors) + 
+    scale_color_manual(values = mycolors) + 
+    theme(
+      legend.position="none",
+      plot.title = element_text(size=18, hjust=0.5),
+      axis.text.x = element_text(angle=45, hjust=0.95, size=18),
+      axis.text.y = element_text(size=18),
+      axis.title.y = element_blank()
+
+    ) +
+    ggtitle("HBN (N = 913)") +
+    xlab("")  + ylim(0.0001, 0.001)
+
+ 
+ 
+central_tract_profiles_PNC <- PNC %>% filter(nodeID > 39 & nodeID < 60)
+mycolors <- colorRampPalette(paletteer::paletteer_d("PNWColors::Sailboat"))(22)
+
+PNC_boxplots <- central_tract_profiles_PNC %>%
+  ggplot(aes(x = reorder(tractID, dti_md, fun = mean), y=dti_md, fill=tractID)) +
+    geom_boxplot(aes(color = tractID, fill = tractID), alpha=0.6) +
+    scale_fill_manual(values = mycolors) + 
+    scale_color_manual(values = mycolors) + 
+    theme(
+      legend.position="none",
+      plot.title = element_text(size=18,hjust=0.5),
+      axis.text.x = element_text(angle=45, hjust=0.95, size=18),
+      axis.text.y = element_text(size=18),
+      axis.title.y = element_blank()
+    ) +
+    ggtitle("PNC (N = 1101)") +
+    xlab("") + ylim(0.0001, 0.001)
+
+
+ 
+y.grob <- textGrob("Mean Diffusivity", 
+                   gp=gpar(col="black", fontsize=18), rot=90)
+
+ 
+# arrange by AP, AP_frontal_temporal, RL (forceps), and SI
+boxplots_final <- ggarrange(
+  ggarrange(HCPD_boxplots, HBN_boxplots, ncol = 2),  # Top row with 2 plots
+  ggarrange(NULL, PNC_boxplots, NULL, ncol = 3, widths = c(1, 2, 1)),  # Center the bottom plot
+  nrow = 2
+)
+
+grid.arrange(arrangeGrob(boxplots_final, left = y.grob))
+
+
+ggsave(paste0(png_dir, "dti_md_deepWM_boxplots.png"), grid.arrange(arrangeGrob(boxplots_final, left = y.grob)), width = 20, height = 15, units = "in")
 ```
 
-# think about plotting them in an intuitive way...

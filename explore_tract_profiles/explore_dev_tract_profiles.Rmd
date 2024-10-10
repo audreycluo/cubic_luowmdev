@@ -34,19 +34,30 @@ point_size <- 2
 proj_root <- "/cbica/projects/luo_wm_dev/"
 input_root <- paste0(proj_root, "input")
 output_root <- paste0(proj_root, "output")
-png_dir <- "/Users/audluo/PennLINC/luowm_local/output/tract_profiles_testing/both_datasets/"
+png_dir <- "/Users/audluo/PennLINC/luowm_local/output/tract_profiles_testing/both_datasets/act_maxbval/"
 local_dir <- "/Users/audluo/Desktop/temp_code"
-  
+ 
+text_size <- 20
+default <- theme_set(theme_classic() + 
+  theme(
+    plot.title = element_text(size = text_size, hjust = 0.5),
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank(),
+    axis.text.x = element_text(size = text_size),
+    axis.text.y = element_text(size = text_size)
+  ) 
+) 
 ```
 
 
 ```{r load dev effects files}
 # Define the datasets and scalars
 datasets <- c("HBN", "PNC", "HCPD")
-scalars <- c("dki_fa", "dki_md", "dti_fa", "dti_md")
+#scalars <- c("dki_fa", "dki_md", "dti_fa", "dti_md")
+scalars <- c("dti_md", "dti_fa")
 
 # Define the local save path
-#save_path <- "/Users/audluo/Desktop/temp_code/"
+save_path <- "/Users/audluo/Desktop/temp_code/"
 
 # Function to load files and save them into [dataset]_GAM_[ageeffect]_[scalar] 
 load_and_save_data <- function(dataset, scalars) {
@@ -57,39 +68,42 @@ load_and_save_data <- function(dataset, scalars) {
      } else {
       print(paste(dataset, scalar))
       # Define the file names
-      #derivatives_filename <- paste0(dataset, "_GAM_derivatives_", scalar, ".csv")
-      ##ageeffects_filename <- paste0(dataset, "_GAM_dev_measures_", scalar, ".csv")
+      derivatives_filename <- paste0(dataset, "_GAM_derivatives_", scalar, ".csv")
+      ageeffects_filename <- paste0(dataset, "_GAM_ageeffects_", scalar, ".csv")
       smoothcentered_filename <- paste0(dataset, "_GAM_smoothcentered_", scalar, ".csv")
+      smoothfitted_filename <- paste0(dataset, "_GAM_smooth_fittedvalues.csv")
       
-      derivatives_filename <- paste0(dataset, "_GAM_derivatives.csv")
-      ageeffects_filename <- paste0(dataset, "_GAM_dev_measures.csv")
-      smoothcentered_filename <- paste0(dataset, "_GAM_smoothcentered.csv")
+      #derivatives_filename <- paste0(dataset, "_GAM_derivatives.csv")
+      #ageeffects_filename <- paste0(dataset, "_GAM_dev_measures.csv")
+      #smoothcentered_filename <- paste0(dataset, "_GAM_smoothcentered.csv")
       
       # Load the datasets
-      #print("loading derivatives")
-      #derivatives_data <- fread(paste0(local_dir, "/", derivatives_filename))
-      #print("loading dev measures")
-      #ageeffects_data <- read.csv(paste0(local_dir, "/", ageeffects_filename))
-      #print("loading smooths")
-      #smoothcentered_data <- read.csv(paste0(local_dir, "/", smoothcentered_filename))
-      
       print("loading derivatives")
-      derivatives_data <- fread(paste0(output_root, "/", dataset, "/tract_profiles/GAM/", scalar, "/", derivatives_filename))
+      derivatives_data <- fread(paste0(local_dir, "/", derivatives_filename))
       print("loading dev measures")
-      ageeffects_data <- read.csv(paste0(output_root, "/", dataset, "/tract_profiles/GAM/", scalar, "/", ageeffects_filename))
+      ageeffects_data <- read.csv(paste0(local_dir, "/", ageeffects_filename))
       print("loading smooths")
-      smoothcentered_data <- read.csv(paste0(output_root, "/", dataset, "/tract_profiles/GAM/", scalar, "/", smoothcentered_filename))
+      smoothcentered_data <- read.csv(paste0(local_dir, "/", smoothcentered_filename))
       
+      #print("loading derivatives")
+      #derivatives_data <- fread(paste0(output_root, "/", dataset, "/tract_profiles/GAM/", scalar, "/", derivatives_filename))
+      #print("loading dev measures")
+      #ageeffects_data <- read.csv(paste0(output_root, "/", dataset, "/tract_profiles/GAM/", scalar, "/", ageeffects_filename))
+      #print("loading smooths")
+      #smoothcentered_data <- read.csv(paste0(output_root, "/", dataset, "/tract_profiles/GAM/", scalar, "/", smoothcentered_filename))
+      smoothfitted_data <- read.csv(paste0(output_root, "/", dataset, "/tract_profiles/GAM/", scalar, "/", smoothfitted_filename))
       # save into [dataset]_GAM_[ageeffect]_[scalar]
       print("saving into vars")
       assign(paste0(dataset, "_GAM_derivatives_", scalar), derivatives_data, envir = .GlobalEnv)
       assign(paste0(dataset, "_GAM_ageeffects_", scalar), ageeffects_data, envir = .GlobalEnv)
       assign(paste0(dataset, "_GAM_smoothcentered_", scalar), smoothcentered_data, envir = .GlobalEnv)
+      assign(paste0(dataset, "_GAM_smooth_fittedvalues_", scalar), smoothfitted_data, envir = .GlobalEnv)
       
       # Save the data frames to the local path
-      #write_csv(derivatives_data, file.path(save_path, paste0(dataset, "_GAM_derivatives_", scalar, ".csv")))
-      #write_csv(ageeffects_data, file.path(save_path, paste0(dataset, "_GAM_ageeffects_", scalar, ".csv")))
-      #write_csv(smoothcentered_data, file.path(save_path, paste0(dataset, "_GAM_smoothcentered_", scalar, ".csv")))
+      #write.csv(derivatives_data, file.path(save_path, paste0(dataset, "_GAM_derivatives_", scalar, ".csv")))
+      #write.csv(ageeffects_data, file.path(save_path, paste0(dataset, "_GAM_ageeffects_", scalar, ".csv")))
+      #write.csv(smoothcentered_data, file.path(save_path, paste0(dataset, "_GAM_smoothcentered_", scalar, ".csv")))
+      write.csv(smoothfitted_data, file.path(save_path, paste0(dataset, "_GAM_smoothfitted_", scalar, ".csv")))
       print(paste(dataset, scalar, "loaded"))
     }
     
@@ -107,11 +121,9 @@ for (dataset in datasets) {
 ageeffect_df_names <- c()
 for (dataset in datasets) {
   for (scalar in scalars) {
-     if (dataset == "PNC" && (scalar == "dki_md" || scalar == "dki_fa")) {
-      next
-     } else {
+     
        ageeffect_df_names <- append(ageeffect_df_names, paste0(dataset, "_GAM_ageeffects_", scalar))
-     }
+
   }
 }
 
@@ -130,9 +142,9 @@ format_ageeffect <- function(df) {
   # label main orientation
   df <- df %>% 
   mutate(main_orientation = case_when(
-    tract_label %in% c("Anterior Thalamic", "Cingulum Cingulate", "Inferior Fronto-occipital",
+    tract_label %in% c("Inferior Fronto-occipital",
                    "Inferior Longitudinal", "Superior Longitudinal") ~ "AP",
-    tract_label %in% c("Arcuate", "Uncinate") ~ "AP_frontal_temporal",
+    tract_label %in% c("Arcuate") ~ "AP_frontal_temporal",
     tract_label %in% c("Callosum Anterior Frontal", "Callosum Motor", "Callosum Occipital", "Callosum Orbital", 
                        "Callosum Posterior Parietal", "Callosum Superior Frontal", "Callosum Superior Parietal", "Callosum Temporal") ~ "RL",
     tract_label %in% c("Corticospinal", "Posterior Arcuate","Vertical Occipital") ~ "SI",
@@ -162,24 +174,7 @@ sig_nodes <- function(df) {
 
 ageeffect.fdr_dfs <- lapply(ageeffect_dfs, sig_nodes)
 names(ageeffect.fdr_dfs) <- ageeffect_df_names
- 
- 
-cor.test(ageeffect.fdr_dfs$HBN_GAM_ageeffects_dti_md$GAM.smooth.AdjRsq, ageeffect.fdr_dfs$HBN_GAM_ageeffects_dti_md$GAM.smooth.partialR2)
-cor.test(ageeffect.fdr_dfs$HBN_GAM_ageeffects_dki_md$GAM.smooth.AdjRsq, ageeffect.fdr_dfs$HBN_GAM_ageeffects_dki_md$GAM.smooth.partialR2)
-# quite a discrepancy between dki and dti MD for HBN
-cor.test(ageeffect.fdr_dfs$HBN_GAM_ageeffects_dti_md$GAM.smooth.partialR2, ageeffect.fdr_dfs$HBN_GAM_ageeffects_dki_md$GAM.smooth.partialR2)
-# less of a discrepancy between dki and dti FA for HBN
-cor.test(ageeffect.fdr_dfs$HBN_GAM_ageeffects_dti_fa$GAM.smooth.partialR2, ageeffect.fdr_dfs$HBN_GAM_ageeffects_dki_fa$GAM.smooth.partialR2)
-
-cor.test(ageeffect.fdr_dfs$HCPD_GAM_ageeffects_dti_fa$GAM.smooth.AdjRsq, ageeffect.fdr_dfs$HCPD_GAM_ageeffects_dki_fa$GAM.smooth.partialR2)
-# HCPD. dki and dti MD are decently correlated
-cor.test(ageeffect.fdr_dfs$HCPD_GAM_ageeffects_dti_md$GAM.smooth.AdjRsq, ageeffect.fdr_dfs$HCPD_GAM_ageeffects_dki_md$GAM.smooth.AdjRsq)
-
-# PNC is decently correlated with HCPD's dki and dti MD but HBN is just weird
-cor.test(ageeffect.fdr_dfs$PNC_GAM_ageeffects_dti_md$GAM.smooth.AdjRsq, ageeffect.fdr_dfs$HCPD_GAM_ageeffects_dki_md$GAM.smooth.AdjRsq)
-cor.test(ageeffect.fdr_dfs$PNC_GAM_ageeffects_dti_md$GAM.smooth.AdjRsq, ageeffect.fdr_dfs$HCPD_GAM_ageeffects_dti_md$GAM.smooth.AdjRsq)
-cor.test(ageeffect.fdr_dfs$PNC_GAM_ageeffects_dti_md$GAM.smooth.AdjRsq, ageeffect.fdr_dfs$HBN_GAM_ageeffects_dti_md$GAM.smooth.AdjRsq)
-cor.test(ageeffect.fdr_dfs$PNC_GAM_ageeffects_dti_md$GAM.smooth.AdjRsq, ageeffect.fdr_dfs$HBN_GAM_ageeffects_dki_md$GAM.smooth.AdjRsq)
+  
 
 ```
 
@@ -188,17 +183,16 @@ color1 = "#3FB8AFFF"
 color2 = "#FF9E9DFF"
 color3 = "#cc0468"
 
-tracts <- unique(ageeffect.fdr_dfs$HCPD_GAM_ageeffects_dki_fa$tract_label)
+tracts <- unique(ageeffect.fdr_dfs$HCPD_GAM_ageeffects_dti_md$tract_label)
 ```
 
 
 ```{r functions for plotting age effect}
  
 # function for plotting age effect
-plot_age_effect <- function(tract, scalar, ageeffect_measure, color1, color2, color3) {
+plot_age_effect <- function(tract, scalar, ageeffect_measure, color1, color2, color3, ylim1, ylim2) {
   # ageeffect_measure = GAM.smooth.AdjRsq or GAM.smooth.partialR2
   
-  if (scalar == "dti_fa" | scalar == "dti_md") {
     HCPD <- ageeffect.fdr_dfs[[paste0("HCPD_GAM_ageeffects_", scalar)]] %>% filter(tract_label == tract) %>% 
       mutate(Dataset = "HCPD")
     HBN <- ageeffect.fdr_dfs[[paste0("HBN_GAM_ageeffects_", scalar)]] %>% filter(tract_label == tract) %>%
@@ -229,10 +223,10 @@ plot_age_effect <- function(tract, scalar, ageeffect_measure, color1, color2, co
         geom_point(size=2, alpha = 0.6) + 
         scale_colour_manual(values = c("HCPD" = color1, "HBN" = color2, "PNC" = color3), na.value = "grey50") +
         scale_fill_manual(values = c("HCPD" = color1, "HBN" = color2, "PNC" = color3), na.value = "grey50") + 
-        theme(legend.position = "none",
-              axis.title.x = element_blank(),
-              axis.title.y = element_blank(),
-              plot.title = element_text(size=14, hjust=0.5)) + labs(title = tract)
+        theme_set(default) + 
+        theme_update(legend.position = "none", 
+                     legend.title = element_text(size = text_size),
+                     legend.text = element_text(size = text_size)) + labs(title = tract) + ylim(ylim1, ylim2)
       } else {
         plot <- ggplot(data = df, aes(x = nodeID, y = get(ageeffect_measure), colour = Dataset, 
                                       fill = Dataset, shape = hemi)) +
@@ -240,70 +234,18 @@ plot_age_effect <- function(tract, scalar, ageeffect_measure, color1, color2, co
         scale_colour_manual(values = c("HCPD" = color1, "HBN" = color2, "PNC" = color3), na.value = "grey50") +
         scale_fill_manual(values = c("HCPD" = color1, "HBN" = color2, "PNC" = color3), na.value = "grey50") +
         scale_shape_manual(values = c(19,1)) + guides(shape = guide_legend("Hemi")) + 
-        theme(legend.position = "none",
-              axis.title.x = element_blank(),
-              axis.title.y = element_blank(),
-              plot.title = element_text(size=14, hjust=0.5)) + labs(title = gsub("\\.", "-", tract))
+        theme_set(default) + 
+        theme_update(legend.position = "none", 
+                     legend.title = element_text(size = text_size),
+                     legend.text = element_text(size = text_size)) + labs(title = gsub("\\.", "-", tract)) + ylim(ylim1, ylim2)
       }
        
     return(plot)
-    
-  } else {
-    HCPD <- ageeffect.fdr_dfs[[paste0("HCPD_GAM_ageeffects_", scalar)]] %>% filter(tract_label == tract) %>% 
-      mutate(Dataset = "HCPD")
-    HBN <- ageeffect.fdr_dfs[[paste0("HBN_GAM_ageeffects_", scalar)]] %>% filter(tract_label == tract) %>%
-      mutate(Dataset = "HBN")
-  
-  # NA out color/fill aes if adj rsq = 0 or if p-value doesn't survive FDR correction (makes the color gray)
-  if (ageeffect_measure == "GAM.smooth.AdjRsq" | ageeffect_measure == "GAM.smooth.partialR2") {
-      includes_zero_HCPD <- which(HCPD[[ageeffect_measure]]==0 | HCPD$Anova.age.pvalue.fdr > 0.05)
-      includes_zero_HBN <- which(HBN[[ageeffect_measure]]==0 | HBN$Anova.age.pvalue.fdr > 0.05)
- 
-    } else {
-      includes_zero_HCPD <- which(is.na(HCPD[[ageeffect_measure]]) | HCPD[[ageeffect_measure]]==0 | HCPD$Anova.age.pvalue.fdr > 0.05)
-      includes_zero_HBN <- which(is.na(HBN[[ageeffect_measure]]) | HBN[[ageeffect_measure]]==0 | HBN$Anova.age.pvalue.fdr > 0.05)
-      
-    }
-    
-  HCPD$Dataset[includes_zero_HCPD] <- NA
-  HBN$Dataset[includes_zero_HBN] <- NA
-  
-  # make df to plot
-  df <- rbind(HCPD, HBN)
-  
-  if(str_detect(tract, "Callosum")) {
-      plot <- ggplot(data = df, aes(x = nodeID, y = get(ageeffect_measure), 
-                                  colour = Dataset, fill = Dataset)) +
-      geom_point(size=2, alpha = 0.6) + 
-      scale_colour_manual(values = c("HCPD" = color1, "HBN" = color2), na.value = "grey50") +
-      scale_fill_manual(values = c("HCPD" = color1, "HBN" = color2), na.value = "grey50") + 
-     
-      theme(legend.position = "none",
-            axis.title.x = element_blank(),
-            axis.title.y = element_blank(),
-            plot.title = element_text(size=14, hjust=0.5)) + labs(title = tract)
-    } else {
-      plot <- ggplot(data = df, aes(x = nodeID, y = get(ageeffect_measure), 
-                                    colour = Dataset, fill = Dataset, shape = hemi)) +
-      geom_point(size=2, alpha = 0.8) + 
-      scale_colour_manual(values = c("HCPD" = color1, "HBN" = color2), na.value = "grey50") +
-      scale_fill_manual(values = c("HCPD" = color1, "HBN" = color2), na.value = "grey50") +
-      scale_shape_manual(values = c(19,1)) + guides(shape = guide_legend("Hemi")) + 
-      theme(legend.position = "none",
-            axis.title.x = element_blank(),
-            axis.title.y = element_blank(),
-            plot.title = element_text(size=14, hjust=0.5)) + labs(title = gsub("\\.", "-", tract))
-    }
-    
-  return(plot)
-  }
 }
 
 # function for plotting age effect
-plot_age_effect_clipEnds <- function(tract, scalar, ageeffect_measure, color1, color2, color3, clipEnds) {
+plot_age_effect_clipEnds <- function(tract, scalar, ageeffect_measure, color1, color2, color3, clipEnds, ylim1, ylim2) {
   # ageeffect_measure = GAM.smooth.AdjRsq or GAM.smooth.partialR2
-  
-  if (scalar == "dti_fa" | scalar == "dti_md") {
     HCPD <- ageeffect.fdr_dfs[[paste0("HCPD_GAM_ageeffects_", scalar)]] %>% filter(tract_label == tract) %>% filter(nodeID > (clipEnds-1) & nodeID < (99-clipEnds+1)) %>%
       mutate(Dataset = "HCPD")
     HBN <- ageeffect.fdr_dfs[[paste0("HBN_GAM_ageeffects_", scalar)]] %>% filter(tract_label == tract) %>% filter(nodeID > (clipEnds-1) & nodeID < (99-clipEnds+1)) %>%
@@ -334,10 +276,10 @@ plot_age_effect_clipEnds <- function(tract, scalar, ageeffect_measure, color1, c
         geom_point(size=2, alpha = 0.6) + 
         scale_colour_manual(values = c("HCPD" = color1, "HBN" = color2, "PNC" = color3), na.value = "grey50") +
         scale_fill_manual(values = c("HCPD" = color1, "HBN" = color2, "PNC" = color3), na.value = "grey50") + 
-        theme(legend.position = "none",
-              axis.title.x = element_blank(),
-              axis.title.y = element_blank(),
-              plot.title = element_text(size=14, hjust=0.5)) + labs(title = tract)
+        theme_set(default) + 
+        theme_update(legend.position = "none", 
+                     legend.title = element_text(size = text_size),
+                     legend.text = element_text(size = text_size)) + labs(title = tract) + ylim(ylim1, ylim2)
       } else {
         plot <- ggplot(data = df, aes(x = nodeID, y = get(ageeffect_measure), colour = Dataset, 
                                       fill = Dataset, shape = hemi)) +
@@ -345,63 +287,13 @@ plot_age_effect_clipEnds <- function(tract, scalar, ageeffect_measure, color1, c
         scale_colour_manual(values = c("HCPD" = color1, "HBN" = color2, "PNC" = color3), na.value = "grey50") +
         scale_fill_manual(values = c("HCPD" = color1, "HBN" = color2, "PNC" = color3), na.value = "grey50") +
         scale_shape_manual(values = c(19,1)) + guides(shape = guide_legend("Hemi")) + 
-        theme(legend.position = "none",
-              axis.title.x = element_blank(),
-              axis.title.y = element_blank(),
-              plot.title = element_text(size=14, hjust=0.5)) + labs(title = gsub("\\.", "-", tract))
+        theme_set(default) + 
+        theme_update(legend.position = "none", 
+                     legend.title = element_text(size = text_size),
+                     legend.text = element_text(size = text_size)) + labs(title = gsub("\\.", "-", tract)) + ylim(ylim1, ylim2)
       }
        
     return(plot)
-    
-  } else {
-    HCPD <- ageeffect.fdr_dfs[[paste0("HCPD_GAM_ageeffects_", scalar)]] %>% filter(tract_label == tract) %>% filter(nodeID > (clipEnds-1) & nodeID < (99-clipEnds+1)) %>%
-      mutate(Dataset = "HCPD")
-    HBN <- ageeffect.fdr_dfs[[paste0("HBN_GAM_ageeffects_", scalar)]] %>% filter(tract_label == tract) %>% filter(nodeID > (clipEnds-1) & nodeID < (99-clipEnds+1)) %>%
-      mutate(Dataset = "HBN")
-  
-  # NA out color/fill aes if adj rsq = 0 or if p-value doesn't survive FDR correction (makes the color gray)
-  if (ageeffect_measure == "GAM.smooth.AdjRsq" | ageeffect_measure == "GAM.smooth.partialR2") {
-      includes_zero_HCPD <- which(HCPD[[ageeffect_measure]]==0 | HCPD$Anova.age.pvalue.fdr > 0.05)
-      includes_zero_HBN <- which(HBN[[ageeffect_measure]]==0 | HBN$Anova.age.pvalue.fdr > 0.05)
- 
-    } else {
-      includes_zero_HCPD <- which(is.na(HCPD[[ageeffect_measure]]) | HCPD[[ageeffect_measure]]==0 | HCPD$Anova.age.pvalue.fdr > 0.05)
-      includes_zero_HBN <- which(is.na(HBN[[ageeffect_measure]]) | HBN[[ageeffect_measure]]==0 | HBN$Anova.age.pvalue.fdr > 0.05)
-      
-    }
-    
-  HCPD$Dataset[includes_zero_HCPD] <- NA
-  HBN$Dataset[includes_zero_HBN] <- NA
-  
-  # make df to plot
-  df <- rbind(HCPD, HBN)
-  
-  if(str_detect(tract, "Callosum")) {
-      plot <- ggplot(data = df, aes(x = nodeID, y = get(ageeffect_measure), 
-                                  colour = Dataset, fill = Dataset)) +
-      geom_point(size=2, alpha = 0.6) + 
-      scale_colour_manual(values = c("HCPD" = color1, "HBN" = color2), na.value = "grey50") +
-      scale_fill_manual(values = c("HCPD" = color1, "HBN" = color2), na.value = "grey50") + 
-     
-      theme(legend.position = "none",
-            axis.title.x = element_blank(),
-            axis.title.y = element_blank(),
-            plot.title = element_text(size=14, hjust=0.5)) + labs(title = tract)
-    } else {
-      plot <- ggplot(data = df, aes(x = nodeID, y = get(ageeffect_measure), 
-                                    colour = Dataset, fill = Dataset, shape = hemi)) +
-      geom_point(size=2, alpha = 0.8) + 
-      scale_colour_manual(values = c("HCPD" = color1, "HBN" = color2), na.value = "grey50") +
-      scale_fill_manual(values = c("HCPD" = color1, "HBN" = color2), na.value = "grey50") +
-      scale_shape_manual(values = c(19,1)) + guides(shape = guide_legend("Hemi")) + 
-      theme(legend.position = "none",
-            axis.title.x = element_blank(),
-            axis.title.y = element_blank(),
-            plot.title = element_text(size=14, hjust=0.5)) + labs(title = gsub("\\.", "-", tract))
-    }
-    
-  return(plot)
-  }
 }
 
 
@@ -485,7 +377,7 @@ plot_age_effect_binned <- function(tract, scalar, ageeffect_measure, bin_num_nod
                     alpha = 0.9, 
                     size = 0.7, 
                     position = if (is_callosum) "identity" else position_dodge(width = 0.9)) +
-      theme(legend.position = "none",
+      theme_update(legend.position = "none",
             axis.title.x = element_blank(),
             axis.title.y = element_blank(),
             axis.text.x = element_text(size = 28),
@@ -533,118 +425,57 @@ plot_age_effect_binned <- function(tract, scalar, ageeffect_measure, bin_num_nod
 
 
 ```{r functions for arranging plots}
+arrange_tract_plots <- function(list_figures, title) {
 
-arrange_tract_plots <- function(list_figures, title, legend.width = NULL, legend.label = NULL) {
-
-  AP_plots <- ggarrange(list_figures$`Anterior Thalamic`, 
-                           list_figures$`Cingulum Cingulate`, 
-                           list_figures$`Inferior Fronto.occipital`, 
-                           list_figures$`Inferior Longitudinal`, 
-                           list_figures$`Superior Longitudinal`, ncol=5, nrow = 1)
+  AP_plots <- ggarrange(list_figures$`Arcuate`,
+                        list_figures$`Inferior Fronto.occipital`, 
+                        list_figures$`Inferior Longitudinal`, 
+                        list_figures$`Superior Longitudinal`, ncol=4, nrow = 1)
   AP_plots_final <- annotate_figure(AP_plots, top = text_grob("Anterior - Posterior", 
-                 color = "black", face = "bold", size = 28))
+                 color = "black", face = "bold", size = 20))
   
-  AP_frontotemp_plots <- ggarrange(list_figures$`Arcuate`,
-                                      list_figures$`Uncinate`, ncol=2, nrow = 1)
-  AP_frontotemp_plots_final <- annotate_figure(AP_frontotemp_plots, top = text_grob("Anterior - Posterior (Frontal - Temporal)", 
-                 color = "black", face = "bold", size = 28))
-
-  if (!is.null(legend.width)){
-    list_figures$`Corticospinal` <- list_figures$`Corticospinal` +
-      theme(legend.key.width = unit(legend.width, "cm")) + labs(fill = legend.label) + guides(linetype = "none")
-    
-    list_figures$`Posterior Arcuate` <- list_figures$`Posterior Arcuate` +
-      theme(legend.key.width = unit(legend.width, "cm")) + labs(fill = legend.label) + guides(linetype = "none")
-    
-    list_figures$`Vertical Occipital` <- list_figures$`Vertical Occipital` +
-      theme(legend.key.width = unit(legend.width, "cm")) + labs(fill = legend.label) + guides(linetype = "none")
-    
-    SI_plots <- ggarrange(list_figures$`Corticospinal`, list_figures$`Posterior Arcuate`, 
-                           list_figures$`Vertical Occipital`, common.legend=TRUE, legend=c("right"),
-                           ncol=3, nrow = 1)  
-  } else {
-     SI_plots <- ggarrange(list_figures$`Corticospinal`, list_figures$`Posterior Arcuate`, 
+   
+  SI_plots <- ggarrange(list_figures$`Corticospinal`, list_figures$`Posterior Arcuate`, 
                            list_figures$`Vertical Occipital`, common.legend=TRUE, legend=c("right"),
                            ncol=3, nrow = 1)
-  }
- 
   SI_plots_final <- annotate_figure(SI_plots, top = text_grob("Superior - Inferior", 
-                 color = "black", face = "bold", size = 28))
+                 color = "black", face = "bold", size = 20))
   
+  callosum_plots <- ggarrange(list_figures$`Callosum Orbital`, 
+                              list_figures$`Callosum Anterior Frontal`, 
+                              list_figures$`Callosum Superior Frontal`, 
+                              list_figures$`Callosum Motor`, 
+                              list_figures$`Callosum Superior Parietal`,
+                              list_figures$`Callosum Posterior Parietal`,
+                              list_figures$`Callosum Temporal`,
+                              list_figures$`Callosum Occipital`, ncol=4, nrow = 2)
+  callosum_plots_final <- annotate_figure(callosum_plots, top = text_grob("Right - Left", 
+                 color = "black", face = "bold", size = 20))
   
-  tractprofiles_plot <- ggarrange(AP_plots_final, ggarrange(AP_frontotemp_plots_final, SI_plots_final, widths = c(1, 1.5)), nrow = 2)
+  tractprofiles_plot <- ggarrange(callosum_plots_final, ggarrange(AP_plots_final, SI_plots_final, widths = c(1, 1.2), nrow = 2), heights = c(1, 1.2),nrow=2)
   
   tractprofiles_plot_final <- annotate_figure(tractprofiles_plot, top = text_grob(title, 
-               color = "black", face = "italic", size = 28))
+               color = "black", face = "italic", size = 20))
    return(tractprofiles_plot_final)
 }
- 
-
-arrange_callosum_plots <- function(list_figures, title) {
-  callosum_plots <- ggarrange(list_figures$`Callosum Anterior Frontal`, 
-                           list_figures$`Callosum Motor`, 
-                           list_figures$`Callosum Occipital`, 
-                           list_figures$`Callosum Orbital`, 
-                           list_figures$`Callosum Posterior Parietal`,
-                           list_figures$`Callosum Superior Frontal`, 
-                           list_figures$`Callosum Superior Parietal`, 
-                           list_figures$`Callosum Temporal`, ncol=4, nrow = 2)
-  tractprofiles_plot_final <- annotate_figure(callosum_plots, top = text_grob(title, 
-               color = "black", face = "italic", size = 28))
-   return(tractprofiles_plot_final)
-}
- 
-
-
 
 
 arrange_binned_plots <- function(list_figures, title, scalar) {
-  if(str_detect(scalar, "dki")) {
-     titles <- ggarrange(text_grob("HCP-D", size = 24, face = "bold"),
-                      text_grob("HBN", size = 24, face = "bold"),
-                      ncol = 2)
-  } else {
     titles <- ggarrange(text_grob("HCP-D", size = 24, face = "bold"),
                       text_grob("HBN", size = 24, face = "bold"),
                       text_grob("PNC", size = 24, face = "bold"),
                       ncol = 3)
-  }
-  AP_plots <- ggarrange(list_figures$`Anterior Thalamic`, 
-                           list_figures$`Cingulum Cingulate`, 
-                           list_figures$`Inferior Fronto.occipital`, 
-                           list_figures$`Inferior Longitudinal`, 
-                           list_figures$`Superior Longitudinal`, nrow = 5)
-  
-  AP_plots_final <- ggarrange(titles, AP_plots, nrow = 2, heights = c(0.1, 1))
-  AP_plots_final <- annotate_figure(AP_plots_final, top = text_grob(title, 
-               color = "black", face = "italic", size = 24))
-  
- 
-  AP_frontotemp_SI_plots <- ggarrange(list_figures$`Arcuate`,
-                                      list_figures$`Uncinate`, 
-                                      list_figures$`Corticospinal`, 
-                                      list_figures$`Posterior Arcuate`, 
-                                      list_figures$`Vertical Occipital`, nrow = 5)
-  AP_frontotemp_SI_plots_final <- ggarrange(titles, AP_frontotemp_SI_plots, nrow = 2, heights = c(0.1, 1) )
-  AP_frontotemp_SI_plots_final <- annotate_figure(AP_frontotemp_SI_plots_final, top = text_grob(title, 
-               color = "black", face = "italic", size = 24))
 
-   return(list(AP_plots_final, AP_frontotemp_SI_plots_final))
-}
-
-
-arrange_callosum_binned_plots <- function(list_figures, title, scalar) {
-  if(str_detect(scalar, "dki")) {
-     titles <- ggarrange(text_grob("HCP-D", size = 24, face = "bold"),
-                      text_grob("HBN", size = 24, face = "bold"),
-                      ncol = 2)
-  } else {
-    titles <- ggarrange(text_grob("HCP-D", size = 24, face = "bold"),
-                      text_grob("HBN", size = 24, face = "bold"),
-                      text_grob("PNC", size = 24, face = "bold"),
-                      ncol = 3)
-  }
+  main_plots <- ggarrange(list_figures$`Inferior Fronto.occipital`, 
+                        list_figures$`Inferior Longitudinal`, 
+                        list_figures$`Superior Longitudinal`, 
+                        list_figures$`Arcuate`,
+                        list_figures$`Corticospinal`, 
+                        list_figures$`Posterior Arcuate`, 
+                        list_figures$`Vertical Occipital`, nrow = 7)
   
+  main_plots_final <- ggarrange(titles, main_plots, nrow = 2, heights = c(0.1, 1))
+   
   
   callosum_plots <- ggarrange(list_figures$`Callosum Anterior Frontal`, 
                            list_figures$`Callosum Motor`, 
@@ -654,12 +485,15 @@ arrange_callosum_binned_plots <- function(list_figures, title, scalar) {
                            list_figures$`Callosum Superior Frontal`, 
                            list_figures$`Callosum Superior Parietal`, 
                            list_figures$`Callosum Temporal`, nrow = 8)
+  
   callosum_plots_final <- ggarrange(titles, callosum_plots, nrow = 2, heights = c(0.1, 1))
   callosum_plots_final <- annotate_figure(callosum_plots_final, top = text_grob(title, 
                color = "black", face = "italic", size = 24))
   
-   return(callosum_plots_final)
+   return(list(main_plots_final, callosum_plots_final))
 }
+ 
+ 
 ```
  
 # Delta Adjusted Rsq
@@ -669,79 +503,58 @@ ageeffect_measure = "GAM.smooth.AdjRsq"
 ageeffect_measure_title = "Delta Adjusted Rsq"
 ageeffect_filename = "deltaadjrsq"
 ```
-
-## DKI MD
-```{r dki md GAM.smooth.AdjRsq plotting}
  
-dki_md_major_plots <- lapply(tracts, plot_age_effect, scalar = "dki_md", ageeffect_measure = ageeffect_measure, 
-                                color1 = color1, color2 = color2, color3 = color3)
-names(dki_md_major_plots) <- tracts
-
-```
-
-```{r dki md GAM.smooth.AdjRsq arrange, fig.height = 10, fig.width = 20}
-dki_md_major_final <- arrange_tract_plots(dki_md_major_plots, paste0("DKI MD: ", ageeffect_measure_title))
-x.grob <- textGrob("Position on Tract (Node ID)", 
-                   gp=gpar(col="black", fontsize=14))
-y.grob <- textGrob("Delta Adjusted Rsq", 
-                   gp=gpar(col="black", fontsize=14), rot=90)
-
-ggsave(paste0(png_dir, "dki_md_main_", ageeffect_filename, ".png"), grid.arrange(arrangeGrob(dki_md_major_final, left = y.grob, bottom = x.grob)), width = 20, height = 10, units = "in")
-```
-
-```{r dki md callosum GAM.smooth.AdjRsq arrange, fig.height = 10, fig.width = 20}
-dki_md_callosum_final <- arrange_callosum_plots(dki_md_major_plots, paste0("DKI MD: ", ageeffect_measure_title))
-
-
-ggsave(paste0(png_dir, "dki_md_call_", ageeffect_filename, ".png"), grid.arrange(arrangeGrob(dki_md_callosum_final, left = y.grob, bottom = x.grob)), width = 20, height = 10, units = "in")
-```
-
 ## DTI MD
 ```{r dti md GAM.smooth.AdjRsq plotting}
 dti_md_major_plots <- lapply(tracts, plot_age_effect, scalar = "dti_md", ageeffect_measure = ageeffect_measure, 
-                                color1 = color1, color2 = color2, color3 = color3)
+                                color1 = color1, color2 = color2, color3 = color3, ylim1 = -0.5, ylim2 = 0.03)
 names(dti_md_major_plots) <- tracts
 ```
 
-```{r dti md GAM.smooth.AdjRsq arrange, fig.height = 10, fig.width = 20}
+```{r dti md GAM.smooth.AdjRsq arrange, fig.height = 20, fig.width = 20}
+
+
 dti_md_major_final <- arrange_tract_plots(dti_md_major_plots, paste0("DTI MD: ", ageeffect_measure_title))
 x.grob <- textGrob("Position on Tract (Node ID)", 
-                   gp=gpar(col="black", fontsize=14))
-y.grob <- textGrob("Delta Adjusted Rsq", 
-                   gp=gpar(col="black", fontsize=14), rot=90)
+                   gp=gpar(col="black", fontsize=20))
+y.grob <- textGrob(expression("Age Effect (" * Delta * " Adjusted " * R^2 * ")"), 
+                   gp=gpar(col="black", fontsize=20), rot=90)
 
-ggsave(paste0(png_dir, "dti_md_main_", ageeffect_filename, ".png"), grid.arrange(arrangeGrob(dti_md_major_final, left = y.grob, bottom = x.grob)), width = 20, height = 10, units = "in")
+grid.arrange(arrangeGrob(dti_md_major_final, left = y.grob, bottom = x.grob))
+
+ggsave(paste0(png_dir, "dti_md_", ageeffect_filename, ".png"), grid.arrange(arrangeGrob(dti_md_major_final, left = y.grob, bottom = x.grob)), width = 20, height = 20, units = "in")
 ```
-
-
-```{r dti md callosum  GAM.smooth.AdjRsq arrange, fig.height = 10, fig.width = 20}
-dti_md_callosum_final <- arrange_callosum_plots(dti_md_major_plots, paste0("DTI MD: ", ageeffect_measure_title))
-ggsave(paste0(png_dir, "dti_md_call_", ageeffect_filename, ".png"), grid.arrange(arrangeGrob(dti_md_callosum_final, left = y.grob, bottom = x.grob)), width = 20, height = 10, units = "in")
-```
-
+ 
 
 ```{r dti md GAM.smooth.AdjRsq clipEnds}
 dti_md_major_plots_clipEnds3 <- lapply(tracts, plot_age_effect_clipEnds, scalar = "dti_md", ageeffect_measure = ageeffect_measure, 
-                                color1 = color1, color2 = color2, color3 = color3, clipEnds = 3)
+                                color1 = color1, color2 = color2, color3 = color3, clipEnds = 3, ylim1 = -0.5, ylim2 = 0.03)
 names(dti_md_major_plots_clipEnds3) <- tracts
 
+dti_md_major_plots_clipEnds4 <- lapply(tracts, plot_age_effect_clipEnds, scalar = "dti_md", ageeffect_measure = ageeffect_measure, 
+                                color1 = color1, color2 = color2, color3 = color3, clipEnds = 4, ylim1 = -0.5, ylim2 = 0.03)
+names(dti_md_major_plots_clipEnds4) <- tracts
+
 dti_md_major_plots_clipEnds5 <- lapply(tracts, plot_age_effect_clipEnds, scalar = "dti_md", ageeffect_measure = ageeffect_measure, 
-                                color1 = color1, color2 = color2, color3 = color3, clipEnds = 5)
+                                color1 = color1, color2 = color2, color3 = color3, clipEnds = 5, ylim1 = -0.5, ylim2 = 0.03)
 names(dti_md_major_plots_clipEnds5) <- tracts
 
 dti_md_major_plots_clipEnds10 <- lapply(tracts, plot_age_effect_clipEnds, scalar = "dti_md", ageeffect_measure = ageeffect_measure, 
-                                color1 = color1, color2 = color2, color3 = color3, clipEnds = 10)
+                                color1 = color1, color2 = color2, color3 = color3, clipEnds = 10, ylim1 = -0.5, ylim2 = 0.03)
 names(dti_md_major_plots_clipEnds10) <- tracts
 
 
 dti_md_major_plots_clipEnds20 <- lapply(tracts, plot_age_effect_clipEnds, scalar = "dti_md", ageeffect_measure = ageeffect_measure, 
-                                color1 = color1, color2 = color2, color3 = color3, clipEnds = 20)
+                                color1 = color1, color2 = color2, color3 = color3, clipEnds = 20, ylim1 = -0.5, ylim2 = 0.03)
 names(dti_md_major_plots_clipEnds20) <- tracts
 ```
 
-```{r dti md GAM.smooth.AdjRsq arrange clipEnds, fig.height = 10, fig.width = 20}
+```{r dti md GAM.smooth.AdjRsq arrange clipEnds, fig.height = 20, fig.width = 20}
 dti_md_major_final_clipEnds3 <- arrange_tract_plots(dti_md_major_plots_clipEnds3, paste0("DTI MD: ", ageeffect_measure_title))
 dti_md_major_final_clipEnds3
+
+dti_md_major_final_clipEnds4 <- arrange_tract_plots(dti_md_major_plots_clipEnds4, paste0("DTI MD: ", ageeffect_measure_title))
+dti_md_major_final_clipEnds4
 
 dti_md_major_final_clipEnds5 <- arrange_tract_plots(dti_md_major_plots_clipEnds5, paste0("DTI MD: ", ageeffect_measure_title))
 dti_md_major_final_clipEnds5
@@ -754,10 +567,13 @@ dti_md_major_final_clipEnds20 <- arrange_tract_plots(dti_md_major_plots_clipEnds
 dti_md_major_final_clipEnds20
 ```
 
-```{r dti md callosum  GAM.smooth.AdjRsq arrange clipEnds, fig.height = 10, fig.width = 20}
+```{r dti md callosum  GAM.smooth.AdjRsq arrange clipEnds, fig.height = 20, fig.width = 20}
 
 dti_md_major_final_clipEnds3 <- arrange_callosum_plots(dti_md_major_plots_clipEnds3, paste0("DTI MD: ", ageeffect_measure_title))
 dti_md_major_final_clipEnds3
+
+dti_md_major_final_clipEnds4 <- arrange_callosum_plots(dti_md_major_plots_clipEnds4, paste0("DTI MD: ", ageeffect_measure_title))
+dti_md_major_final_clipEnds4
 
 dti_md_major_final_clipEnds5 <- arrange_callosum_plots(dti_md_major_plots_clipEnds5, paste0("DTI MD: ", ageeffect_measure_title))
 dti_md_major_final_clipEnds5
@@ -768,139 +584,174 @@ dti_md_major_final_clipEnds10
 
 dti_md_major_final_clipEnds20 <- arrange_callosum_plots(dti_md_major_plots_clipEnds20, paste0("DTI MD: ", ageeffect_measure_title))
 dti_md_major_final_clipEnds20
+
+
+
+x.grob <- textGrob("Position on Tract (Node ID)", 
+                   gp=gpar(col="black", fontsize=20))
+y.grob <- textGrob(expression("Age Effect (" * Delta * " Adjusted " * R^2 * ")"), 
+                   gp=gpar(col="black", fontsize=20), rot=90)
+
+grid.arrange(arrangeGrob(dti_md_major_final_clipEnds3, left = y.grob, bottom = x.grob))
+
+ggsave(paste0(png_dir, "dti_md_", ageeffect_filename, "_clipEnds3.png"), grid.arrange(arrangeGrob(dti_md_major_final_clipEnds3, left = y.grob, bottom = x.grob)), width = 20, height = 20, units = "in")
+
+
+
+grid.arrange(arrangeGrob(dti_md_major_final_clipEnds5, left = y.grob, bottom = x.grob))
+
+ggsave(paste0(png_dir, "dti_md_", ageeffect_filename, "_clipEnds5.png"), grid.arrange(arrangeGrob(dti_md_major_final_clipEnds5, left = y.grob, bottom = x.grob)), width = 20, height = 20, units = "in")
 ```
 
-## DKI FA
-```{r dki fa GAM.smooth.AdjRsq plotting}
+for ted: arcuate and slf, clip ends, datasets separated
+```{r, fig.height = 10, fig.width = 10}
  
-dki_fa_major_plots <- lapply(tracts, plot_age_effect, scalar = "dki_fa", ageeffect_measure = ageeffect_measure, 
-                                color1 = color1, color2 = color2, color3 = color3)
-names(dki_fa_major_plots) <- tracts
+#"HCPD" = color1, "HBN" = color2, "PNC" = color3
+plot_age_effect_clipEnds <- function(tract, scalar, ageeffect_measure, clipEnds, title, callosum=NULL) {
+  
+  HCPD <- ageeffect.fdr_dfs[[paste0("HCPD_GAM_ageeffects_", scalar)]] %>% filter(tract_label == tract) %>% filter(nodeID > (clipEnds-1) & nodeID < (99-clipEnds+1)) %>%
+      mutate(Dataset = "HCPD")
+  HCPD$GAM.smooth.AdjRsq = HCPD$GAM.smooth.AdjRsq * -1
+  HBN <- ageeffect.fdr_dfs[[paste0("HBN_GAM_ageeffects_", scalar)]] %>% filter(tract_label == tract) %>% filter(nodeID > (clipEnds-1) & nodeID < (99-clipEnds+1)) %>%
+    mutate(Dataset = "HBN")
+  HBN$GAM.smooth.AdjRsq = HBN$GAM.smooth.AdjRsq * -1
+  PNC <- ageeffect.fdr_dfs[[paste0("PNC_GAM_ageeffects_", scalar)]] %>% filter(tract_label == tract) %>% filter(nodeID > (clipEnds-1) & nodeID < (99-clipEnds+1)) %>%
+    mutate(Dataset = "PNC")
+  PNC$GAM.smooth.AdjRsq = PNC$GAM.smooth.AdjRsq * -1
+  
+  includes_zero_HCPD <- which(HCPD[[ageeffect_measure]]==0 | HCPD$Anova.age.pvalue.fdr > 0.05)
+  includes_zero_HBN <- which(HBN[[ageeffect_measure]]==0 | HBN$Anova.age.pvalue.fdr > 0.05)
+  includes_zero_PNC <- which(PNC[[ageeffect_measure]]==0 | PNC$Anova.age.pvalue.fdr > 0.05)
+ 
+  HCPD$Dataset[includes_zero_HCPD] <- NA
+  HBN$Dataset[includes_zero_HBN] <- NA
+  PNC$Dataset[includes_zero_PNC] <- NA
+  
+  # make df to plot
+  df <- rbind(HCPD, HBN, PNC)
 
+  if(is.null(callosum)) {
+    plot <- ggplot(data = df, aes(x = nodeID, y = get(ageeffect_measure), shape = hemi,  color = Dataset, fill = Dataset)) +
+  geom_point(size=2, alpha = 0.8) + 
+  scale_colour_manual(values = c("HCPD" = color1, "HBN" = color2, "PNC" = color3), na.value = "grey50") +
+  scale_fill_manual(values = c("HCPD" = color1, "HBN" = color2, "PNC" = color3), na.value = "grey50") + 
+  scale_shape_manual(values = c(19,1)) + guides(shape = guide_legend("Hemi")) + 
+  theme_update(legend.position = "none",
+        axis.title.x = element_blank(),
+        axis.title.y = element_blank(),
+        plot.title = element_text(size=14, hjust=0.5)) + labs(title = gsub("\\.", "-", title)) + ylim(0, 0.52)
+
+  } else {
+    plot <- ggplot(data = df, aes(x = nodeID, y = get(ageeffect_measure),  color = Dataset, fill = Dataset)) +
+      geom_point(size=2, alpha = 0.8) + 
+      scale_colour_manual(values = c("HCPD" = color1, "HBN" = color2, "PNC" = color3), na.value = "grey50") +
+      scale_fill_manual(values = c("HCPD" = color1, "HBN" = color2, "PNC" = color3), na.value = "grey50") + 
+      scale_shape_manual(values = c(19,1)) + 
+      theme_update(legend.position = "none",
+            axis.title.x = element_blank(),
+            axis.title.y = element_blank(),
+            plot.title = element_text(size=14, hjust=0.5)) + labs(title = gsub("\\.", "-", title)) + ylim(0, 0.52)
+
+  }
+  
+  return(plot)
+}
 ```
+ 
 
-```{r dki fa GAM.smooth.AdjRsq arrange, fig.height = 10, fig.width = 20}
-dki_fa_major_final <- arrange_tract_plots(dki_fa_major_plots, paste0("DKI FA: ", ageeffect_measure_title))
+```{r fig.height = 5, fig.width = 5}
+ 
+
+cc_motor_plots <- plot_age_effect_clipEnds("Callosum Motor", "dti_md", ageeffect_measure, clipEnds = 0, "Callosum Motor", callosum=TRUE)
+  
+  
+HCPD <- ageeffect.fdr_dfs[[paste0("HCPD_GAM_ageeffects_", "dti_md")]] %>% filter(tract_label == "Callosum Motor") %>% 
+  mutate(Dataset = "HCPD")
+
+HBN <- ageeffect.fdr_dfs[[paste0("HBN_GAM_ageeffects_", "dti_md")]] %>% filter(tract_label == "Callosum Motor") %>%
+  mutate(Dataset = "HBN")
+ 
+PNC <- ageeffect.fdr_dfs[[paste0("PNC_GAM_ageeffects_", "dti_md")]] %>% filter(tract_label == "Callosum Motor") %>%
+  mutate(Dataset = "PNC")
+ 
+
+includes_zero_HCPD <- which(HCPD[[ageeffect_measure]]==0 | HCPD$Anova.age.pvalue.fdr > 0.05)
+includes_zero_HBN <- which(HBN[[ageeffect_measure]]==0 | HBN$Anova.age.pvalue.fdr > 0.05)
+includes_zero_PNC <- which(PNC[[ageeffect_measure]]==0 | PNC$Anova.age.pvalue.fdr > 0.05)
+
+HCPD$Dataset[includes_zero_HCPD] <- NA
+HBN$Dataset[includes_zero_HBN] <- NA
+PNC$Dataset[includes_zero_PNC] <- NA
+  
+df <- rbind(HCPD, HBN, PNC)
+legend.plot <- ggplot(data = df, aes(x = nodeID, y = get(ageeffect_measure), colour = Dataset, fill = Dataset)) +
+  geom_point(size=2, alpha = 0.6) + 
+  scale_colour_manual(values = c("HCPD" = color1, "HBN" = color2, "PNC" = color3), na.value = "grey50") +
+  scale_fill_manual(values = c("HCPD" = color1, "HBN" = color2, "PNC" = color3), na.value = "grey50") + 
+  theme_update(legend.position = "bottom",
+        legend.text = element_text(size=14),
+        legend.title = element_text(size=14),
+        axis.title.x = element_blank(),
+        axis.title.y = element_blank(),
+        plot.title = element_text(size=14, hjust=0.5))  
+legend <- get_legend(legend.plot)
+
 x.grob <- textGrob("Position on Tract (Node ID)", 
                    gp=gpar(col="black", fontsize=14))
-y.grob <- textGrob("Delta Adjusted Rsq", 
+y.grob <- textGrob(expression("Age Effect Magnitude (" * Delta * " Adjusted " * R^2 * ")"), 
                    gp=gpar(col="black", fontsize=14), rot=90)
 
-ggsave(paste0(png_dir, "dki_fa_main_", ageeffect_filename, ".png"), grid.arrange(arrangeGrob(dki_fa_major_final, left = y.grob, bottom = x.grob)), width = 20, height = 10, units = "in")
+main_with_labels <- arrangeGrob(cc_motor_plots, left = y.grob, bottom = x.grob)
+
+final_layout <- arrangeGrob(main_with_labels, legend,ncol = 1,heights = unit(c(10, 1), "null")   )
+grid.newpage()
+grid.draw(final_layout)
+
+ 
+#ggsave("/Users/audluo/Library/CloudStorage/Box-Box/Box_PhD_Land/PennLINC/luo_wm_dev/Preliminary_Figures/cc_motor_plot_updated.png", final_layout, width = 5, height = 5)
+
+
+# mean age effect CC Motor
+HCPD_cc_ageeffect <- ageeffect.fdr_dfs$HCPD_GAM_ageeffects_dti_md %>% filter(tractID == "Callosum_Motor") %>% mutate(age_effect_HCPD = abs(GAM.smooth.AdjRsq))
+HBN_cc_ageeffect <- ageeffect.fdr_dfs$HBN_GAM_ageeffects_dti_md %>% filter(tractID == "Callosum_Motor") %>% mutate(age_effect_HBN = abs(GAM.smooth.AdjRsq))
+PNC_cc_ageeffect <- ageeffect.fdr_dfs$PNC_GAM_ageeffects_dti_md %>% filter(tractID == "Callosum_Motor")  %>% mutate(age_effect_PNC = abs(GAM.smooth.AdjRsq))
+
+cc_ageeffect <- HCPD_cc_ageeffect %>%
+  inner_join(HBN_cc_ageeffect, by = "nodeID") %>%
+  inner_join(PNC_cc_ageeffect, by = "nodeID")
+
+mean_cc_ageeffect <- cc_ageeffect %>% group_by(nodeID) %>% summarise(mean_dti_md = (age_effect_HCPD + age_effect_HBN + age_effect_PNC) /3)
+mean_cc_ageeffect <- mean_cc_ageeffect %>% filter(nodeID > 4 & nodeID < 95)
+range(mean_cc_ageeffect$mean_dti_md)
+
+#write.csv(mean_cc_ageeffect, "/Users/audluo/PennLINC/luowm_local/tract_profiles/qsirecon/sub-0041822/cc_motor_ageeffect_tractprofiles.csv")
 ```
 
-
-```{r dki fa callosum  GAM.smooth.AdjRsq arrange, fig.height = 10, fig.width = 20}
-dki_fa_callosum_final <- arrange_callosum_plots(dki_fa_major_plots, paste0("DKI FA: ", ageeffect_measure_title))
-
-
-ggsave(paste0(png_dir, "dki_fa_call_", ageeffect_filename, ".png"), grid.arrange(arrangeGrob(dki_fa_callosum_final, left = y.grob, bottom = x.grob)), width = 20, height = 10, units = "in")
-```
+ 
 
 ## DTI FA
 ```{r dti fa GAM.smooth.AdjRsq plotting}
- 
 dti_fa_major_plots <- lapply(tracts, plot_age_effect, scalar = "dti_fa", ageeffect_measure = ageeffect_measure, 
-                                color1 = color1, color2 = color2, color3 = color3)
+                                color1 = color1, color2 = color2, color3 = color3, ylim1 = -0.25, ylim2 = 0.25)
 names(dti_fa_major_plots) <- tracts
-
 ```
 
-```{r dti fa GAM.smooth.AdjRsq arrange, fig.height = 10, fig.width = 20}
-dti_fa_major_final <- arrange_tract_plots(dti_fa_major_plots, paste0("DTI FA:", ageeffect_measure_title))
+```{r dti fa GAM.smooth.AdjRsq arrange, fig.height = 20, fig.width = 20}
+dti_fa_major_final <- arrange_tract_plots(dti_fa_major_plots, paste0("DTI FA: ", ageeffect_measure_title))
 x.grob <- textGrob("Position on Tract (Node ID)", 
-                   gp=gpar(col="black", fontsize=14))
-y.grob <- textGrob("Delta Adjusted Rsq", 
-                   gp=gpar(col="black", fontsize=14), rot=90)
+                   gp=gpar(col="black", fontsize=20))
+y.grob <- textGrob(expression("Age Effect (" * Delta * " Adjusted " * R^2 * ")"), 
+                   gp=gpar(col="black", fontsize=20), rot=90)
 
-ggsave(paste0(png_dir, "dti_fa_main_", ageeffect_filename, ".png"), grid.arrange(arrangeGrob(dti_fa_major_final, left = y.grob, bottom = x.grob)), width = 20, height = 10, units = "in")
-```
+grid.arrange(arrangeGrob(dti_fa_major_final, left = y.grob, bottom = x.grob))
 
-
-```{r dti fa callosum  GAM.smooth.AdjRsq arrange, fig.height = 10, fig.width = 20}
-dti_fa_callosum_final <- arrange_callosum_plots(dti_fa_major_plots, paste0("DTI FA:", ageeffect_measure_title))
-
-ggsave(paste0(png_dir, "dti_fa_call_", ageeffect_filename, ".png"), grid.arrange(arrangeGrob(dti_fa_callosum_final, left = y.grob, bottom = x.grob)), width = 20, height = 10, units = "in")
+ggsave(paste0(png_dir, "dti_fa_", ageeffect_filename, ".png"), grid.arrange(arrangeGrob(dti_fa_major_final, left = y.grob, bottom = x.grob)), width = 20, height = 20, units = "in")
 ```
 
  
 ## bin delta adjusted rsq by nodeID
-### DKI MD
-```{r dki_md bin GAM.smooth.AdjRsq, fig.width=15}
-ageeffect_measure = "GAM.smooth.AdjRsq"
-scalar = "dki_md"
-ageeffect_filename = "deltaadjrsq"
-
-
-x.grob <- textGrob("Position of Node along Tract", 
-                   gp=gpar(col="black", fontsize=28))
-
-y.grob <- textGrob("Average Delta Adjusted Rsq", 
-                   gp=gpar(col="black", fontsize=28), rot=90)
-
-bin5_deltaadj <- lapply(tracts, plot_age_effect_binned, scalar = scalar, ageeffect_measure = ageeffect_measure, bin_num_nodes = 5, color1, color2, color3)
-names(bin5_deltaadj) <- tracts
- 
-bin10_deltaadj <- lapply(tracts, plot_age_effect_binned, scalar = scalar, ageeffect_measure = ageeffect_measure, bin_num_nodes = 10, color1, color2, color3)
-names(bin10_deltaadj) <- tracts
- 
-bin15_deltaadj <- lapply(tracts, plot_age_effect_binned, scalar = scalar, ageeffect_measure = ageeffect_measure, bin_num_nodes = 15, color1, color2, color3)
-names(bin15_deltaadj) <- tracts
-
-bin20_deltaadj <- lapply(tracts, plot_age_effect_binned, scalar = scalar, ageeffect_measure = ageeffect_measure, bin_num_nodes = 20, color1, color2, color3)
-names(bin20_deltaadj) <- tracts
-
-```
-
-```{r dki_md arrange bin5_deltaadj main, fig.height = 20, fig.width = 10}
-bin5_deltaadj_plots <- arrange_binned_plots(bin5_deltaadj, "DKI MD: 5 nodes per bin", scalar = "dki")
-ggsave(paste0(png_dir, "dki_md_bin5_", ageeffect_filename, "1.png"), grid.arrange(arrangeGrob(bin5_deltaadj_plots[[1]], bottom = x.grob, left = y.grob)), height = 20, width = 10, units = "in")
-ggsave(paste0(png_dir, "dki_md_bin5_", ageeffect_filename, "2.png"), grid.arrange(arrangeGrob(bin5_deltaadj_plots[[2]], bottom = x.grob, left = y.grob)), height = 20, width = 10, units = "in")
-
-```
-
-```{r dki_md arrange bin5_deltaadj callosum, fig.height = 24, fig.width = 10}
-bin5_deltaadj_call_plots <- arrange_callosum_binned_plots(bin5_deltaadj, "DKI MD: 5 nodes per bin", scalar = "dki")
-ggsave(paste0(png_dir, "dki_md_bin5_", ageeffect_filename, "_call.png"), grid.arrange(arrangeGrob(bin5_deltaadj_call_plots, bottom = x.grob, left = y.grob)), height = 24, width = 10, units = "in")
-```
-
-```{r dki_md arrange bin10_deltaadj main, fig.height = 20, fig.width = 10}
-bin10_deltaadj_plots <- arrange_binned_plots(bin10_deltaadj, "DKI MD: 10 nodes per bin", scalar = "dki")
-ggsave(paste0(png_dir, "dki_md_bin10_", ageeffect_filename, "1.png"), grid.arrange(arrangeGrob(bin10_deltaadj_plots[[1]], bottom = x.grob, left = y.grob)), height = 20, width = 10, units = "in")
-ggsave(paste0(png_dir, "dki_md_bin10_", ageeffect_filename, "2.png"), grid.arrange(arrangeGrob(bin10_deltaadj_plots[[2]], bottom = x.grob, left = y.grob)), height = 20, width = 10, units = "in")
-
-```
-
-```{r dki_md arrange bin10_deltaadj callosum, fig.height = 24, fig.width = 10}
-bin10_deltaadj_call_plots <- arrange_callosum_binned_plots(bin10_deltaadj, "DKI MD: 10 nodes per bin", scalar = "dki")
-ggsave(paste0(png_dir, "dki_md_bin10_", ageeffect_filename, "_call.png"), grid.arrange(arrangeGrob(bin10_deltaadj_call_plots, bottom = x.grob, left = y.grob)), height = 24, width = 10, units = "in")
-```
-
-```{r dki_md arrange bin15_deltaadj main, fig.height = 20, fig.width = 10}
-bin15_deltaadj_plots <- arrange_binned_plots(bin15_deltaadj, "DKI MD: 15 nodes per bin",scalar = "dki")
-ggsave(paste0(png_dir, "dki_md_bin15_", ageeffect_filename, "1.png"), grid.arrange(arrangeGrob(bin15_deltaadj_plots[[1]], bottom = x.grob, left = y.grob)), height = 20, width = 10, units = "in")
-ggsave(paste0(png_dir, "dki_md_bin15_", ageeffect_filename, "2.png"), grid.arrange(arrangeGrob(bin15_deltaadj_plots[[2]], bottom = x.grob, left = y.grob)), height = 20, width = 10, units = "in")
-
-```
-
-```{r dki_md arrange bin15_deltaadj callosum, fig.height = 24, fig.width = 10}
-bin15_deltaadj_call_plots <- arrange_callosum_binned_plots(bin15_deltaadj, "DKI MD: 15 nodes per bin", scalar = "dki")
-ggsave(paste0(png_dir, "dki_md_bin15_", ageeffect_filename, "_call.png"), grid.arrange(arrangeGrob(bin15_deltaadj_call_plots, bottom = x.grob, left = y.grob)), height = 24, width = 10, units = "in")
-```
-
-```{r dki_md arrange bin20_deltaadj main, fig.height = 20, fig.width = 10}
-bin20_deltaadj_plots <- arrange_binned_plots(bin20_deltaadj, "DKI MD: 20 nodes per bin", scalar = "dki")
-ggsave(paste0(png_dir, "dki_md_bin20_", ageeffect_filename, "1.png"), grid.arrange(arrangeGrob(bin20_deltaadj_plots[[1]], bottom = x.grob, left = y.grob)), height = 20, width = 10, units = "in")
-ggsave(paste0(png_dir, "dki_md_bin20_", ageeffect_filename, "2.png"), grid.arrange(arrangeGrob(bin20_deltaadj_plots[[2]], bottom = x.grob, left = y.grob)), height = 20, width = 10, units = "in")
-```
-
-```{r dki_md arrange bin20_deltaadj callosum, fig.height = 24, fig.width = 10}
-bin20_deltaadj_call_plots <- arrange_callosum_binned_plots(bin20_deltaadj, "DKI MD: 20 nodes per bin", scalar = "dki")
-ggsave(paste0(png_dir, "dki_md_bin20_", ageeffect_filename, "_call.png"), grid.arrange(arrangeGrob(bin20_deltaadj_call_plots, bottom = x.grob, left = y.grob)), height = 24, width = 7, units = "in")
-```
-
 ### DTI MD
-```{r dti_md bin GAM.smooth.AdjRsq, fig.width=15}
+```{r dti_md bin GAM.smooth.AdjRsq, fig.width=15, fig.height = 20}
 ageeffect_measure = "GAM.smooth.AdjRsq"
 scalar = "dti_md"
 ageeffect_filename = "deltaadjrsq"
@@ -926,87 +777,93 @@ names(bin20_deltaadj) <- tracts
 
 ```
 
-```{r dti_md arrange bin5_deltaadj main, fig.height = 20, fig.width = 15}
+```{r dti_md arrange bin5_deltaadj main, fig.height = 27, fig.width = 15}
 bin5_deltaadj_plots <- arrange_binned_plots(bin5_deltaadj, "DTI MD: 5 nodes per bin", scalar = "dti")
-ggsave(paste0(png_dir, "dti_md_bin5_", ageeffect_filename, "1.png"), grid.arrange(arrangeGrob(bin5_deltaadj_plots[[1]], bottom = x.grob, left = y.grob)), height = 20, width = 15, units = "in")
-ggsave(paste0(png_dir, "dti_md_bin5_", ageeffect_filename, "2.png"), grid.arrange(arrangeGrob(bin5_deltaadj_plots[[2]], bottom = x.grob, left = y.grob)), height = 20, width = 15, units = "in")
+ggsave(paste0(png_dir, "dti_md_bin5_", ageeffect_filename, "1.png"), grid.arrange(arrangeGrob(bin5_deltaadj_plots[[1]], bottom = x.grob, left = y.grob)), height = 27, width = 15, units = "in")
+ggsave(paste0(png_dir, "dti_md_bin5_", ageeffect_filename, "2.png"), grid.arrange(arrangeGrob(bin5_deltaadj_plots[[2]], bottom = x.grob, left = y.grob)), height = 24, width = 15, units = "in")
 ```
 
-```{r dti_md arrange bin5_deltaadj callosum, fig.height = 24, fig.width = 15}
-bin5_deltaadj_call_plots <- arrange_callosum_binned_plots(bin5_deltaadj, "DTI MD: 5 nodes per bin", scalar = "dti_md")
-ggsave(paste0(png_dir, "dti_md_bin5_", ageeffect_filename, "_call.png"), grid.arrange(arrangeGrob(bin5_deltaadj_call_plots, bottom = x.grob, left = y.grob)), height = 24, width = 15, units = "in")
-```
+ 
 
-```{r dti_md arrange bin10_deltaadj main, fig.height = 20, fig.width = 15}
+```{r dti_md arrange bin10_deltaadj main, fig.height = 27, fig.width = 15}
 bin10_deltaadj_plots <- arrange_binned_plots(bin10_deltaadj, "DTI MD: 10 nodes per bin", scalar = "dti_md")
-ggsave(paste0(png_dir, "dti_md_bin10_", ageeffect_filename, "1.png"), grid.arrange(arrangeGrob(bin10_deltaadj_plots[[1]], bottom = x.grob, left = y.grob)), height = 20, width = 15, units = "in")
-ggsave(paste0(png_dir, "dti_md_bin10_", ageeffect_filename, "2.png"), grid.arrange(arrangeGrob(bin10_deltaadj_plots[[2]], bottom = x.grob, left = y.grob)), height = 20, width = 15, units = "in")
+ggsave(paste0(png_dir, "dti_md_bin10_", ageeffect_filename, "1.png"), grid.arrange(arrangeGrob(bin10_deltaadj_plots[[1]], bottom = x.grob, left = y.grob)), height = 27, width = 15, units = "in")
+ggsave(paste0(png_dir, "dti_md_bin10_", ageeffect_filename, "2.png"), grid.arrange(arrangeGrob(bin10_deltaadj_plots[[2]], bottom = x.grob, left = y.grob)), height = 27, width = 15, units = "in")
 ```
-
-```{r dti_md arrange bin10_deltaadj callosum, fig.height = 24, fig.width = 15}
-bin10_deltaadj_call_plots <- arrange_callosum_binned_plots(bin10_deltaadj, "DTI MD: 10 nodes per bin", scalar = "dti_md")
-ggsave(paste0(png_dir, "dti_md_bin10_", ageeffect_filename, "_call.png"), grid.arrange(arrangeGrob(bin10_deltaadj_call_plots, bottom = x.grob, left = y.grob)), height = 24, width = 15, units = "in")
-```
-
-```{r dti_md arrange bin15_deltaadj main, fig.height = 20, fig.width = 15}
-bin15_deltaadj_plots <- arrange_binned_plots(bin15_deltaadj, "DTI MD: 15 nodes per bin", scalar = "dti_md")
-ggsave(paste0(png_dir, "dti_md_bin15_", ageeffect_filename, "1.png"), grid.arrange(arrangeGrob(bin15_deltaadj_plots[[1]], bottom = x.grob, left = y.grob)), height = 20, width = 15, units = "in")
-ggsave(paste0(png_dir, "dti_md_bin15_", ageeffect_filename, "2.png"), grid.arrange(arrangeGrob(bin15_deltaadj_plots[[2]], bottom = x.grob, left = y.grob)), height = 20, width = 15, units = "in")
-
-```
-
-```{r dti_md arrange bin15_deltaadj callosum, fig.height = 24, fig.width = 15}
-bin15_deltaadj_call_plots <- arrange_callosum_binned_plots(bin15_deltaadj, "DTI MD: 15 nodes per bin", scalar = "dti_md")
-ggsave(paste0(png_dir, "dti_md_bin15_", ageeffect_filename, "_call.png"), grid.arrange(arrangeGrob(bin15_deltaadj_call_plots, bottom = x.grob, left = y.grob)), height = 24, width = 15, units = "in")
-```
-
-```{r dti_md arrange bin20_deltaadj main, fig.height = 20, fig.width = 15}
-bin20_deltaadj_plots <- arrange_binned_plots(bin20_deltaadj, "DTI MD: 20 nodes per bin", scalar = "dti_md")
-ggsave(paste0(png_dir, "dti_md_bin20_", ageeffect_filename, "1.png"), grid.arrange(arrangeGrob(bin20_deltaadj_plots[[1]], bottom = x.grob, left = y.grob)), height = 20, width = 15, units = "in")
-ggsave(paste0(png_dir, "dti_md_bin20_", ageeffect_filename, "2.png"), grid.arrange(arrangeGrob(bin20_deltaadj_plots[[2]], bottom = x.grob, left = y.grob)), height = 20, width = 15, units = "in")
-
-```
-
-```{r dti_md arrange bin20_deltaadj callosum, fig.height = 24, fig.width = 15}
-bin20_deltaadj_call_plots <- arrange_callosum_binned_plots(bin20_deltaadj, "DTI MD: 20 nodes per bin", scalar = "dti_md")
-ggsave(paste0(png_dir, "dti_md_bin20_", ageeffect_filename, "_call.png"), grid.arrange(arrangeGrob(bin20_deltaadj_call_plots, bottom = x.grob, left = y.grob)), height = 24, width = 15, units = "in")
-```
+ 
 
 ### clipped bins
 
 ```{r dti_md bin GAM.smooth.AdjRsq clipEnds}
-bin5_deltaadj <- lapply(tracts, plot_age_effect_binned, scalar = scalar, ageeffect_measure = ageeffect_measure, bin_num_nodes = 5, color1, color2, color3, clipEnds = 5)
+bin5_deltaadj <- lapply(tracts, plot_age_effect_binned, scalar = scalar, ageeffect_measure = ageeffect_measure, bin_num_nodes = 5, color1, color2, color3, clipEnds = 3)
 names(bin5_deltaadj) <- tracts
  
-bin10_deltaadj <- lapply(tracts, plot_age_effect_binned, scalar = scalar, ageeffect_measure = ageeffect_measure, bin_num_nodes = 10, color1, color2, color3, clipEnds = 5)
+bin10_deltaadj <- lapply(tracts, plot_age_effect_binned, scalar = scalar, ageeffect_measure = ageeffect_measure, bin_num_nodes = 10, color1, color2, color3, clipEnds = 3)
 names(bin10_deltaadj) <- tracts
  
-bin15_deltaadj <- lapply(tracts, plot_age_effect_binned, scalar = scalar, ageeffect_measure = ageeffect_measure, bin_num_nodes = 15, color1, color2, color3, clipEnds = 5)
+bin15_deltaadj <- lapply(tracts, plot_age_effect_binned, scalar = scalar, ageeffect_measure = ageeffect_measure, bin_num_nodes = 15, color1, color2, color3, clipEnds = 3)
 names(bin15_deltaadj) <- tracts
 
 ```
 
 ```{r dti_md arrange bin_deltaadj main clipEnds, fig.height = 20, fig.width = 15}
-bin5_deltaadj_plots <- arrange_binned_plots(bin5_deltaadj, "DTI MD: 5 nodes per bin", scalar = "dti") 
-bin10_deltaadj_plots <- arrange_binned_plots(bin10_deltaadj, "DTI MD: 10 nodes per bin", scalar = "dti_md") 
-bin15_deltaadj_plots <- arrange_binned_plots(bin15_deltaadj, "DTI MD: 15 nodes per bin", scalar = "dti_md") 
+bin5_deltaadj_plots <- arrange_binned_plots(bin5_deltaadj, "DTI MD: 5 nodes per bin, clipped 3", scalar = "dti") 
+bin10_deltaadj_plots <- arrange_binned_plots(bin10_deltaadj, "DTI MD: 10 nodes per bin, clipped 3", scalar = "dti_md") 
+bin15_deltaadj_plots <- arrange_binned_plots(bin15_deltaadj, "DTI MD: 15 nodes per bin, clipped 3", scalar = "dti_md") 
 
 bin5_deltaadj_plots[[2]]
 bin10_deltaadj_plots[[2]]
 
-```
 
-```{r dti_md arrange bin_deltaadj callosum clipEnds, fig.height = 24, fig.width = 15}
-bin5_deltaadj_call_plots <- arrange_callosum_binned_plots(bin5_deltaadj, "DTI MD: 5 nodes per bin", scalar = "dti_md") 
-bin10_deltaadj_call_plots <- arrange_callosum_binned_plots(bin10_deltaadj, "DTI MD: 10 nodes per bin", scalar = "dti_md")
-bin15_deltaadj_call_plots <- arrange_callosum_binned_plots(bin15_deltaadj, "DTI MD: 15 nodes per bin", scalar = "dti_md")
-
-bin5_deltaadj_call_plots
-bin10_deltaadj_call_plots
-bin15_deltaadj_call_plots
+ggsave(paste0(png_dir, "dti_md_bin5_", ageeffect_filename, "_clip3_1.png"), grid.arrange(arrangeGrob(bin5_deltaadj_plots[[1]], bottom = x.grob, left = y.grob)), height = 27, width = 15, units = "in")
+ggsave(paste0(png_dir, "dti_md_bin5_", ageeffect_filename, "_clip3_2.png"), grid.arrange(arrangeGrob(bin5_deltaadj_plots[[2]], bottom = x.grob, left = y.grob)), height = 27, width = 15, units = "in")
 
 ```
+
+
+# consistency of delta adj rsq measures across datasets
+
+```{r dti md across datasets}
+# Calculate correlations
+
+
+cor_HCPD_HBN <- cor.test(ageeffect.fdr_dfs$HCPD_GAM_ageeffects_dti_md$GAM.smooth.AdjRsq,
+                         ageeffect.fdr_dfs$HBN_GAM_ageeffects_dti_md$GAM.smooth.AdjRsq)$estimate
+
+cor_HCPD_PNC <- cor.test(ageeffect.fdr_dfs$HCPD_GAM_ageeffects_dti_md$GAM.smooth.AdjRsq,
+                         ageeffect.fdr_dfs$PNC_GAM_ageeffects_dti_md$GAM.smooth.AdjRsq)$estimate
+
+cor_HBN_PNC <- cor.test(ageeffect.fdr_dfs$HBN_GAM_ageeffects_dti_md$GAM.smooth.AdjRsq,
+                        ageeffect.fdr_dfs$PNC_GAM_ageeffects_dti_md$GAM.smooth.AdjRsq)$estimate
+
+# Organize the data for plotting (lower triangle)
+cor_data <- data.frame(
+  Dataset1 = c("HCPD", "HCPD", "HBN"),
+  Dataset2 = c("HBN", "PNC", "PNC"),
+  Correlation = c(cor_HCPD_HBN, cor_HCPD_PNC, cor_HBN_PNC)
+)
  
+# Create a lower triangle correlation plot
+dti_md_corr <- ggplot(cor_data, aes(x = Dataset1, y = Dataset2, fill = Correlation)) +
+  geom_tile(color = "white") +
+  scale_fill_gradient2(low = "blue", high = "red", mid = "white", 
+                       midpoint = 0, limit = c(-1, 1), space = "Lab", 
+                       name="Correlation") +
+  geom_text(aes(label = round(Correlation, 2)), color = "black", size = 7) +
+  theme_minimal() + 
+  theme(axis.title.x = element_blank(),
+        axis.title.y = element_blank(),
+        axis.text.x = element_text(vjust = 1, 
+                                   size = 12, hjust = 1),
+        axis.text.y = element_text(vjust = 1, 
+                                   size = 12, hjust = 1)) +
+  coord_fixed() +
+  labs(title = "Correlation of DTI MD Age Effects Across Datasets") +
+  scale_y_discrete(limits = rev(levels(factor(cor_data$Dataset2))))  
+
+ggsave(paste0(png_dir, "dti_md_deltaadjrsq_corr.png"), dti_md_corr, width = 5, height = 5, units = "in")
+
+```
 
 # smooth.peak.change
 ```{r smooth.peak.change set vars}
@@ -1014,30 +871,7 @@ ageeffect_measure = "smooth.peak.change"
 ageeffect_measure_title = "Peak Age Change"
 ageeffect_filename = "peakchange"
 ```
-
-## DKI MD
-```{r dki md peak_change plotting}
  
-dki_md_major_plots <- lapply(tracts, plot_age_effect, scalar = "dki_md", ageeffect_measure = ageeffect_measure, 
-                                color1 = color1, color2 = color2, color3 = color3)
-names(dki_md_major_plots) <- tracts
-
-```
-
-```{r dki md peak_change arrange, fig.height = 10, fig.width = 20}
-dki_md_major_final <- arrange_tract_plots(dki_md_major_plots, paste0("DKI MD: ", ageeffect_measure_title))
-x.grob <- textGrob("Position on Tract (Node ID)", 
-                   gp=gpar(col="black", fontsize=14))
-y.grob <- textGrob("Age", 
-                   gp=gpar(col="black", fontsize=14), rot=90)
-
-ggsave(paste0(png_dir, "dki_md_main_", ageeffect_filename, ".png"), grid.arrange(arrangeGrob(dki_md_major_final, left = y.grob, bottom = x.grob)), height = 20, width = 15, units = "in")
-```
-
-```{r dki md callosum  peak_change arrange, fig.height = 10, fig.width = 20}
-dki_md_callosum_final <- arrange_callosum_plots(dki_md_major_plots, paste0("DKI MD: ", ageeffect_measure_title))
-ggsave(paste0(png_dir, "dki_md_call_", ageeffect_filename, ".png"), grid.arrange(arrangeGrob(dki_md_callosum_final, left = y.grob, bottom = x.grob)), height = 20, width = 15, units = "in")
-```
 
 ## DTI MD
 ```{r dti md peak_change plotting}
@@ -1070,31 +904,7 @@ ageeffect_measure = "smooth.decrease.offset"
 ageeffect_measure_title = "Age of Maturation"
 ageeffect_filename = "ageMat"
 ```
-
-## DKI MD
-```{r dki md smooth.decrease.offset plotting}
  
-dki_md_major_plots <- lapply(tracts, plot_age_effect, scalar = "dki_md", ageeffect_measure = ageeffect_measure, 
-                                color1 = color1, color2 = color2, color3 = color3)
-names(dki_md_major_plots) <- tracts
-
-```
-
-```{r dki md smooth.decrease.offset arrange, fig.height = 10, fig.width = 20}
-dki_md_major_final <- arrange_tract_plots(dki_md_major_plots, paste0("DKI MD: ", ageeffect_measure_title))
-x.grob <- textGrob("Position on Tract (Node ID)", 
-                   gp=gpar(col="black", fontsize=14))
-y.grob <- textGrob("Age", 
-                   gp=gpar(col="black", fontsize=14), rot=90)
-
-ggsave(paste0(png_dir, "dki_md_main_", ageeffect_filename, ".png"), grid.arrange(arrangeGrob(dki_md_major_final, left = y.grob, bottom = x.grob)), width = 20, height = 10, units = "in")
-```
-
-```{r dki md callosum  smooth.decrease.offset arrange, fig.height = 10, fig.width = 20}
-dki_md_callosum_final <- arrange_callosum_plots(dki_md_major_plots, paste0("DKI MD: ", ageeffect_measure_title))
-ggsave(paste0(png_dir, "dki_md_call_", ageeffect_filename, ".png"), grid.arrange(arrangeGrob(dki_md_callosum_final, left = y.grob, bottom = x.grob)), width = 20, height = 10, units = "in")
-```
-
 ## DTI MD
 ```{r dti md smooth.decrease.offset plotting}
  
@@ -1127,30 +937,7 @@ ageeffect_measure_title = "Age of Last Significant Change"
 ageeffect_filename = "ageLastSig"
 ```
 
-## DKI MD
-```{r dki md smooth.last.change plotting}
  
-dki_md_major_plots <- lapply(tracts, plot_age_effect, scalar = "dki_md", ageeffect_measure = ageeffect_measure, 
-                                color1 = color1, color2 = color2, color3 = color3)
-names(dki_md_major_plots) <- tracts
-
-```
-
-```{r dki md smooth.last.change arrange, fig.height = 10, fig.width = 20}
-dki_md_major_final <- arrange_tract_plots(dki_md_major_plots, paste0("DKI MD: ", ageeffect_measure_title))
-x.grob <- textGrob("Position on Tract (Node ID)", 
-                   gp=gpar(col="black", fontsize=14))
-y.grob <- textGrob("Age", 
-                   gp=gpar(col="black", fontsize=14), rot=90)
-
-ggsave(paste0(png_dir, "dki_md_main_", ageeffect_filename, ".png"), grid.arrange(arrangeGrob(dki_md_major_final, left = y.grob, bottom = x.grob)), width = 20, height = 10, units = "in")
-```
-
-```{r dki md callosum  smooth.last.change arrange, fig.height = 10, fig.width = 20}
-dki_md_callosum_final <- arrange_callosum_plots(dki_md_major_plots, paste0("DKI MD: ", ageeffect_measure_title))
-ggsave(paste0(png_dir, "dki_md_call_", ageeffect_filename, ".png"), grid.arrange(arrangeGrob(dki_md_callosum_final, left = y.grob, bottom = x.grob)), width = 20, height = 10, units = "in")
-```
-
 ## DTI MD
 ```{r dti md smooth.last.change plotting}
  
@@ -1181,28 +968,7 @@ ageeffect_measure = "smooth.slowing.onset"
 ageeffect_measure_title = "Age of First Developmental Slowing"
 ageeffect_filename = "ageDevSlow"
 ```
-
-## DKI MD
-```{r dki md smooth.slowing.onset plotting}
-dki_md_major_plots <- lapply(tracts, plot_age_effect, scalar = "dki_md", ageeffect_measure = ageeffect_measure, 
-                                color1 = color1, color2 = color2, color3 = color3)
-names(dki_md_major_plots) <- tracts
-```
-
-```{r dki md smooth.slowing.onset arrange, fig.height = 10, fig.width = 20}
-dki_md_major_final <- arrange_tract_plots(dki_md_major_plots, paste0("DKI MD: ", ageeffect_measure_title))
-x.grob <- textGrob("Position on Tract (Node ID)", 
-                   gp=gpar(col="black", fontsize=14))
-y.grob <- textGrob("Age", 
-                   gp=gpar(col="black", fontsize=14), rot=90)
-
-ggsave(paste0(png_dir, "dki_md_main_", ageeffect_filename, ".png"), grid.arrange(arrangeGrob(dki_md_major_final, left = y.grob, bottom = x.grob)), width = 20, height = 10, units = "in")
-```
-
-```{r dki md callosum  smooth.slowing.onset arrange, fig.height = 10, fig.width = 20}
-dki_md_callosum_final <- arrange_callosum_plots(dki_md_major_plots, paste0("DKI MD: ", ageeffect_measure_title))
-ggsave(paste0(png_dir, "dki_md_call_", ageeffect_filename, ".png"), grid.arrange(arrangeGrob(dki_md_callosum_final, left = y.grob, bottom = x.grob)), width = 20, height = 10, units = "in")
-```
+ 
 
 ## DTI MD
 ```{r dti md smooth.slowing.onset plotting}
@@ -1229,80 +995,6 @@ ggsave(paste0(png_dir, "dti_md_call_", ageeffect_filename, ".png"), grid.arrange
 
 
 ## bin first age of dev slowing by nodeID
-### DKI MD
-```{r dki_md bin smooth.last.change, fig.width=15}
-ageeffect_measure = "smooth.last.change"
-scalar = "dki_md"
-ageeffect_filename = "ageDevSlow"
-
-bin5_deltaadj <- lapply(tracts, plot_age_effect_binned, scalar = scalar, ageeffect_measure = ageeffect_measure, bin_num_nodes = 5, color1, color2, color3)
-names(bin5_deltaadj) <- tracts
- 
-bin10_deltaadj <- lapply(tracts, plot_age_effect_binned, scalar = scalar, ageeffect_measure = ageeffect_measure, bin_num_nodes = 10, color1, color2, color3)
-names(bin10_deltaadj) <- tracts
- 
-bin15_deltaadj <- lapply(tracts, plot_age_effect_binned, scalar = scalar, ageeffect_measure = ageeffect_measure, bin_num_nodes = 15, color1, color2, color3)
-names(bin15_deltaadj) <- tracts
-
-bin20_deltaadj <- lapply(tracts, plot_age_effect_binned, scalar = scalar, ageeffect_measure = ageeffect_measure, bin_num_nodes = 20, color1, color2, color3)
-names(bin20_deltaadj) <- tracts
-
-```
-
-```{r dki_md arrange bin5_deltaadj main, fig.height = 20, fig.width = 10}
-bin5_deltaadj_plots <- arrange_binned_plots(bin5_deltaadj, "DKI MD: 5 nodes per bin")
-
-x.grob <- textGrob("Position of Node along Tract", 
-                   gp=gpar(col="black", fontsize=14))
-
-y.grob <- textGrob("Average Delta Adjusted Rsq", 
-                   gp=gpar(col="black", fontsize=14), rot=90)
-
-ggsave(paste0(png_dir, "dki_md_bin5_", ageeffect_filename, "1.png"), grid.arrange(arrangeGrob(bin5_deltaadj_plots[[1]], bottom = x.grob, left = y.grob)), height = 20, width = 10, units = "in")
-ggsave(paste0(png_dir, "dki_md_bin5_", ageeffect_filename, "2.png"), grid.arrange(arrangeGrob(bin5_deltaadj_plots[[2]], bottom = x.grob, left = y.grob)), height = 20, width = 10, units = "in")
-
-```
-
-```{r dki_md arrange bin5_deltaadj callosum, fig.height = 20, fig.width = 7}
-bin5_deltaadj_call_plots <- arrange_callosum_binned_plots(bin5_deltaadj, "DKI MD: 5 nodes per bin")
-ggsave(paste0(png_dir, "dki_md_bin5_", ageeffect_filename, "_call.png"), grid.arrange(arrangeGrob(bin5_deltaadj_call_plots, bottom = x.grob, left = y.grob)), height = 20, width = 7, units = "in")
-```
-
-```{r dki_md arrange bin10_deltaadj main, fig.height = 20, fig.width = 10}
-bin10_deltaadj_plots <- arrange_binned_plots(bin10_deltaadj, "DKI MD: 10 nodes per bin")
-ggsave(paste0(png_dir, "dki_md_bin10_", ageeffect_filename, "1.png"), grid.arrange(arrangeGrob(bin10_deltaadj_plots[[1]], bottom = x.grob, left = y.grob)), height = 20, width = 10, units = "in")
-ggsave(paste0(png_dir, "dki_md_bin10_", ageeffect_filename, "2.png"), grid.arrange(arrangeGrob(bin10_deltaadj_plots[[2]], bottom = x.grob, left = y.grob)), height = 20, width = 10, units = "in")
-
-```
-
-```{r dki_md arrange bin10_deltaadj callosum, fig.height = 20, fig.width = 7}
-bin10_deltaadj_call_plots <- arrange_callosum_binned_plots(bin10_deltaadj, "DKI MD: 10 nodes per bin")
-ggsave(paste0(png_dir, "dki_md_bin10_", ageeffect_filename, "_call.png"), grid.arrange(arrangeGrob(bin10_deltaadj_call_plots, bottom = x.grob, left = y.grob)), height = 20, width = 7, units = "in")
-```
-
-```{r dki_md arrange bin15_deltaadj main, fig.height = 20, fig.width = 10}
-bin15_deltaadj_plots <- arrange_binned_plots(bin15_deltaadj, "DKI MD: 15 nodes per bin")
-ggsave(paste0(png_dir, "dki_md_bin15_", ageeffect_filename, "1.png"), grid.arrange(arrangeGrob(bin15_deltaadj_plots[[1]], bottom = x.grob, left = y.grob)), height = 20, width = 10, units = "in")
-ggsave(paste0(png_dir, "dki_md_bin15_", ageeffect_filename, "2.png"), grid.arrange(arrangeGrob(bin15_deltaadj_plots[[2]], bottom = x.grob, left = y.grob)), height = 20, width = 10, units = "in")
-
-```
-
-```{r dki_md arrange bin15_deltaadj callosum, fig.height = 20, fig.width = 7}
-bin15_deltaadj_call_plots <- arrange_callosum_binned_plots(bin15_deltaadj, "DKI MD: 15 nodes per bin")
-ggsave(paste0(png_dir, "dki_md_bin15_", ageeffect_filename, "_call.png"), grid.arrange(arrangeGrob(bin15_deltaadj_call_plots, bottom = x.grob, left = y.grob)), height = 20, width = 7, units = "in")
-```
-
-```{r dki_md arrange bin20_deltaadj main, fig.height = 20, fig.width = 10}
-bin20_deltaadj_plots <- arrange_binned_plots(bin20_deltaadj, "DKI MD: 20 nodes per bin")
-ggsave(paste0(png_dir, "dki_md_bin20_", ageeffect_filename, "1.png"), grid.arrange(arrangeGrob(bin20_deltaadj_plots[[1]], bottom = x.grob, left = y.grob)), height = 20, width = 10, units = "in")
-ggsave(paste0(png_dir, "dki_md_bin20_", ageeffect_filename, "2.png"), grid.arrange(arrangeGrob(bin20_deltaadj_plots[[2]], bottom = x.grob, left = y.grob)), height = 20, width = 10, units = "in")
-
-```
-
-```{r dki_md arrange bin20_deltaadj callosum, fig.height = 20, fig.width = 7}
-bin20_deltaadj_call_plots <- arrange_callosum_binned_plots(bin20_deltaadj, "DKI MD: 20 nodes per bin")
-ggsave(paste0(png_dir, "dki_md_bin20_", ageeffect_filename, "_call.png"), grid.arrange(arrangeGrob(bin20_deltaadj_call_plots, bottom = x.grob, left = y.grob)), height = 20, width = 7, units = "in")
-```
 
 ### DTI MD
 ```{r dti_md bin smooth.last.change, fig.width=15}
@@ -1313,7 +1005,7 @@ ageeffect_filename = "ageDevSlow"
 x.grob <- textGrob("Position of Node along Tract", 
                    gp=gpar(col="black", fontsize=14))
 
-y.grob <- textGrob("AAge of First Developmental Slowing", 
+y.grob <- textGrob("Age of First Developmental Slowing", 
                    gp=gpar(col="black", fontsize=14), rot=90)
 
 bin5_deltaadj <- lapply(tracts, plot_age_effect_binned, scalar = scalar, ageeffect_measure = ageeffect_measure, bin_num_nodes = 5, color1, color2, color3)
@@ -1332,26 +1024,26 @@ names(bin20_deltaadj) <- tracts
 ```
 
 ```{r dti_md arrange bin5_deltaadj main, fig.height = 20, fig.width = 15}
-bin5_deltaadj_plots <- arrange_binned_plots(bin5_deltaadj, "DTI MD: 5 nodes per bin")
+bin5_deltaadj_plots <- arrange_binned_plots(bin5_deltaadj, scalar = scalar, "DTI MD: 5 nodes per bin")
 ggsave(paste0(png_dir, "dti_md_bin5_", ageeffect_filename, "1.png"), grid.arrange(arrangeGrob(bin5_deltaadj_plots[[1]], bottom = x.grob, left = y.grob)), height = 20, width = 15, units = "in")
 ggsave(paste0(png_dir, "dti_md_bin5_", ageeffect_filename, "2.png"), grid.arrange(arrangeGrob(bin5_deltaadj_plots[[2]], bottom = x.grob, left = y.grob)), height = 20, width = 15, units = "in")
 
 ```
 
 ```{r dti_md arrange bin5_deltaadj callosum, fig.height = 20, fig.width = 10}
-bin5_deltaadj_call_plots <- arrange_callosum_binned_plots(bin5_deltaadj, "DTI MD: 5 nodes per bin")
+bin5_deltaadj_call_plots <- arrange_callosum_binned_plots(bin5_deltaadj, scalar = scalar, "DTI MD: 5 nodes per bin")
 ggsave(paste0(png_dir, "dti_md_bin5_", ageeffect_filename, "_call.png"), grid.arrange(arrangeGrob(bin5_deltaadj_call_plots, bottom = x.grob, left = y.grob)), height = 20, width = 15, units = "in")
 ```
 
 ```{r dti_md arrange bin10_deltaadj main, fig.height = 20, fig.width = 15}
-bin10_deltaadj_plots <- arrange_binned_plots(bin10_deltaadj, "DTI MD: 10 nodes per bin")
+bin10_deltaadj_plots <- arrange_binned_plots(bin10_deltaadj, scalar = scalar, "DTI MD: 10 nodes per bin")
 ggsave(paste0(png_dir, "dti_md_bin10_", ageeffect_filename, "1.png"), grid.arrange(arrangeGrob(bin10_deltaadj_plots[[1]], bottom = x.grob, left = y.grob)), height = 20, width = 15, units = "in")
 ggsave(paste0(png_dir, "dti_md_bin10_", ageeffect_filename, "2.png"), grid.arrange(arrangeGrob(bin10_deltaadj_plots[[2]], bottom = x.grob, left = y.grob)), height = 20, width = 15, units = "in")
 
 ```
 
 ```{r dti_md arrange bin10_deltaadj callosum, fig.height = 20, fig.width = 10}
-bin10_deltaadj_call_plots <- arrange_callosum_binned_plots(bin10_deltaadj, "DTI MD: 10 nodes per bin")
+bin10_deltaadj_call_plots <- arrange_callosum_binned_plots(bin10_deltaadj, scalar = scalar, "DTI MD: 10 nodes per bin")
 ggsave(paste0(png_dir, "dti_md_bin10_", ageeffect_filename, "_call.png"), grid.arrange(arrangeGrob(bin10_deltaadj_call_plots, bottom = x.grob, left = y.grob)), height = 20, width = 15, units = "in")
 ```
 
@@ -1393,7 +1085,7 @@ the other dev measures are tough because there's kind of this continuous, strong
 # Derivatives - average rate of change in age window
 ```{r format derivatives}
 datasets <- c("HBN", "PNC", "HCPD")
-scalars <- c("dki_fa", "dki_md", "dti_fa", "dti_md")
+scalars <- c("dti_fa", "dti_md")
 
 # make a list of the different derivatives df names: [dataset]_derivatives_[scalar]
 deriv_df_names <- c()
@@ -1460,9 +1152,6 @@ mean_roc <- function(tract, scalar) {
 ```{r compute mean rate of change for dti and dki md}
 dti_md_mean_roc <- lapply(tracts, mean_roc, scalar = "dti_md")
 names(dti_md_mean_roc) <- tracts
-
-dki_md_mean_roc <- lapply(tracts, mean_roc, scalar = "dki_md")
-names(dki_md_mean_roc) <- tracts
 ```
 
 ```{r function for cool dev window plot}
@@ -1541,38 +1230,7 @@ PNC_dti_md_deriv_plots_final <- arrange_tract_plots(dev_windows_plots_PNC, title
 ggsave(paste0(png_dir, scalar, "_deriv_windows_PNC.png"), grid.arrange(arrangeGrob(PNC_dti_md_deriv_plots_final, left = y.grob, bottom = x.grob)), width = 20, height = 10, units = "in")
 ```
  
- 
-```{r plot dki md dev windows}
-scalar = "dki_md"
-legend.label = "Derivatives"
-title = "DKI MD Derivatives"
-
-dev_windows_plots_HCPD <- lapply(tracts, dev_windows_plot, scalar = scalar, dataset = "HCPD", color_palette = aquamarine, color_lim1 = -0.000008, color_lim2 = -0.000001)
-names(dev_windows_plots_HCPD) <- tracts
-#range(deriv_sigOnly_dfs$HBN_GAM_derivatives_dti_md$significant.derivative, na.rm = T)
-hist(deriv_sigOnly_dfs$HCPD_GAM_derivatives_dki_md$significant.derivative)
-hist(deriv_sigOnly_dfs$HBN_GAM_derivatives_dki_md$significant.derivative)
-
-dev_windows_plots_HBN <- lapply(tracts, dev_windows_plot, scalar = scalar, dataset = "HBN", color_palette = aquamarine, color_lim1 = -0.000017, color_lim2 = -0.00000001)
-names(dev_windows_plots_HBN) <- tracts
- 
-
-```
-
-dki just looks way worse than dti on every count for developmental measures lol
-```{r HCPD dki md derivatives, fig.height = 10, fig.width = 15}
-HCPD_dki_md_deriv_plots_final <- arrange_tract_plots(dev_windows_plots_HCPD, title = paste("HCPD:", title), legend.width = 0.7, legend.label = legend.label)
-
-ggsave(paste0(png_dir, scalar, "_deriv_windows_HCPD.png"), grid.arrange(arrangeGrob(HCPD_dki_md_deriv_plots_final, left = y.grob, bottom = x.grob)), width = 20, height = 10, units = "in")
-```
-
-```{r HBN dki md derivatives, fig.height = 10, fig.width = 15}
-HBN_dki_md_deriv_plots_final <- arrange_tract_plots(dev_windows_plots_HBN, title = paste("HBN:", title), legend.width = 0.7, legend.label = legend.label) # lol this looks liek trashshs
-ggsave(paste0(png_dir, scalar, "_deriv_windows_HBN.png"), grid.arrange(arrangeGrob(HBN_dki_md_deriv_plots_final, left = y.grob, bottom = x.grob)), width = 20, height = 10, units = "in")
-
-```
-
- 
+  
 
 ```{r function for mean roc plot}
 mean_roc_plot <- function(tract, scalar, clipEnds) {
@@ -1624,11 +1282,6 @@ names(dti_md_mean_roc_clipped) <- tracts
 dti_md_mean_roc_notclipped <- lapply(tracts, mean_roc_plot, scalar = scalar, clipEnds = F)
 names(dti_md_mean_roc_notclipped) <- tracts
 
-scalar = "dki_md"
-dki_md_mean_roc_clipped <- lapply(tracts, mean_roc_plot, scalar = scalar, clipEnds = T)
-names(dki_md_mean_roc_clipped) <- tracts
-dki_md_mean_roc_notclipped <- lapply(tracts, mean_roc_plot, scalar = scalar, clipEnds = F)
-names(dki_md_mean_roc_notclipped) <- tracts
 ```
 
 
@@ -1674,27 +1327,8 @@ y.grob <- textGrob("Mean Derivative",
 
 ggsave(paste0(png_dir, "dki_md_main_derivative_clipped", ".png"), grid.arrange(arrangeGrob(dki_md_major_final_clipped, left = y.grob, bottom = x.grob)), width = 20, height = 10, units = "in")
 ```
+ 
 
-```{r dki md mean roc clipped plot arrange, fig.height = 10, fig.width = 20}
-dki_md_callosum_final_clipped <- arrange_callosum_plots(dki_md_mean_roc_clipped, paste0("DKI MD: Mean Derivative - Clipped"))
-ggsave(paste0(png_dir, "dki_md_call_derivative_clipped", ".png"), grid.arrange(arrangeGrob(dki_md_callosum_final_clipped, left = y.grob, bottom = x.grob)), width = 20, height = 10, units = "in")
-```
-
-
-```{r dki md mean roc notclipped plot arrange, fig.height = 10, fig.width = 20}
-dki_md_major_final_notclipped <- arrange_tract_plots(dki_md_mean_roc_notclipped, paste0("DKI MD: Mean Derivative - notclipped"))
-x.grob <- textGrob("Position on Tract (Node ID)", 
-                   gp=gpar(col="black", fontsize=28))
-y.grob <- textGrob("Mean Derivative", 
-                   gp=gpar(col="black", fontsize=28), rot=90)
-
-ggsave(paste0(png_dir, "dki_md_main_derivative_notclipped", ".png"), grid.arrange(arrangeGrob(dki_md_major_final_notclipped, left = y.grob, bottom = x.grob)), width = 20, height = 10, units = "in")
-```
-
-```{r dki md mean roc notclipped plot arrange, fig.height = 10, fig.width = 20}
-dki_md_callosum_final_notclipped <- arrange_callosum_plots(dki_md_mean_roc_notclipped, paste0("DKI MD: Mean Derivative - not clipped"))
-ggsave(paste0(png_dir, "dki_md_call_derivative_notclipped", ".png"), grid.arrange(arrangeGrob(dki_md_callosum_final_notclipped, left = y.grob, bottom = x.grob)), width = 20, height = 10, units = "in")
-```
 # Developmental trajectories
 - bin by third?
 - bin even by central versus peripheral
@@ -1708,41 +1342,72 @@ for (dataset in datasets) {
    smooth_df_names <- append(smooth_df_names, paste0(dataset, "_GAM_smoothcentered_dti_md"))
 }
 
+ 
 ```
 
+```{r format smooths}
+# format age effect df's
+format_smooths <- function(df) {
+  df <- get(df)
+  # add tractID, tract_label, and nodeID
+  df <- df %>% mutate(hemi = ifelse(grepl("Left", tract_node), "Left", 
+                                    ifelse(grepl("Right", tract_node), "Right", NA))) %>%
+    mutate(tractID = gsub("_[0-9]+", "", tract_node)) %>%
+    mutate(tract_label = gsub("Left |Right ", "", gsub("_", " ", tractID))) %>%
+    mutate(nodeID = str_extract(tract_node, "[0-9]+")) 
+  df$nodeID <- as.numeric(df$nodeID)
+  
+  # label main orientation
+  df <- df %>% 
+  mutate(main_orientation = case_when(
+    tract_label %in% c("Anterior Thalamic", "Cingulum Cingulate", "Inferior Fronto-occipital",
+                   "Inferior Longitudinal", "Superior Longitudinal") ~ "AP",
+    tract_label %in% c("Arcuate", "Uncinate") ~ "AP_frontal_temporal",
+    tract_label %in% c("Callosum Anterior Frontal", "Callosum Motor", "Callosum Occipital", "Callosum Orbital", 
+                       "Callosum Posterior Parietal", "Callosum Superior Frontal", "Callosum Superior Parietal", "Callosum Temporal") ~ "RL",
+    tract_label %in% c("Corticospinal", "Posterior Arcuate","Vertical Occipital") ~ "SI",
+    TRUE ~ NA_character_
+  ))
+  df$main_orientation <- as.factor(df$main_orientation)
+  df <- df %>% relocate(tract_label, tractID, nodeID, tract_node, hemi, main_orientation)
+  return(df)
+}
 
+smooth_dfs <- lapply(smooth_df_names, format_smooths)
+names(smooth_dfs) <- smooth_df_names
+```
 
 ```{r plot smooths}
-plot_nodes_zeroed <- function(tract, df, scalar, ylim1, ylim2) {
+plot_nodes_zeroed <- function(tract, df) {
   df$nodeID <- as.numeric(df$nodeID)
   if (str_detect(tract, "Inferior")) {
-    plot <- df %>% filter(tractID == tract) %>%  
+    plot <- df %>% filter(tract_label == tract) %>%  
       group_by(tract_node) %>%
       ggplot(aes(x = age, y = est, group = tract_node)) +
       geom_line(aes(colour = nodeID), size = 0.8, alpha = 0.6) + 
       theme_classic() +                         
-      theme(text=element_text(size=16),
-            axis.text.x = element_text(size=16),
-            axis.text.y = element_text(size=16),
+      theme(text=element_text(size=20),
+            axis.text.x = element_text(size=20),
+            axis.text.y = element_text(size=20),
             legend.position = "none",
             plot.title = element_text(hjust=0.5, size = 18),
             plot.margin = unit(c(0.2, 0.2, 0.2, -1), "cm"))  + 
       paletteer::scale_colour_paletteer_c("grDevices::RdYlBu", direction=-1) +
-      labs(x="", y="", title=tract, colour="Position on Tract (Node ID)") + ylim(ylim1, ylim2)  
+      labs(x="", y="", title=tract, colour="Position on Tract (Node ID)") #+ ylim(ylim1, ylim2)  
     
   } else {
-    plot <- df %>% filter(tractID == tract) %>% 
+    plot <- df %>% filter(tract_label == tract) %>% 
       group_by(tract_node) %>%
       ggplot(aes(x = age, y = est, group = tract_node)) +
       geom_line(aes(colour = nodeID), size = 0.8, alpha = 0.6) + 
       theme_classic() +                         
-      theme(text=element_text(size=16),
-            axis.text.x = element_text(size=16),
-            axis.text.y = element_text(size=16),
+      theme(text=element_text(size=20),
+            axis.text.x = element_text(size=20),
+            axis.text.y = element_text(size=20),
             legend.position = "none",
             plot.title = element_text(hjust=0.5, size = 18)) + 
       paletteer::scale_colour_paletteer_c("grDevices::RdYlBu", direction=-1) +
-      labs(x="", y="", title=tract, colour="Position on Tract (Node ID)") + ylim(ylim1, ylim2)  
+      labs(x="", y="", title=tract, colour="Position on Tract (Node ID)") #+ ylim(ylim1, ylim2)  
   }
    
    return(plot)
@@ -1751,8 +1416,958 @@ plot_nodes_zeroed <- function(tract, df, scalar, ylim1, ylim2) {
 ```
 
 
+```{r plot all nodes}
+
+tracts <- unique(smooth_dfs$HCPD_GAM_smoothcentered_dti_md$tract_label)
+all_smooths_HCPD <- lapply(tracts, plot_nodes_zeroed, df = smooth_dfs$HCPD_GAM_smoothcentered_dti_md)
+names(all_smooths_HCPD) <- tracts
+all_smooths_HBN <- lapply(tracts, plot_nodes_zeroed, df = smooth_dfs$HBN_GAM_smoothcentered_dti_md)
+names(all_smooths_HBN) <- tracts
+all_smooths_PNC <- lapply(tracts, plot_nodes_zeroed, df = smooth_dfs$PNC_GAM_smoothcentered_dti_md)
+names(all_smooths_PNC) <- tracts
+
+```
+
+
+```{r arrange all nodes HCPD, fig.height = 20, fig.width = 20}
+x.grob <- textGrob("Age", 
+                   gp=gpar(col="black", fontsize=24))
+y.grob <- textGrob("Zero-Centered DTI MD", 
+                   gp=gpar(col="black", fontsize=24), rot=90)
+
+
+arrange_tract_plots(all_smooths_HCPD, "HCPD")
+
+ggsave(paste0(png_dir, "dti_md_", smoothcentered_filename, "_all_HCPD.png"), grid.arrange(arrangeGrob(arrange_tract_plots(all_smooths_HCPD, "HCPD"), left = y.grob, bottom = x.grob)), width = 20, height = 20, units = "in")
+
+
+```
+
+```{r arrange all nodes HBN, fig.height = 20, fig.width = 20}
+arrange_tract_plots(all_smooths_HBN, "HBN")
+
+ggsave(paste0(png_dir, "dti_md_", smoothcentered_filename, "_all_HBN.png"), grid.arrange(arrangeGrob(arrange_tract_plots(all_smooths_HBN, "HBN"), left = y.grob, bottom = x.grob)), width = 20, height = 20, units = "in")
+
+``` 
+
+```{r arrange all nodes PNC, fig.height = 20, fig.width = 20}
+arrange_tract_plots(all_smooths_PNC, "PNC")
+
+smoothcentered_filename <- "smoothcentered"
+ggsave(paste0(png_dir, "dti_md_", smoothcentered_filename, "_all_PNC.png"), grid.arrange(arrangeGrob(arrange_tract_plots(all_smooths_PNC, "PNC"), left = y.grob, bottom = x.grob)), width = 20, height = 20, units = "in")
+
+```
+
+
+```{r function for smooths binned}
+color1 = "#009DA8FF"
+color2 = "#F0BA52FF"
+color3 = "#C73000FF"
+
+plot_smooths_binned <- function(tract, df, bin_num_nodes, clipEnds) {
+  df$nodeID <- as.numeric(df$nodeID)
+  df <- df %>% filter(tract_label == tract) %>% 
+    filter(nodeID > (clipEnds-1) & nodeID < (99-clipEnds+1)) %>%
+    group_by(tract_node)
+  
+ 
+  df_binned <- df %>%
+        filter(
+          nodeID < (bin_num_nodes + clipEnds) |  # Start of the tract
+          nodeID > (99 - bin_num_nodes - clipEnds) |  # End of the tract
+          (nodeID > 45 & nodeID < 56)  # Deep WM nodes: the 30 nodes in the center
+        )  %>%
+        mutate(
+          node_position = case_when(
+            nodeID < bin_num_nodes + clipEnds ~ "end1",
+            nodeID > 99 - bin_num_nodes - clipEnds ~ "end2",
+            (nodeID > 45 & nodeID < 56) ~ "deep",
+            TRUE ~ NA_character_
+          )
+        ) %>%
+        group_by(node_position, age) %>% # removed hemi
+        summarise(
+          mean_est = mean(est, na.rm = TRUE)
+        )
+  
+  plot <- ggplot(df_binned, aes(x = age, y = mean_est, group = node_position)) +
+      geom_line(aes(colour = node_position), size = 3.5, alpha = 0.9) + 
+      theme_classic() +                         
+      theme(text=element_text(size=24),
+            axis.text.x = element_text(size=24),
+            axis.text.y = element_text(size=24),
+            legend.position = "none",
+            plot.title = element_text(hjust=0.5, size = 24)) + 
+      scale_colour_manual(values = c("end1" = color1, "deep" = color2, "end2" = color3), na.value = "grey50") + 
+      labs(x="", y="", title=tract, colour="Tract Region")  
+   
+   return(plot)
+}
+
+
+#orbital => antfrontal => supfrontal => motor => supparietal => postparietal => temporal => occipital, to better detect any anterior=>posterior progression
+
+ 
+ 
+ 
+```
+
+
+
+```{r plot binned smooths}
+bin_num_nodes = 5
+clipEnds = 3
+
+tracts <- unique(smooth_dfs$HCPD_GAM_smoothcentered_dti_md$tract_label)
+
+binned_smooths_HCPD <- lapply(tracts, plot_smooths_binned, df = smooth_dfs$HCPD_GAM_smoothcentered_dti_md, 
+                              bin_num_nodes = bin_num_nodes, clipEnds = clipEnds)
+names(binned_smooths_HCPD) <- tracts
+
+binned_smooths_HBN <- lapply(tracts, plot_smooths_binned, df = smooth_dfs$HBN_GAM_smoothcentered_dti_md, 
+                             bin_num_nodes = bin_num_nodes, clipEnds = clipEnds)
+names(binned_smooths_HBN) <- tracts
+
+binned_smooths_PNC <- lapply(tracts, plot_smooths_binned, df = smooth_dfs$PNC_GAM_smoothcentered_dti_md, 
+                             bin_num_nodes = bin_num_nodes, clipEnds = clipEnds)
+names(binned_smooths_PNC) <- tracts
+
+```
+
+```{r arrange binned smooths HCPD, fig.height = 20, fig.width = 20}
+x.grob <- textGrob("Age", 
+                   gp=gpar(col="black", fontsize=24))
+y.grob <- textGrob("Zero-Centered DTI MD", 
+                   gp=gpar(col="black", fontsize=24), rot=90)
+
+binned_smooths_HCPD_main <- arrange_tract_plots(binned_smooths_HCPD, "HCPD: Developmental Trajectories of Tract Regions")
+ 
+smoothcentered_filename <- "smoothcentered"
+ggsave(paste0(png_dir, "dti_md_", smoothcentered_filename, "_HCPD.png"), grid.arrange(arrangeGrob(binned_smooths_HCPD_main, left = y.grob, bottom = x.grob)), width = 20, height = 20, units = "in")
+```
+
+
+```{r arrange binned smooths HBN, fig.height = 20, fig.width = 20}
+x.grob <- textGrob("Age", 
+                   gp=gpar(col="black", fontsize=24))
+y.grob <- textGrob("Zero-Centered DTI MD", 
+                   gp=gpar(col="black", fontsize=24), rot=90)
+
+binned_smooths_HBN_main <- arrange_tract_plots(binned_smooths_HBN, "HBN: Developmental Trajectories of Tract Regions")
+
+grid.arrange(arrangeGrob(binned_smooths_HBN_main, left = y.grob, bottom = x.grob))
+ 
+ggsave(paste0(png_dir, "dti_md_", smoothcentered_filename, "_HBN.png"), grid.arrange(arrangeGrob(binned_smooths_HBN_main, left = y.grob, bottom = x.grob)), width = 20, height = 20, units = "in")
+```
+
+
+```{r arrange binned smooths PNC, fig.height = 20, fig.width = 20}
+x.grob <- textGrob("Age", 
+                   gp=gpar(col="black", fontsize=24))
+y.grob <- textGrob("Zero-Centered DTI MD", 
+                   gp=gpar(col="black", fontsize=24), rot=90)
+
+binned_smooths_PNC_main <- arrange_tract_plots(binned_smooths_PNC, "PNC: Developmental Trajectories of Tract Regions")
+ 
+
+grid.arrange(arrangeGrob(binned_smooths_PNC_main, left = y.grob, bottom = x.grob))
+ 
+ggsave(paste0(png_dir, "dti_md_", smoothcentered_filename, "_PNC.png"), grid.arrange(arrangeGrob(binned_smooths_PNC_main, left = y.grob, bottom = x.grob)), width = 20, height = 20, units = "in")
+```
+
 
 ```{r}
-unique(HCPD_GAM_smoothcentered_dti_md$tract_node)
+plot_smooths_deep_peripheral <- function(tract, df, bin_num_nodes, clipEnds) {
+  df$nodeID <- as.numeric(df$nodeID)
+  df <- df %>% filter(tract_label == tract) %>% 
+    filter(nodeID > (clipEnds-1) & nodeID < (99-clipEnds+1)) %>%
+    group_by(tract_node)
+  
+ 
+  df_binned <- df %>%
+        filter(
+          nodeID < (bin_num_nodes + clipEnds) |  # Start of the tract
+          nodeID > (99 - bin_num_nodes - clipEnds) |  # End of the tract
+          (nodeID > (50-bin_num_nodes) & nodeID <= (50+bin_num_nodes))  # Deep WM nodes: the 30 nodes in the center
+        ) %>%
+        mutate(
+        node_position = case_when(
+            tract_label == "Corticospinal" & nodeID < (bin_num_nodes + clipEnds) ~ "Peripheral",
+            tract_label == "Corticospinal" & nodeID > (99 - bin_num_nodes - clipEnds) ~ "Deep",
+            tract_label != "Corticospinal" & nodeID < (bin_num_nodes + clipEnds) ~ "Peripheral",
+            tract_label != "Corticospinal" & nodeID > (99 - bin_num_nodes - clipEnds) ~ "Peripheral",
+            tract_label != "Corticospinal" & (nodeID > (50-bin_num_nodes) & nodeID <= (50+bin_num_nodes)) ~ "Deep",
+            TRUE ~ NA_character_
+        )) %>%
+        group_by(node_position, age) %>% # removed hemi
+        summarise(
+          mean_est = mean(est, na.rm = TRUE)
+        )
+  df_binned <- df_binned[complete.cases(df_binned), ]
+  plot <- ggplot(df_binned, aes(x = age, y = mean_est, group = node_position)) +
+      geom_line(aes(colour = node_position), size = 3.5, alpha = 0.9) + 
+      theme_classic() +                         
+      theme(text=element_text(size=24),
+            axis.text.x = element_text(size=24),
+            axis.text.y = element_text(size=24),
+            legend.position = "none",
+            plot.title = element_text(hjust=0.5, size = 24)) + 
+      scale_colour_manual(values = c("Peripheral" = color1, "Deep" = color2), na.value = "grey50") + 
+      labs(x="", y="", title=tract, colour="Tract Region")  
+   
+   return(plot)
+}
+
+```
+
+
+
+```{r plot peripheral vs deep smooths}
+bin_num_nodes = 5
+clipEnds = 3
+#color1 = "#5755FE"
+#color2 = "#FF71CD"
+
+color1 = "gray40"
+color2 = "#F0BA52FF"
+
+tracts <- unique(smooth_dfs$HCPD_GAM_smoothcentered_dti_md$tract_label)
+
+binned_smooths_HCPD <- lapply(tracts, plot_smooths_deep_peripheral, df = smooth_dfs$HCPD_GAM_smoothcentered_dti_md, 
+                              bin_num_nodes = bin_num_nodes, clipEnds = clipEnds)
+names(binned_smooths_HCPD) <- tracts
+
+binned_smooths_HBN <- lapply(tracts, plot_smooths_deep_peripheral, df = smooth_dfs$HBN_GAM_smoothcentered_dti_md, 
+                             bin_num_nodes = bin_num_nodes, clipEnds = clipEnds)
+names(binned_smooths_HBN) <- tracts
+
+binned_smooths_PNC <- lapply(tracts, plot_smooths_deep_peripheral, df = smooth_dfs$PNC_GAM_smoothcentered_dti_md, 
+                             bin_num_nodes = bin_num_nodes, clipEnds = clipEnds)
+names(binned_smooths_PNC) <- tracts
+
+```
+
+
+```{r arrange binned smooths HCPD, fig.height = 20, fig.width = 20}
+x.grob <- textGrob("Age", 
+                   gp=gpar(col="black", fontsize=24))
+y.grob <- textGrob("Zero-Centered DTI MD", 
+                   gp=gpar(col="black", fontsize=24), rot=90)
+
+binned_smooths_HCPD_main <- arrange_tract_plots(binned_smooths_HCPD, "HCPD: Developmental Trajectories of Tract Regions")
+ 
+smoothcentered_filename <- "smoothcentered"
+ggsave(paste0(png_dir, "dti_md_", smoothcentered_filename, "_deep_periph_HCPD.png"), grid.arrange(arrangeGrob(binned_smooths_HCPD_main, left = y.grob, bottom = x.grob)), width = 20, height = 20, units = "in")
+```
+
+
+```{r arrange binned smooths HBN, fig.height = 20, fig.width = 20}
+x.grob <- textGrob("Age", 
+                   gp=gpar(col="black", fontsize=24))
+y.grob <- textGrob("Zero-Centered DTI MD", 
+                   gp=gpar(col="black", fontsize=24), rot=90)
+
+binned_smooths_HBN_main <- arrange_tract_plots(binned_smooths_HBN, "HBN: Developmental Trajectories of Tract Regions")
+
+grid.arrange(arrangeGrob(binned_smooths_HBN_main, left = y.grob, bottom = x.grob))
+
+ ggsave(paste0(png_dir, "dti_md_", smoothcentered_filename, "_deep_periph_HBN.png"), grid.arrange(arrangeGrob(binned_smooths_HBN_main, left = y.grob, bottom = x.grob)), width = 20, height = 20, units = "in")
+```
+
+
+```{r arrange binned smooths PNC, fig.height = 20, fig.width = 20}
+x.grob <- textGrob("Age", 
+                   gp=gpar(col="black", fontsize=24))
+y.grob <- textGrob("Zero-Centered DTI MD", 
+                   gp=gpar(col="black", fontsize=24), rot=90)
+
+binned_smooths_PNC_main <- arrange_tract_plots(binned_smooths_PNC, "PNC: Developmental Trajectories of Tract Regions")
+ 
+
+grid.arrange(arrangeGrob(binned_smooths_PNC_main, left = y.grob, bottom = x.grob))
+ 
+ggsave(paste0(png_dir, "dti_md_", smoothcentered_filename, "_deep_periph_PNC.png"), grid.arrange(arrangeGrob(binned_smooths_PNC_main, left = y.grob, bottom = x.grob)), width = 20, height = 20, units = "in")
+```
+
+
+try with all tracts in one panel
+
+
+```{r, fig.height=4, fig.width = 4}
+plot_smooths_dp_stacked <- function(df, bin_num_nodes, clipEnds) {
+  df$nodeID <- as.numeric(df$nodeID)
+  df <- df %>% filter(nodeID > (clipEnds-1) & nodeID < (99-clipEnds+1)) %>%
+    group_by(tract_node)
+  
+ 
+  df_binned <- df %>%
+        filter(
+          nodeID < (bin_num_nodes + clipEnds) |  # Start of the tract
+          nodeID > (99 - bin_num_nodes - clipEnds) |  # End of the tract
+          (nodeID > (50-bin_num_nodes) & nodeID <= (50+bin_num_nodes))  # Deep WM nodes: the 30 nodes in the center
+        ) %>%
+        mutate(
+        node_position = case_when(
+            tract_label == "Corticospinal" & nodeID < (bin_num_nodes + clipEnds) ~ "Peripheral",
+            tract_label == "Corticospinal" & nodeID > (99 - bin_num_nodes - clipEnds) ~ "Deep",
+            tract_label != "Corticospinal" & nodeID < (bin_num_nodes + clipEnds) ~ "Peripheral",
+            tract_label != "Corticospinal" & nodeID > (99 - bin_num_nodes - clipEnds) ~ "Peripheral",
+            tract_label != "Corticospinal" & (nodeID > (50-bin_num_nodes) & nodeID <= (50+bin_num_nodes)) ~ "Deep",
+            TRUE ~ NA_character_
+        )) %>%
+        group_by(tract_label, node_position, age) %>% # removed hemi
+        summarise(
+          mean_est = mean(est, na.rm = TRUE)
+        )
+  df_binned <- df_binned[complete.cases(df_binned), ]
+
+  df_binned <- df_binned %>% mutate(tract_node_position = paste0(tract_label, "_", node_position))
+ 
+  plot_callosum <- df_binned %>% filter(tract_label %in% callosum) %>%  
+    ggplot(aes(x = age, y = mean_est, group = tract_node_position)) +
+    geom_line(aes(color = node_position), size = 1) +
+    theme_classic() +
+    theme(text = element_text(size = 12),
+          axis.text.x = element_text(size = 12),
+          axis.text.y = element_text(size = 12),
+          legend.title = element_text(size=12),
+          legend.text = element_text(size=12),
+          legend.position = "bottom",
+          plot.title = element_text(hjust = 0.5, size = 12)) +  labs(title = "Callosum Bundles") +
+    scale_color_manual(values = mycolors) +  # Use color scale for lines
+    labs(x = "", y = "", colour = "Tract Region")
+    
+  
+  plot_other_tracts <- df_binned %>% filter(tract_label %in% other_tracts) %>% filter(tract_label != "Corticospinal") %>%
+    ggplot(aes(x = age, y = mean_est, group = tract_node_position)) +
+    geom_line(aes(color = node_position), size = 1) +
+    theme_classic() +
+    theme(text = element_text(size = 12),
+          axis.text.x = element_text(size = 12),
+          axis.text.y = element_text(size = 12),
+          legend.position = "bottom",
+          legend.title = element_text(size=12),
+          legend.text = element_text(size=12),
+          plot.title = element_text(hjust = 0.5, size = 12)) + labs(title = "Main Tracts") +
+    scale_color_manual(values = mycolors) +  # Use color scale for lines
+    labs(x = "", y = "", colour = "Tract Region")
+    
+   return(list(plot_callosum, plot_other_tracts))
+}
+
+ 
+
+```
+
+
+
+```{r plot peripheral vs deep smooths}
+bin_num_nodes = 5
+clipEnds = 3
+ 
+mycolors = c("#E5D9F2", "#735edb")
+tracts <- unique(smooth_dfs$HCPD_GAM_smoothcentered_dti_md$tract_label)
+callosum <- tracts[str_detect(tracts, "Callosum")]
+other_tracts <- tracts[!str_detect(tracts, "Callosum")]
+
+HCPD_smooths_stacked <- plot_smooths_dp_stacked(smooth_dfs$HCPD_GAM_smoothcentered_dti_md, bin_num_nodes, clipEnds) 
+annotate_figure(ggarrange(HCPD_smooths_stacked[[1]], HCPD_smooths_stacked[[2]], common.legend=T, legend = "bottom"), top = text_grob("HCP-D", vjust = 0.5, size = 20))
+
+HBN_smooths_stacked <- plot_smooths_dp_stacked(smooth_dfs$HBN_GAM_smoothcentered_dti_md, bin_num_nodes, clipEnds) 
+annotate_figure(ggarrange(HBN_smooths_stacked[[1]], HBN_smooths_stacked[[2]], common.legend=T, legend = "bottom"), top = text_grob("HBN", vjust = 0.5, size = 20))
+ 
+PNC_smooths_stacked <- plot_smooths_dp_stacked(smooth_dfs$PNC_GAM_smoothcentered_dti_md, bin_num_nodes, clipEnds) 
+annotate_figure(ggarrange(PNC_smooths_stacked[[1]], PNC_smooths_stacked[[2]], common.legend=T, legend = "bottom"), top = text_grob("PNC", vjust = 0.5, size = 20))
+```
+
+
+```{r arrange binned smooths HCPD, fig.height = 20, fig.width = 20}
+x.grob <- textGrob("Age", 
+                   gp=gpar(col="black", fontsize=24))
+y.grob <- textGrob("Zero-Centered DTI MD", 
+                   gp=gpar(col="black", fontsize=24), rot=90)
+
+binned_smooths_HCPD_main <- arrange_tract_plots(binned_smooths_HCPD, "HCPD: Developmental Trajectories of Tract Regions")
+ 
+smoothcentered_filename <- "smoothcentered"
+ggsave(paste0(png_dir, "dti_md_", smoothcentered_filename, "_deep_periph_HCPD.png"), grid.arrange(arrangeGrob(binned_smooths_HCPD_main, left = y.grob, bottom = x.grob)), width = 20, height = 20, units = "in")
+```
+
+
+```{r arrange binned smooths HBN, fig.height = 20, fig.width = 20}
+x.grob <- textGrob("Age", 
+                   gp=gpar(col="black", fontsize=24))
+y.grob <- textGrob("Zero-Centered DTI MD", 
+                   gp=gpar(col="black", fontsize=24), rot=90)
+
+binned_smooths_HBN_main <- arrange_tract_plots(binned_smooths_HBN, "HBN: Developmental Trajectories of Tract Regions")
+
+grid.arrange(arrangeGrob(binned_smooths_HBN_main, left = y.grob, bottom = x.grob))
+
+ ggsave(paste0(png_dir, "dti_md_", smoothcentered_filename, "_deep_periph_HBN.png"), grid.arrange(arrangeGrob(binned_smooths_HBN_main, left = y.grob, bottom = x.grob)), width = 20, height = 20, units = "in")
+```
+
+
+```{r arrange binned smooths PNC, fig.height = 20, fig.width = 20}
+x.grob <- textGrob("Age", 
+                   gp=gpar(col="black", fontsize=24))
+y.grob <- textGrob("Zero-Centered DTI MD", 
+                   gp=gpar(col="black", fontsize=24), rot=90)
+
+binned_smooths_PNC_main <- arrange_tract_plots(binned_smooths_PNC, "PNC: Developmental Trajectories of Tract Regions")
+ 
+
+grid.arrange(arrangeGrob(binned_smooths_PNC_main, left = y.grob, bottom = x.grob))
+ 
+ggsave(paste0(png_dir, "dti_md_", smoothcentered_filename, "_deep_periph_PNC.png"), grid.arrange(arrangeGrob(binned_smooths_PNC_main, left = y.grob, bottom = x.grob)), width = 20, height = 20, units = "in")
+```
+
+
+
+## fitted smooths
+```{r fitted format}
+datasets <- c("HBN", "PNC", "HCPD")
+
+# make a list of the different smooth df names: [dataset]_GAM_smoothfitted_[scalar]
+smooth_df_names <- c()
+for (dataset in datasets) {
+   smooth_df_names <- append(smooth_df_names, paste0(dataset, "_GAM_smooth_fittedvalues_dti_md"))
+}
+
+smooth_df_names
+
+ 
+```
+
+```{r format smooths}
+# format age effect df's
+format_smooths <- function(df) {
+  df <- get(df)
+  df <- df %>% rename(tract_node = tract)
+  # add tractID, tract_label, and nodeID
+  df <- df %>% mutate(hemi = ifelse(grepl("Left", tract_node), "Left", 
+                                    ifelse(grepl("Right", tract_node), "Right", NA))) %>%
+    mutate(tractID = gsub("_[0-9]+", "", tract_node)) %>%
+    mutate(tract_label = gsub("Left |Right ", "", gsub("_", " ", tractID))) %>%
+    mutate(nodeID = str_extract(tract_node, "[0-9]+")) 
+  df$nodeID <- as.numeric(df$nodeID)
+  
+  # label main orientation
+  df <- df %>% 
+  mutate(main_orientation = case_when(
+    tract_label %in% c("Anterior Thalamic", "Cingulum Cingulate", "Inferior Fronto-occipital",
+                   "Inferior Longitudinal", "Superior Longitudinal") ~ "AP",
+    tract_label %in% c("Arcuate", "Uncinate") ~ "AP_frontal_temporal",
+    tract_label %in% c("Callosum Anterior Frontal", "Callosum Motor", "Callosum Occipital", "Callosum Orbital", 
+                       "Callosum Posterior Parietal", "Callosum Superior Frontal", "Callosum Superior Parietal", "Callosum Temporal") ~ "RL",
+    tract_label %in% c("Corticospinal", "Posterior Arcuate","Vertical Occipital") ~ "SI",
+    TRUE ~ NA_character_
+  ))
+  df$main_orientation <- as.factor(df$main_orientation)
+  df <- df %>% relocate(tract_label, tractID, nodeID, tract_node, hemi, main_orientation)
+  return(df)
+}
+
+smooth_dfs <- lapply(smooth_df_names, format_smooths)
+names(smooth_dfs) <- smooth_df_names
+smooth_dfs$HBN_GAM_smooth_fittedvalues_dti_md
+```
+
+```{r}
+color1 = "gray40"
+color2 = "#F0BA52FF"
+color3 = "gray40"
+
+plot_fitted_smooths <- function(tract, df, bin_num_nodes, clipEnds) {
+  df$nodeID <- as.numeric(df$nodeID)
+  df <- df %>% filter(tract_label == tract) %>% 
+    filter(nodeID > (clipEnds-1) & nodeID < (99-clipEnds+1)) %>%
+    group_by(tract_node)
+  
+ 
+  df_binned <- df %>%
+        filter(
+          nodeID < (bin_num_nodes + clipEnds) |  # Start of the tract
+          nodeID > (99 - bin_num_nodes - clipEnds) |  # End of the tract
+          (nodeID > 45 & nodeID < 56)  # Deep WM nodes: the 30 nodes in the center
+        )  %>%
+        mutate(
+          node_position = case_when(
+            nodeID < bin_num_nodes + clipEnds ~ "end1",
+            nodeID > 99 - bin_num_nodes - clipEnds ~ "end2",
+            (nodeID > 45 & nodeID < 56) ~ "deep",
+            TRUE ~ NA_character_
+          )
+        ) %>%
+        group_by(node_position, age) %>% # removed hemi
+        summarise(
+          mean_fitted = mean(fitted, na.rm = TRUE)
+        )
+  
+  plot <- ggplot(df_binned, aes(x = age, y = mean_fitted, group = node_position)) +
+      geom_line(aes(colour = node_position), size = 3.5, alpha = 0.9) + 
+      theme_classic() +                         
+      theme(text=element_text(size=24),
+            axis.text.x = element_text(size=24),
+            axis.text.y = element_text(size=24),
+            legend.position = "none",
+            plot.title = element_text(hjust=0.5, size = 24)) + 
+      scale_colour_manual(values = c("end1" = color1, "deep" = color2, "end2" = color3), na.value = "grey50") + 
+      labs(x="", y="", title=tract, colour="Tract Region")  
+   
+   return(plot)
+}
+
+```
+
+```{r}
+bin_num_nodes = 5
+clipEnds = 3
+
+ 
+tracts <- unique(smooth_dfs$HBN_GAM_smooth_fittedvalues_dti_md$tract_label)
+
+binned_fitted_HCPD <- lapply(tracts, plot_fitted_smooths, df = smooth_dfs$HCPD_GAM_smooth_fittedvalues_dti_md, 
+                              bin_num_nodes = bin_num_nodes, clipEnds = clipEnds)
+names(binned_fitted_HCPD) <- tracts
+
+binned_fitted_HBN <- lapply(tracts, plot_fitted_smooths, df = smooth_dfs$HBN_GAM_smooth_fittedvalues_dti_md, 
+                             bin_num_nodes = bin_num_nodes, clipEnds = clipEnds)
+names(binned_fitted_HBN) <- tracts
+
+binned_fitted_PNC <- lapply(tracts, plot_fitted_smooths, df = smooth_dfs$PNC_GAM_smooth_fittedvalues_dti_md, 
+                             bin_num_nodes = bin_num_nodes, clipEnds = clipEnds)
+names(binned_fitted_PNC) <- tracts
+
+```
+
+
+```{r, fig.height = 20, fig.width = 20}
+x.grob <- textGrob("Age", 
+                   gp=gpar(col="black", fontsize=24))
+y.grob <- textGrob("DTI MD", 
+                   gp=gpar(col="black", fontsize=24), rot=90)
+
+binned_fitted_HCPD_main <- arrange_tract_plots(binned_fitted_HCPD, "HCPD: Developmental Trajectories of Tract Regions")
+grid.arrange(arrangeGrob(binned_fitted_HCPD_main, left = y.grob, bottom = x.grob))
+
+smoothfitted_filename = "smoothfitted"
+ggsave(paste0(png_dir, "dti_md_", smoothfitted_filename, "_HCPD.png"), grid.arrange(arrangeGrob(binned_fitted_HCPD_main, left = y.grob, bottom = x.grob)), width = 20, height = 20, units = "in")
+```
+
+```{r, fig.height = 20, fig.width = 20}
+x.grob <- textGrob("Age", 
+                   gp=gpar(col="black", fontsize=24))
+y.grob <- textGrob("DTI MD", 
+                   gp=gpar(col="black", fontsize=24), rot=90)
+
+binned_fitted_HBN_main <- arrange_tract_plots(binned_fitted_HBN, "HBN: Developmental Trajectories of Tract Regions")
+
+
+grid.arrange(arrangeGrob(binned_fitted_HBN_main, left = y.grob, bottom = x.grob))
+
+smoothfitted_filename = "smoothfitted"
+ggsave(paste0(png_dir, "dti_md_", smoothfitted_filename, "_HBN.png"), grid.arrange(arrangeGrob(binned_fitted_HBN_main, left = y.grob, bottom = x.grob)), width = 20, height = 20, units = "in")
+```
+
+
+```{r,  fig.height = 20, fig.width = 20}
+x.grob <- textGrob("Age", 
+                   gp=gpar(col="black", fontsize=24))
+y.grob <- textGrob("DTI MD", 
+                   gp=gpar(col="black", fontsize=24), rot=90)
+
+binned_fitted_PNC_main <- arrange_tract_plots(binned_fitted_PNC, "PNC: Developmental Trajectories of Tract Regions")
+
+
+grid.arrange(arrangeGrob(binned_fitted_PNC_main, left = y.grob, bottom = x.grob))
+
+
+smoothfitted_filename = "smoothfitted"
+ggsave(paste0(png_dir, "dti_md_", smoothfitted_filename, "_PNC.png"), grid.arrange(arrangeGrob(binned_fitted_PNC_main, left = y.grob, bottom = x.grob)), width = 20, height = 20, units = "in")
+```
+
+
+
+# deep versus peripheral for all tracts
+```{r}
+format_deep_peripheral <- function(df, ageeffect_measure, bin_num_nodes, clipEnds) {
+  sqrt_n <- sqrt(bin_num_nodes) # n = number of nodes included in each bin (or level of node_position)
+  df <- df %>% filter(nodeID > (clipEnds-1) & nodeID < (99-clipEnds+1))
+  df_binned <- df %>%
+        filter(
+          nodeID < (bin_num_nodes + clipEnds) |  # Start of the tract
+          nodeID > (99 - bin_num_nodes - clipEnds) |  # End of the tract
+          (nodeID > (50-bin_num_nodes) & nodeID <= (50+bin_num_nodes))  # Deep WM nodes: the 30 nodes in the center
+        ) %>%
+        mutate(
+        node_position = case_when(
+            tract_label == "Corticospinal" & nodeID < (bin_num_nodes + clipEnds) ~ "Peripheral",
+            tract_label == "Corticospinal" & nodeID > (99 - bin_num_nodes - clipEnds) ~ "Deep",
+            tract_label != "Corticospinal" & nodeID < (bin_num_nodes + clipEnds) ~ "Peripheral",
+            tract_label != "Corticospinal" & nodeID > (99 - bin_num_nodes - clipEnds) ~ "Peripheral",
+            tract_label != "Corticospinal" & (nodeID > (50-bin_num_nodes) & nodeID <= (50+bin_num_nodes)) ~ "Deep",
+            TRUE ~ NA_character_
+        )
+    ) %>%
+        #group_by(tract_label, node_position) %>%
+        group_by(tract_label, node_position, Dataset) %>% # removed hemi
+        summarise(
+          mean_ageeffect = abs(mean(get(ageeffect_measure), na.rm = TRUE)),
+          sd = abs(sd(get(ageeffect_measure), na.rm = TRUE)),
+          ymin_sd = abs(mean(get(ageeffect_measure), na.rm = TRUE)) - sd,
+          ymax_sd = abs(mean(get(ageeffect_measure), na.rm = TRUE)) + sd, 
+          se = sd(get(ageeffect_measure), na.rm = TRUE) / sqrt_n,
+          ymin_se = abs(mean(get(ageeffect_measure), na.rm = TRUE)) - se,
+          ymax_se = abs(mean(get(ageeffect_measure), na.rm = TRUE)) + se
+        )
+  df_binned$node_position <- factor(df_binned$node_position, levels = c("Peripheral", "Deep"))
+  
+  return(df_binned)
+}
+
+  
+# function for plotting age effect deep vs peripheral for all tracts
+plot_deep_vs_peripheral <- function(dataset, scalar, ageeffect_measure, bin_num_nodes, color1, color2, clipEnds=NULL) {
+  # format age effect dfs
+  df <- ageeffect.fdr_dfs[[paste0(dataset,"_GAM_ageeffects_", scalar)]]
+  df_formatted <- format_deep_peripheral(df, ageeffect_measure, bin_num_nodes, clipEnds)
+   
+  mycolors <- c(color1, color2)
+
+  df_formatted <- df_formatted[complete.cases(df_formatted), ]
+  plot <- 
+    ggplot(df_formatted, aes(x = tract_label, y = mean_ageeffect, fill= node_position)) +
+    geom_bar(stat = "identity", position="dodge") +
+    geom_errorbar(aes(ymin = ymin_se, ymax = ymax_se), 
+                    width = 0.1, 
+                    colour = "gray20", 
+                    alpha = 0.9, 
+                    size = 0.7, position = position_dodge(width = 0.9)) + 
+    scale_fill_manual(values = mycolors) + 
+    scale_color_manual(values = mycolors) + 
+    theme(
+      legend.position="none",
+      plot.title = element_text(size=18,hjust=0.5),
+      axis.text.x = element_text(angle=45, hjust=0.95, size=18),
+      axis.text.y = element_text(size=18),
+      axis.title.y = element_blank()
+    ) +
+    ggtitle(dataset) +
+    xlab("") 
+  
+  return(plot)
+
+}
+```
+
+
+
+```{r, fig.height = 7, fig.width = 15}
+plot_deep_vs_peripheral("HCPD", scalar, ageeffect_measure, bin_num_nodes, color1 = "#A594F9", color2 = "#E5D9F2", clipEnds=3)
+plot_deep_vs_peripheral("HBN", scalar, ageeffect_measure, bin_num_nodes, color1 = "#A594F9", color2 = "#E5D9F2", clipEnds=3)
+plot_deep_vs_peripheral("PNC", scalar, ageeffect_measure, bin_num_nodes, color1 = "#A594F9", color2 = "#E5D9F2", clipEnds=3)
+
+```
+
+
+```{r, fig.width = 10, fig.height = 5}
+# format age effect dfs
+HCPD <- ageeffect.fdr_dfs[[paste0("HCPD_GAM_ageeffects_", scalar)]] %>% mutate(Dataset = "HCPD")
+HBN <- ageeffect.fdr_dfs[[paste0("HBN_GAM_ageeffects_", scalar)]]  %>% mutate(Dataset = "HBN")
+PNC <- ageeffect.fdr_dfs[[paste0("PNC_GAM_ageeffects_", scalar)]]  %>% mutate(Dataset = "PNC")
+df_all <- rbind(HCPD, HBN, PNC)
+df_formatted <- format_deep_peripheral(df_all, ageeffect_measure, bin_num_nodes, clipEnds) 
+df_formatted <- df_formatted[complete.cases(df_formatted),]
+ 
+df_formatted <- df_formatted %>%
+  mutate(group = interaction(node_position, Dataset, sep = " - "))
+
+mycolors <- c(color1, color2)
+ 
+shapes <- c("HCPD" = 16, "HBN" = 15, "PNC" = 17)
+
+ 
+df <- df_formatted %>% filter(str_detect(tract_label, "Callosum"))
+
+ 
+df$tract_label <- factor(df$tract_label, levels = c("Callosum Orbital", "Callosum Anterior Frontal", "Callosum Superior Frontal", "Callosum Motor", "Callosum Superior Parietal", "Callosum Posterior Parietal", "Callosum Temporal", "Callosum Occipital"))
+ 
+df <- df[order(df$tract_label), ]
+dodge_width <- 0.3
+
+df$tract_node <- factor(paste(df$tract_label, df$node_position), levels = as.vector(t(outer(unique(df$tract_label), c("Peripheral", "Deep"), paste, sep = " "))))
+
+df$group_id <- with(df, interaction(tract_label, node_position, Dataset))
+
+
+# Create a new x-value column that offsets each dataset's x-axis position
+df$tract_node_dodged <- as.numeric(as.factor(df$tract_node)) + 
+                        as.numeric(as.factor(df$Dataset)) * dodge_width - (dodge_width * 2) / 2
+
+tract_labels <- df %>%
+  group_by(tract_label) %>%
+  summarise(tract_label_pos = mean(tract_node_dodged))
+
+
+# Plot with manual x-offsets for each dataset
+ggplot(df, aes(x = tract_node_dodged, y = mean_ageeffect, group = group_id)) +
+  # Add vertical segments (lollipop stems)
+  geom_segment(aes(xend = tract_node_dodged, yend = 0, y = mean_ageeffect-0.005), color = "grey") +
+  # Add lines for each dataset/tract/node_position combination
+  geom_line(aes(color = node_position), size = 3.5) +
+  # Add points with different shapes for each dataset
+  geom_point(aes(shape = Dataset, fill = node_position, color = node_position), size = 6, alpha = 0.8) +
+  # Custom shapes for each dataset
+  scale_shape_manual(values = c(21, 22, 25)) +
+  # Control alpha for peripheral and deep node positions
+  scale_alpha_manual(values = c(0.5, 1)) +
+  # Customize the theme
+  theme_classic() +
+  labs(x = "Tract - Node Position", y = "Mean Age Effect", shape = "Dataset", fill = "Tract Region") +
+  guides(alpha = "none") + 
+  # Rotate x-axis labels for better readability
+  theme(axis.text.x = element_text(hjust = 0.5))  + 
+  # Adjust the x-axis labels to make the tract-node combination readable
+    scale_x_continuous(breaks = tract_labels$tract_label_pos, labels = gsub("Callosum ", "", tract_labels$tract_label))
+
+```
+
+
+
+
+
+```{r fig.width = 15, fig.height = 7}
+library(ggplot2)
+library(dplyr)
+
+color1 = "#3FB8AFFF"
+color2 = "#FF9E9DFF"
+color3 = "#cc0468"
+HCPD <- ageeffect.fdr_dfs[[paste0("HCPD_GAM_ageeffects_", scalar)]] %>% mutate(Dataset = "HCP-D")
+HBN <- ageeffect.fdr_dfs[[paste0("HBN_GAM_ageeffects_", scalar)]]  %>% mutate(Dataset = "HBN")
+PNC <- ageeffect.fdr_dfs[[paste0("PNC_GAM_ageeffects_", scalar)]]  %>% mutate(Dataset = "PNC")
+df_all <- rbind(HCPD, HBN, PNC)
+df_all$Dataset <- factor(df_all$Dataset, levels = c("HCP-D", "PNC", "HBN"))
+df_formatted <- format_deep_peripheral(df_all, ageeffect_measure, bin_num_nodes, clipEnds) 
+df_formatted <- df_formatted[complete.cases(df_formatted),]
+ 
+df <- df_formatted %>% filter(str_detect(tract_label, "Callosum"))
+
+df$tract_label <- factor(df$tract_label, levels = c("Callosum Orbital", "Callosum Anterior Frontal", "Callosum Superior Frontal", "Callosum Motor", "Callosum Superior Parietal", "Callosum Posterior Parietal", "Callosum Temporal", "Callosum Occipital"))
+ 
+df <- df[order(df$tract_label), ]
+df <- df %>% pivot_wider(id_cols = c(tract_label, Dataset), values_from = mean_ageeffect, names_from = c(node_position))
+
+# Set the width for dodging datasets within tracts and spacing between tracts
+dodge_width <- 0.2
+tract_spacing <- 1  # Add space between tracts
+ 
+# Create a new x-value column that adds spacing between tracts and dodges within each tract
+df_callosum <- df %>%
+  mutate(
+    tract_numeric = as.numeric(as.factor(tract_label)),  # Convert tract labels to numeric values
+    tract_spaced = tract_numeric * tract_spacing,        # Add space between tracts
+    tract_node_dodged = tract_spaced + as.numeric(as.factor(Dataset)) * dodge_width - (dodge_width * 2) / 2
+  )
+ 
+# Extract unique tracts and calculate average x positions for labeling
+tract_labels <- df_callosum %>%
+  group_by(tract_label) %>%
+  summarise(tract_label_pos = mean(tract_node_dodged))
+
+# Plot with manual x-offsets for each dataset and space between tracts
+callosum_deep_peripheral <- ggplot(df_callosum) +
+  # Add vertical segments that connect the peripheral and deep mean age effects
+  geom_segment(aes(x = tract_node_dodged, xend = tract_node_dodged, 
+                   y = Peripheral - 0.0175, yend = Deep + 0.0175), color = "gray40", size = 1) +
+  # Add points for peripheral values
+  geom_point(aes(x = tract_node_dodged, y = Peripheral, fill = Dataset, color = Dataset, shape = "Peripheral"), 
+             size = 10, stroke = 2, alpha = 0.9) +
+  # Add points for deep values
+  geom_point(aes(x = tract_node_dodged, y = Deep, color = Dataset, shape = "Deep"), 
+             size = 10, stroke = 2, alpha = 0.9) +
+  scale_shape_manual(values = c("Peripheral" = 19, "Deep" = 1)) +
+  scale_fill_manual(values = c("HCP-D" = color1, "HBN" = color2, "PNC" = color3)) +
+  scale_color_manual(values = c("HCP-D" = color1, "HBN" = color2, "PNC" = color3)) +
+  theme_classic() +
+  labs(y = "Magnitude of Age Effect", fill = "Dataset", shape = "Tract Region", title = "Callosum Bundles") + ylim(0, 0.45) + 
+
+  # Rotate x-axis labels for better readability
+  theme(legend.position = "bottom", 
+        legend.title = element_text(size = 16),
+        legend.text = element_text(size = 16),
+        legend.box = "vertical",    
+        axis.text.x = element_text(size = 16, hjust=1, angle=30),
+        axis.text.y = element_text(size = 16),
+        axis.title.x = element_blank(),
+        axis.title.y = element_blank(),
+        plot.title = element_text(size = 16, hjust = 0.5, face = "bold")) +
+  # Add spacing between tracts by controlling x-axis labels
+  scale_x_continuous(breaks = tract_labels$tract_label_pos, labels = gsub("Callosum ", "", tract_labels$tract_label))  
+
+callosum_deep_peripheral
+```
+ 
+
+
+```{r, fig.height = 7, fig.width = 15}
+HCPD <- ageeffect.fdr_dfs[[paste0("HCPD_GAM_ageeffects_", scalar)]] %>% mutate(Dataset = "HCP-D")
+HBN <- ageeffect.fdr_dfs[[paste0("HBN_GAM_ageeffects_", scalar)]]  %>% mutate(Dataset = "HBN")
+PNC <- ageeffect.fdr_dfs[[paste0("PNC_GAM_ageeffects_", scalar)]]  %>% mutate(Dataset = "PNC")
+df_all <- rbind(HCPD, HBN, PNC)
+df_all$Dataset <- factor(df_all$Dataset, levels = c("HCP-D", "PNC", "HBN"))
+df_formatted <- format_deep_peripheral(df_all, ageeffect_measure, bin_num_nodes, clipEnds) 
+df_formatted <- df_formatted[complete.cases(df_formatted),]
+ 
+df <- df_formatted %>% filter(!str_detect(tract_label, "Callosum"))
+
+df <- df %>% pivot_wider(id_cols = c(tract_label, Dataset), values_from = mean_ageeffect, names_from = c(node_position))
+df$tract_label <- as.factor(df$tract_label
+                            )
+# Set the width for dodging datasets within tracts and spacing between tracts
+dodge_width <- 0.2
+tract_spacing <- 1  # Add space between tracts
+ 
+# Create a new x-value column that adds spacing between tracts and dodges within each tract
+df_main <- df %>%
+  mutate(
+    tract_numeric = as.numeric(as.factor(tract_label)),  # Convert tract labels to numeric values
+    tract_spaced = tract_numeric * tract_spacing,        # Add space between tracts
+    tract_node_dodged = tract_spaced + as.numeric(as.factor(Dataset)) * dodge_width - (dodge_width * 2) / 2
+  )
+ 
+# Extract unique tracts and calculate average x positions for labeling
+tract_labels <- df_main %>%
+  group_by(tract_label) %>%
+  summarise(tract_label_pos = mean(tract_node_dodged))
+
+# Plot with manual x-offsets for each dataset and space between tracts
+main_deep_peripheral <- ggplot(df_main) +
+  # Add vertical segments that connect the peripheral and deep mean age effects
+  geom_segment(aes(x = tract_node_dodged, xend = tract_node_dodged, 
+                   y = Peripheral - 0.0175, yend = Deep + 0.0175), color = "gray40", size = 1) +
+  # Add points for peripheral values
+  geom_point(aes(x = tract_node_dodged, y = Peripheral, fill = Dataset, color = Dataset, shape = "Peripheral"), 
+             size = 10, stroke = 2, alpha = 0.9) +
+  # Add points for deep values
+  geom_point(aes(x = tract_node_dodged, y = Deep, color = Dataset, shape = "Deep"), 
+             size = 10, stroke = 2, alpha = 0.9) +
+  scale_shape_manual(values = c("Peripheral" = 19, "Deep" = 1)) +
+  scale_fill_manual(values = c("HCP-D" = color1, "HBN" = color2, "PNC" = color3)) +
+  scale_color_manual(values = c("HCP-D" = color1, "HBN" = color2, "PNC" = color3)) +
+  theme_classic() +
+  labs(y = "Magnitude of Age Effect", fill = "Dataset", shape = "Tract Region", title = "Main Bundles") + ylim(0, 0.45) + 
+
+  # Rotate x-axis labels for better readability
+  theme(legend.position = "bottom", 
+        legend.title = element_text(size = 16),
+        legend.text = element_text(size = 16),
+        legend.box = "vertical",    
+        axis.text.x = element_text(size = 16, hjust=1, angle=30),
+        axis.text.y = element_text(size = 16),
+        axis.title.x = element_blank(),
+        axis.title.y = element_blank(),
+        plot.title = element_text(size = 16, hjust = 0.5, face = "bold")) +
+  # Add spacing between tracts by controlling x-axis labels
+  scale_x_continuous(breaks = tract_labels$tract_label_pos, labels =  tract_labels$tract_label)  
+
+main_deep_peripheral
+```
+
+
+```{r}
+library(ggplot2)
+library(dplyr)
+
+# Define colors for datasets
+colors <- c("#3FB8AFFF", "#FF9E9DFF", "#cc0468")
+names(colors) <- c("HCP-D", "HBN", "PNC")
+
+# Function to prepare and format data with optional exclusion
+prepare_data <- function(df_all, exclude_pattern = NULL) {
+  df_all <- df_all %>%
+    filter(if (!is.null(exclude_pattern)) !str_detect(tract_label, exclude_pattern) else TRUE) %>%
+    pivot_wider(id_cols = c(tract_label, Dataset), names_from = node_position, values_from = mean_ageeffect) %>%
+    mutate(
+      tract_label = factor(tract_label),
+      tract_numeric = as.numeric(tract_label),
+      tract_spaced = tract_numeric * 1,  # Space between tracts
+      tract_node_dodged = tract_spaced + as.numeric(Dataset) * 0.2 - (0.2 * 2) / 2
+    ) %>%
+    arrange(tract_label)
+
+  tract_labels <- df_all %>%
+    group_by(tract_label) %>%
+    summarise(tract_label_pos = mean(tract_node_dodged))
+
+  return(list(data = df_all, tract_labels = tract_labels))
+}
+
+# Function to create the plot
+create_plot <- function(data, tract_labels, title) {
+  ggplot(data) +
+    geom_segment(aes(x = tract_node_dodged, xend = tract_node_dodged, 
+                     y = Peripheral - 0.0175, yend = Deep + 0.0175), color = "gray40", size = 1) +
+    geom_point(aes(x = tract_node_dodged, y = Peripheral, fill = Dataset, color = Dataset, shape = "Peripheral"), 
+               size = 10, stroke = 2, alpha = 0.9) +
+    geom_point(aes(x = tract_node_dodged, y = Deep, color = Dataset, shape = "Deep"), 
+               size = 10, stroke = 2, alpha = 0.9) +
+    scale_shape_manual(values = c("Peripheral" = 19, "Deep" = 1)) +
+    scale_fill_manual(values = colors) +
+    scale_color_manual(values = colors) +
+    theme_classic() +
+    labs(y = "Magnitude of Age Effect", fill = "Dataset", shape = "Tract Region", title = title) +
+    ylim(0, 0.45) +
+    theme(
+      legend.position = "bottom",
+      legend.title = element_text(size = 16),
+      legend.text = element_text(size = 16),
+      legend.box = "vertical",
+      axis.text.x = element_text(size = 16, hjust = 1, angle = 30),
+      axis.text.y = element_text(size = 16),
+      axis.title.x = element_blank(),
+      axis.title.y = element_blank(),
+      plot.title = element_text(size = 16, hjust = 0.5, face = "bold")
+    ) +
+    scale_x_continuous(breaks = tract_labels$tract_label_pos, labels = tract_labels$tract_label)
+}
+
+# Prepare the data
+df_all <- bind_rows(
+  ageeffect.fdr_dfs[[paste0("HCPD_GAM_ageeffects_", scalar)]] %>% mutate(Dataset = "HCP-D"),
+  ageeffect.fdr_dfs[[paste0("HBN_GAM_ageeffects_", scalar)]]  %>% mutate(Dataset = "HBN"),
+  ageeffect.fdr_dfs[[paste0("PNC_GAM_ageeffects_", scalar)]]  %>% mutate(Dataset = "PNC")
+)
+
+df_all$Dataset <- factor(df_all$Dataset, levels = c("HCP-D", "PNC", "HBN"))
+df_formatted <- format_deep_peripheral(df_all, ageeffect_measure, bin_num_nodes, clipEnds)  
+df_formatted <- df_formatted[complete.cases(df_formatted), ]
+
+# Prepare and plot for Callosum tracts (only include Callosum)
+callosum_data <- prepare_data(df_formatted, exclude_pattern = NULL)  # Include only Callosum
+callosum_plot <- create_plot(callosum_data$data, callosum_data$tract_labels, "Callosum")
+
+# Prepare and plot for Main tracts (exclude Callosum)
+main_data <- prepare_data(df_formatted, exclude_pattern = "Callosum")  # Exclude Callosum
+main_plot <- create_plot(main_data$data, main_data$tract_labels, "Main Bundles")
+
+# Display the plots
+callosum_plot
+main_plot
+
+
+```
+
+```{r, fig.height = 14, fig.width = 15}
+lollipop_plot <- ggarrange(callosum_plot, main_plot, nrow = 2, common.legend = TRUE, legend = "bottom")
+y.grob <- textGrob(expression("Magnitude of Mean Age Effect (" * Delta * " Adjusted " * R^2 * ")"), 
+                   gp=gpar(col="black", fontsize=16), rot=90)
+
+grid.arrange(arrangeGrob(lollipop_plot, left = y.grob))
+
+ggsave(paste0(png_dir, "dti_md_lollipop.png"), grid.arrange(arrangeGrob(lollipop_plot, left = y.grob)), width = 15, height = 14, units = "in")
+
+
 ```
 

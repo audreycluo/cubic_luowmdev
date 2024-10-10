@@ -20,7 +20,7 @@ with open(config_file, "rb") as f:
 
 data_root = config['data_root']
 dataset = config['dataset']
-derivs_dir = ospj(data_root, f"derivatives/{dataset}_fs_qsiprep_xfm")
+derivs_dir = ospj(data_root, f"derivatives/fs_qsiprep_xfm")
  
 ########################################
 # Check for required files
@@ -54,8 +54,6 @@ if len(lta_files) != 1:
 if not os.path.exists(ospj(derivs_dir, subject, 'surfaces', 'native_acpc')):
     os.makedirs(ospj(derivs_dir, subject, 'surfaces', 'native_acpc'))
 outputs_dir = ospj(derivs_dir, subject, 'surfaces', 'native_acpc')
-
-
 
 ########################################
 # Apply Freesurfer to native AC-PC volume transformation to surfaces

@@ -1,6 +1,8 @@
 #!/bin/bash
 
-datasets=("HCPD")
+# submit this with ./c00_wrapper_vol_to_surf.sh
+
+datasets=("HCPD" "HBN" "PNC")  
 
 for dataset in "${datasets[@]}"; do
     config_file="/cbica/projects/luo_wm_dev/code/tract_profiles/config/config_${dataset}.json"
@@ -11,58 +13,26 @@ for dataset in "${datasets[@]}"; do
         mkdir -p ${logs_dir}
     fi
 
-    # Set dirs
+    # set dir
     data_root=$(jq -r '.data_root' ${config_file})
-     
-    # Set subjects file
-    subjects_file="${data_root}/subject_list/${dataset}_tempsubject_list.txt"
-    #subjects_file="${data_root}/subject_list/${dataset}_subject_list_test.txt"
-    #subjects_file="${data_root}/subject_list/${dataset}_subject_list_rerun.txt"
-    # Loop through subjects in the file
-    while IFS= read -r subject; do
-        echo "Processing ${subject}"
+    
+    # subjects file
+    subjects_file="${data_root}/subject_list/final_sample/${dataset}_WMDev_FinalSample.txt"
+    mapfile -t subjects_array < <(tail -n +2 ${subjects_file}) # skip header
+    for i in "${!subjects_array[@]}"; do
+        subjects_array[$i]=$(echo "${subjects_array[$i]}" | tr -d '"') # remove quotes
+    done
+    subject_count=${#subjects_array[@]} 
 
-        job_name="vol_to_surf"
-        output_file="${logs_dir}/${job_name}_${subject}.out"
-        error_file="${logs_dir}/${job_name}_${subject}.err"
+    jid_c01=$(sbatch --parsable \
+        --array=0-$((subject_count-1)) \
+        --job-name="c01_vol_to_surf_individual_${dataset}" \
+        ./c01_vol_to_surf_individual.sh ${subjects_file} ${config_file} ${logs_dir} "c01_vol_to_surf_individual_${dataset}")
 
-        # Submit the first job
-        jobid1=$(sbatch <<EOT | awk '{print $4}'
-#!/bin/bash
-#SBATCH --job-name=${job_name}_${subject}
-#SBATCH --ntasks=1
-#SBATCH --cpus-per-task=1
-#SBATCH --mem=4G
-#SBATCH --output=${output_file}
-#SBATCH --error=${error_file}
+    sbatch --parsable \
+        --dependency=afterok:${jid_c01} \
+        --array=0-$((subject_count-1)) \
+        --job-name="c02_native_to_fsLR_${dataset}" \
+        ./c02_native_to_fsLR.sh ${subjects_file} ${config_file} ${logs_dir} "c02_native_to_fsLR_${dataset}"
 
-source /cbica/projects/luo_wm_dev/miniconda3/etc/profile.d/conda.sh
-conda activate luo_wm_dev
-
-python c01_vol_to_surf_individual.py ${subject} ${config_file} 2.50
-EOT
-)
-        echo "Submitted vol_to_surf (Job ID: $jobid1)"
-        
-        # submit second job
-        job_name="native_to_fsLR"
-        output_file="${logs_dir}/${job_name}_${subject}.out"
-        error_file="${logs_dir}/${job_name}_${subject}.err"
-
-        jobid2=$(sbatch <<EOT | awk '{print $4}'
-#!/bin/bash
-#SBATCH --job-name=${job_name}_${subject}
-#SBATCH --ntasks=1
-#SBATCH --cpus-per-task=1
-#SBATCH --mem=4G
-#SBATCH --output=${output_file}
-#SBATCH --error=${error_file}
-#SBATCH --dependency=afterok:${jobid1}
-
-./c02_native_to_fsLR.sh ${subject} ${config_file} 
-EOT
-)
-        echo "Submitted native_to_fsLR.sh with dependency on vol_to_surf.sh (Job ID: $jobid2)"
-
-    done < ${subjects_file}
 done

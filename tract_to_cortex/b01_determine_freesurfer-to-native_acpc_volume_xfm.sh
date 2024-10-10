@@ -1,24 +1,55 @@
 #!/bin/bash
+#SBATCH --nodes=1
+#SBATCH --ntasks=1                           
+#SBATCH --cpus-per-task=1                   
+#SBATCH --time=00:30:00                    
+#SBATCH --output=/dev/null    # suppress default output file
+#SBATCH --error=/dev/null     # suppress default error file
 
 # code for transforms adapted from Marc Jaskir (https://github.com/marcjaskir/tracts/blob/main/04-map_tract_volumes_to_surfaces.sh). you're my hero!!
 
-module load fsl/6.0.4
-
-########################################
-# Define variables passed from the submission script
-########################################
-subject=$1
+ 
+######################
+# setup for job array 
+######################
+# define variables passed from the submission script
+subjects_file=$1  
 config_file=$2
+logs_dir=$3
+job_name=$4
+
+data_root=$(jq -r '.data_root' ${config_file})
+dataset=$(jq -r '.dataset' ${config_file})
+
+mapfile -t subjects_array < <(tail -n +2 ${subjects_file}) # skip header
+for i in "${!subjects_array[@]}"; do
+    subjects_array[$i]=$(echo "${subjects_array[$i]}" | tr -d '"') # remove quotes
+done
+
+
+# get the subject corresponding to my job array element
+subject=${subjects_array[$SLURM_ARRAY_TASK_ID]}
+
+# define the log filenames dynamically based on subject
+output_file="${logs_dir}/${job_name}_${subject}_${SLURM_JOB_ID}_${SLURM_ARRAY_TASK_ID}.out"
+error_file="${logs_dir}/${job_name}_${subject}_${SLURM_JOB_ID}_${SLURM_ARRAY_TASK_ID}.err"
+
+# Redirect stdout and stderr to the desired log files
+exec > "${output_file}"
+exec 2> "${error_file}"
+ 
+########################################
+# Load modules
+########################################
+module load fsl/6.0.4
 
 ########################################
 # Set directories
 ########################################
-dataset=$(jq -r '.dataset' "$config_file")
-data_root=$(jq -r '.data_root' "$config_file")
 qsiprep_dir="${data_root}/raw/datalad_qsiprep/"
 freesurfer_dir="${data_root}/raw/datalad_freesurfer/inputs/data/"
 SUBJECTS_DIR="${data_root}/raw/datalad_freesurfer/inputs/data/freesurfer/"
-derivs_dir="${data_root}/derivatives/${dataset}_fs_qsiprep_xfm"
+derivs_dir="${data_root}/derivatives/fs_qsiprep_xfm"
 if [ ! -d "${derivs_dir}" ]; then
   mkdir -p ${derivs_dir}
 fi
@@ -26,7 +57,6 @@ fi
 ########################################
 # Create deriv directories
 ########################################   
-
 # Create derivs directories for transforms (including reference volumes) and surfaces converted to GIFTIs
 if [ ! -d ${derivs_dir}/${subject}/transforms ]; then
     mkdir -p ${derivs_dir}/${subject}/transforms/freesurfer-to-native_acpc
@@ -39,15 +69,30 @@ derivs_dir_surf=${derivs_dir}/${subject}/surfaces/freesurfer
 ########################################
 # Datalad get required files 
 ########################################
-# pro-tip: unzip -l zipfile.zip shows you the contents of the zip without unzipping it
+# unzip -l zipfile.zip shows you the contents of the zip without unzipping it
 
 cd ${freesurfer_dir}
-if [ ! -d "freesurfer/${subject}" ]; then
-    datalad get ${subject}*.zip
-    echo "freesurfer ${subject} zip successfully gotten"
-    unzip -o ${subject}*.zip "freesurfer/${subject}/mri/*" "freesurfer/${subject}/surf/*" # -o flag to automatically overwrite
-    find . -name "${subject}*.zip" -exec datalad drop --nocheck {} \; # drop zip to save space
-    echo "freesurfer ${subject} zip successfully dropped"
+
+if [[ "$dataset" == *PNC* ]]; then 
+   zip_file_pattern="${subject}_freesurfer-20.2.3.zip" # PNC's freesurfer clone has extra stuff in it. merp.
+   existing_zip_file=$(find . -name "$zip_file_pattern" | head -n 1)
+   if [ -z "$existing_zip_file" ]; then 
+        echo "${participant} has no zip file in the folder."  
+   else
+        datalad get "${zip_file_pattern}"
+        echo "freesurfer ${subject} zip successfully gotten"
+        unzip -o ${zip_file_pattern} "freesurfer/${subject}/mri/*" "freesurfer/${subject}/surf/*" # -o flag to automatically overwrite
+        find . -name ${zip_file_pattern} -exec datalad drop --nocheck {} \; # drop zip to save space
+        echo "freesurfer ${subject} zip successfully dropped"
+   fi
+else 
+  if [ ! -d "freesurfer/${subject}" ]; then
+      datalad get ${subject}*.zip
+      echo "freesurfer ${subject} zip successfully gotten"
+      unzip -o ${subject}*.zip "freesurfer/${subject}/mri/*" "freesurfer/${subject}/surf/*" # -o flag to automatically overwrite
+      find . -name "${subject}*.zip" -exec datalad drop --nocheck {} \; # drop zip to save space
+      echo "freesurfer ${subject} zip successfully dropped"
+  fi
 fi
  
 cd ${qsiprep_dir}
@@ -202,4 +247,4 @@ rm ${derivs_dir_xfm}/${subject}.freesurfer-to-native_acpc.xfm.mat
 # Clean up files
 ########################################   
 rm -rf ${freesurfer_dir}/freesurfer/${subject}
-rm -rf ${qsiprep_dir}/qsiprep/${subject}
+#rm -rf ${qsiprep_dir}/qsiprep/${subject}

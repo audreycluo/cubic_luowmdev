@@ -100,7 +100,7 @@
                 "min_sl": 20,
                 "stat": "mean",
                 "min_bval": "",
-                "max_bval": "1500", 
+                "max_bval": 1500, 
                 "filter_b": true,
                 "robust_tensor_fitting": false,
                 "csd_response": "",

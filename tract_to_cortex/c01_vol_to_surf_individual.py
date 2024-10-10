@@ -37,7 +37,7 @@ with open(config_file, "rb") as f:
 
 data_root = config['data_root']
 dataset = config['dataset']
-derivs_dir = ospj(data_root, f"derivatives/{dataset}_vol_to_surf")
+derivs_dir = ospj(data_root, f"derivatives/vol_to_surf")
 out_dir = ospj(derivs_dir, subject, "native_acpc")
 
 # Create directory for vol_to_surf outputs
@@ -46,9 +46,9 @@ if not os.path.exists(derivs_dir):
 
 if not os.path.exists(ospj(derivs_dir, subject, "native_acpc")):
         os.makedirs(ospj(derivs_dir, subject, "native_acpc"))
-        print(f"Directory derivatives/{dataset}_vol_to_surf/{subject}/native_acpc created.")
+        print(f"Directory derivatives/vol_to_surf/{subject}/native_acpc created.")
 else:
-        print(f"Directory derivatives/{dataset}_vol_to_surf/{subject}/native_acpc already exists.")
+        print(f"Directory derivatives/vol_to_surf/{subject}/native_acpc already exists.")
 
 ########################################
 # Functions
@@ -84,7 +84,7 @@ def save_gifti_file(vol_to_surf_output, subject, tract, depth, outdir):
 # Load Files
 ########################################
 # load tdi maps (LAS) for each subject = img 
-tdi_maps_path = ospj(data_root, "derivatives", f"{dataset}_tdi_maps", subject, "tdi_binarized")
+tdi_maps_path = ospj(data_root, "derivatives", f"tdi_maps", subject, "tdi_binarized")
 tdi_files = os.listdir(tdi_maps_path)  
 tdi_maps = {}
 for file in tdi_files: # loop through each file in my tdi_binarzed dir, extract the tract name, and load it
@@ -94,7 +94,7 @@ for file in tdi_files: # loop through each file in my tdi_binarzed dir, extract 
         tdi_maps[tract_name] = nib.load(file_path)
 
 # load freesurfer lh.white, rh.white in native acpc (LAS) = surfmesh
-surfs_path = ospj(data_root, "derivatives", f"{dataset}_fs_qsiprep_xfm", subject, "surfaces/native_acpc")
+surfs_path = ospj(data_root, "derivatives", f"fs_qsiprep_xfm", subject, "surfaces/native_acpc")
 surfmesh_files = os.listdir(surfs_path)  
 lh_surf_mesh = [surfmesh_file for surfmesh_file in surfmesh_files if "lh.white" in surfmesh_file]
 rh_surf_mesh = [surfmesh_file for surfmesh_file in surfmesh_files if "rh.white" in surfmesh_file]
@@ -105,9 +105,9 @@ rh_surf_mesh = ospj(surfs_path, rh_surf_mesh[0])
 ###############################################
 # Map Binarized Tract Density Maps to Surface!
 ###############################################
-lh_tracts = [key for key in tdi_maps.keys() if key.endswith('L')]
-rh_tracts = [key for key in tdi_maps.keys() if key.endswith('R')]
-bilat_tracts = ["FP", "FA"]
+lh_tracts = [key for key in tdi_maps.keys() if key.startswith('Left')]
+rh_tracts = [key for key in tdi_maps.keys() if key.startswith('Right')]
+bilat_tracts = [key for key in tdi_maps.keys() if 'Callosum' in key]
 
 threshold = 0.5 # even though the TDI maps are binarized, it seems like when we do vol_to_surf, we get a few vertices
 # where it's between 0 and 1 (majority are still either 0 or 1). Going to binarize again just to ensure
@@ -115,7 +115,7 @@ threshold = 0.5 # even though the TDI maps are binarized, it seems like when we 
  
 # do vol_to_surf for lh tracts
 for tract in lh_tracts:
-    if tract in ["pARCL", "CGCL", "VOFL"]:
+    if tract in ["LeftPosteriorArcuate", "LeftVerticalOccipital"]:
         cortical_map = apply_vol_to_surf(tdi_maps[tract], depth = 0.1, surf_mesh = lh_surf_mesh)
         cortical_map = (cortical_map > threshold).astype(int)
         save_gifti_file(cortical_map, subject, tract, depth = "0.1", outdir=out_dir)
@@ -126,7 +126,7 @@ for tract in lh_tracts:
 
 # do vol_to_surf for rh tracts
 for tract in rh_tracts:
-    if tract in ["pARCR", "CGCR", "VOFR"]:
+    if tract in ["RightPosteriorArcuate", "RightVerticalOccipital"]:
         cortical_map = apply_vol_to_surf(tdi_maps[tract], depth = 0.1, surf_mesh = rh_surf_mesh)
         cortical_map = (cortical_map > threshold).astype(int)
         save_gifti_file(cortical_map, subject, tract, depth = "0.1", outdir=out_dir)
@@ -140,10 +140,10 @@ for tract in rh_tracts:
 for tract in bilat_tracts:
     cortical_map_lh = apply_vol_to_surf(tdi_maps[tract], depth = depth, surf_mesh = lh_surf_mesh)
     cortical_map_lh = (cortical_map_lh > threshold).astype(int)
-    save_gifti_file(cortical_map_lh, subject, f"{tract}L", depth = f"{depth}", outdir=out_dir) # indicate it's lh
+    save_gifti_file(cortical_map_lh, subject, f"Left{tract}", depth = f"{depth}", outdir=out_dir) # indicate it's lh
 
     cortical_map_rh = apply_vol_to_surf(tdi_maps[tract], depth = depth, surf_mesh = rh_surf_mesh)
     cortical_map_rh = (cortical_map_rh > threshold).astype(int)
-    save_gifti_file(cortical_map_rh, subject, f"{tract}R", depth = f"{depth}", outdir=out_dir) # indicate it's rh
+    save_gifti_file(cortical_map_rh, subject, f"Right{tract}", depth = f"{depth}", outdir=out_dir) # indicate it's rh
 
  
