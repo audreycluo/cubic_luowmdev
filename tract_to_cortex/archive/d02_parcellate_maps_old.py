@@ -19,14 +19,16 @@ import sys
 """
 This script takes the population probability tract-to-cortex maps and parcellates them to Glasser. 
 Saves out csv's of the maps (no threshold applied).
+Can also save out pngs (these visualize maps at different probability thresholds), 
+but code for figures would need to be run locally
+on a mounted project -- haven't figured out rendering issues on cubic. 
 """
  
 ###########################
 ## Set variables and dirs #
 ###########################
 dataset = sys.argv[1]
-depth = float(sys.argv[2])
-
+threshold = float(sys.argv[2])
 config_file = f"/cbica/projects/luo_wm_dev/code/tract_profiles/config/config_{dataset}.json"
 
 with open(config_file, "rb") as f:
@@ -34,26 +36,39 @@ with open(config_file, "rb") as f:
 
 data_root = config['data_root']
 dataset = config['dataset']
-derivs_dir = ospj(data_root, f"derivatives/vol_to_surf")
+derivs_dir = ospj(data_root, f"derivatives/{dataset}_vol_to_surf")
 out_dir = ospj(derivs_dir, "group")
-os.makedirs(out_dir, exist_ok=True)
+
+if not os.path.exists(out_dir):
+        os.makedirs(out_dir)
+        print(f"Directory {out_dir} created.")
+else:
+        print(f"Directory {out_dir} already exists.")
+
+png_dir = ospj(out_dir, "figures")
+
+if not os.path.exists(png_dir):
+        os.makedirs(png_dir)
+        print(f"Directory {png_dir} created.")
+else:
+        print(f"Directory {png_dir} already exists.")
+
+
 ###################
 # Define functions 
 ###################
  
-def parcellate_tract_maps(parcellator_object, tract):
+def parcellate_tract_maps(parcellator_object,  tract):
     """
     Apply a cortical parcellation to tract-to-region probability maps
     """
-    tract_lh = f"Left{tract}"
-    tract_rh = f"Right{tract}"
-    left_gii = tract_averages[f"{tract_lh}"]
-    right_gii = tract_averages[f"{tract_rh}"]
+    left_gii = tract_averages[f"{tract}L"]
+    right_gii = tract_averages[f"{tract}R"]
     combined_gii = [left_gii, right_gii]
     parcellated_maps = parcellator_object.fit_transform(combined_gii, 'fsLR') 
     return parcellated_maps
 
-def save_parcellated_maps(parcellator_object, tract, atlas, depth):
+def save_parcellated_maps(parcellator_object,  tract, atlas):
     parcellated_maps = parcellate_tract_maps(parcellator_object,  tract)
     print(f"{tract} parcellated")
 
@@ -64,13 +79,13 @@ def save_parcellated_maps(parcellator_object, tract, atlas, depth):
     lh_labels = np.unique(lh_glasser.darrays[0].data)[1:]  # exclude 0 (medial wall)
     lh_data = np.column_stack((lh_parcellated, lh_labels))
     lh_df = pd.DataFrame(lh_data, columns=['probability', 'regionID'])
-    lh_df.to_csv(ospj(out_dir, f'Left{tract}_{depth}_{atlas}.csv'), index=False)
+    lh_df.to_csv(ospj(out_dir, f'{tract}L_{atlas}.csv'), index=False)
     
     # save parcellated rh
     rh_labels = np.unique(rh_glasser.darrays[0].data)[1:]  
     rh_data = np.column_stack((rh_parcellated, rh_labels))
     rh_df = pd.DataFrame(rh_data, columns=['probability', 'regionID'])
-    rh_df.to_csv(ospj(out_dir, f'Right{tract}_{depth}_{atlas}.csv'), index=False)
+    rh_df.to_csv(ospj(out_dir, f'{tract}R_{atlas}.csv'), index=False)
 
     # create vertex-level data from the parcellated data
     lh_vertex_data = np.zeros(32492)
@@ -89,23 +104,46 @@ def save_parcellated_maps(parcellator_object, tract, atlas, depth):
     print(f"{tract} parcellated data saved")
     return vertex_data
 
+def save_parc_map_figs(parcellator_object, tract, threshold, atlas):
+    vertex_data = save_parcellated_maps(parcellator_object, tract, atlas)
+    # threshold map
+    vertex_data = np.where(vertex_data > threshold, vertex_data, 0)
+   
+    p = Plot(lh, rh, views=['lateral', 'medial'], brightness=0.7, zoom=1.2)
+    p.add_layer(vertex_data, cmap=aquamarine, cbar=True, color_range=(threshold, 1))
+    p.add_layer(vertex_data, cmap = aquamarine, as_outline = True, cbar = False, alpha=0.6) # outline
+                    
+    kws = dict(location='bottom', draw_border=False, aspect=10,
+            decimals=1, pad=0)
+    fig = p.build(cbar_kws=kws)
+    fig.axes[0].set_title(tract, pad= 20)
+    output_file = os.path.join(png_dir, f'{tract}_threshold{threshold}_{atlas}.png')
+    fig.savefig(output_file, dpi=300)
+    print(f'Saved {output_file}')
+    
 
-##############################################################################
-# Load vertex-level population probability tract maps for my depth of interest
-##############################################################################
+    plt.close(fig)
+
+
+#########################################################
+# Load vertex-level population probability tract maps
+#########################################################
 tract_averages = {}
 for filename in os.listdir(out_dir):
-    pattern = rf'group_([A-Za-z]+)_{depth}\.shape\.gii'
-    match = re.search(pattern, filename)
-    if match:
-        tract = match.group(1)
-        file_path = os.path.join(out_dir, filename)
-        tract_averages[tract] = file_path # save the gifti filepath into a dictionary {tractname:tractmap}
+    if filename.endswith('.shape.gii'):
+        # extract tract name
+        parts = filename.split('_')
+        if len(parts) >= 2:
+            tract_name_part = parts[1]
+            tract_name = tract_name_part.split('_')[0]
+            file_path = os.path.join(out_dir, filename)
+            tract_averages[tract_name] = file_path # save the gifti filepath into a dictionary {tractname:tractmap}
+
 
 print(tract_averages.keys())
 
-tracts = {tract for tract in tract_averages.keys()}
-tracts = set(tract[4:] if tract.startswith('Left') else (tract[5:] if tract.startswith('Right') else tract) for tract in tracts) # get the tract root name
+tracts = {tract[:-1] for tract in tract_averages.keys()}
+
 
 #########################################################
 # Load glasser
@@ -124,8 +162,21 @@ rh_glasser = glasser[1]
 glasser_parc = Parcellater(glasser, 'fsLR').fit()
 print(glasser_parc)
 
+
 #########################################################
-# Parcellate and save!
+# Parcellate, plot, and save!
 #########################################################
+# load my custom colormap
+with open('/cbica/projects/luo_wm_dev/code/tract_profiles/colormaps/aquamarine.json', 'r') as f:
+    hex_colors = json.load(f)
+rgb_colors = [mcolors.hex2color(hex_color) for hex_color in hex_colors]
+aquamarine = LinearSegmentedColormap.from_list("loaded_cmap", rgb_colors, N=256)
+
+surfaces = fetch_fslr()
+lh, rh = surfaces['veryinflated']
+
+#for tract in tracts:
+   #save_parc_map_figs(glasser_parc, tract, threshold, "glasser") # this would need to be run locally. merp.
+
 for tract in tracts:
-    save_parcellated_maps(glasser_parc, tract, "glasser", depth) 
+    save_parcellated_maps(glasser_parc, tract, "glasser") 

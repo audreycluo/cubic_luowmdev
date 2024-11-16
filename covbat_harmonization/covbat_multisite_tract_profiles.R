@@ -41,8 +41,8 @@ format_covbat <- function(df, scalar) {
 ################## 
 # Load files 
 ################## 
-#all_subjects <- fread(sprintf("%1$s/all_subjects/collated_tract_profiles_nocovbat.tsv", data_root))
-all_subjects <- fread(sprintf("%1$s/all_subjects/collated_tract_profiles_nocovbat_unc_cc.tsv", data_root))
+all_subjects <- fread(sprintf("%1$s/all_subjects/collated_tract_profiles_nocovbat.tsv", data_root))
+#all_subjects <- fread(sprintf("%1$s/all_subjects/collated_tract_profiles_nocovbat_unc_cc.tsv", data_root))
 
 all_subjects$tractID <- gsub("Fronto-occipital", "Fronto.occipital", all_subjects$tractID)
 all_subjects <- all_subjects %>% mutate(hemi = ifelse(grepl("Left", tractID), "Left", "Right")) %>% 
@@ -113,5 +113,6 @@ merged_covbat_all <- merge(final_dti_fa_covbat, final_dti_md_covbat)
 merged_covbat_all <- merged_covbat_all %>% arrange(sub, tractID, nodeID, hemi) 
 
 # save out!
-saveRDS(merged_covbat_all, sprintf("%1$s/all_subjects/collated_tract_profiles_final_unc_cc.RData", data_root))
+saveRDS(merged_covbat_all, sprintf("%1$s/all_subjects/collated_tract_profiles_final.RData", data_root))
+#saveRDS(merged_covbat_all, sprintf("%1$s/all_subjects/collated_tract_profiles_final_unc_cc.RData", data_root))
  

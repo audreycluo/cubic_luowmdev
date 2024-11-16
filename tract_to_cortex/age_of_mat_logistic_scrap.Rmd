@@ -1,0 +1,309 @@
+---
+title: "logistic model scrap for age of maturation"
+author: "Audrey Luo"
+date: "2024-10-22"
+output: html_document
+---
+ 
+ 
+```{r}
+
+plot_diffs <- function(dataset) {
+  
+  diffs_all <- get(paste0("diffs_", dataset))
+  title = gsub("PD", "P-D", dataset) # for HCPD
+  diffs_plot <- ggplot(diffs_all, aes(x = mean_SA_diff, y = age_effect_diff, label = bundle_name)) +
+  geom_point(size = 5, aes(fill = bundle_name, color = bundle_name), shape = 21, alpha = 0.9) +  # Plot points
+  scale_fill_manual(values = aquamarine) +
+  scale_color_manual(values = aquamarine) +
+  ggrepel::geom_text_repel(position = position_jitter(seed = 3), 
+    box.padding = 0.5,  # Increase space around labels
+    point.padding = 0.5,  # Increase space around points
+    segment.color = "gray",  # Line color connecting point to label
+    segment.size = 0.5,  # Line thickness
+    max.overlaps = Inf) + # Add labels
+  geom_smooth(data = diffs_all, method='lm', se=TRUE, fill=alpha(c("gray70"),.9), col="black") + 
+  stat_cor(method = "pearson", label.x = -50, label.y = 10, size = 6) + 
+  labs(title = title) + theme_classic() +
+  theme(legend.position = "none",
+    plot.title = element_text(hjust = 0.5, size = 20),
+    axis.title = element_blank(),
+    axis.text.x = element_text(size = 20),
+    axis.text.y = element_text(size = 20))
+  
+  return(diffs_plot)
+}
+
+colormap <- c("#052632","#15CABE","#ABF590","#fffe76")
+aquamarine <- colorRampPalette(colormap)(20)
+
+
+```
+ 
+```{r cars}
+
+test a logistic model:
+- for nodes that never matured, code them as 0. For nodes that did mature, code them as 1. Then do a logistic regression. I wonder if I can use NEST for this (since a wald test is used?)
+logistic_model <- glm(maturation_status_0_1 ~ SA_axis, family = binomial, data = your_data)
+- plotted with help from https://stats.oarc.ucla.edu/r/dae/logit-regression/ 
+```{r, fig.height = 5, fig.width = 5}
+
+ 
+fit_logit_SAaxis <- function(dataset) {
+  aggregated_axis <- get(paste0("aggregated_axis_", dataset, "_binary"))
+  logistic_model <- glm(maturation_status ~ SA.axis_rank, family = binomial, data = aggregated_axis) # this is group level data so i'm just doing maturation status by SA axis rank
+  
+  # make sequence of S-A axis rank values for prediction
+  sa_axis_seq <- seq(min(aggregated_axis$SA.axis_rank), 
+                     max(aggregated_axis$SA.axis_rank), 
+                     length.out = 100)
+  
+  # new data frame for the prediction with the sequence of SA.axis_rank
+  newdata <- data.frame(SA.axis_rank = sa_axis_seq)
+  
+  # get predictions and standard errors from logistic model
+  newdata <- cbind(newdata, predict(logistic_model, newdata = newdata, type = "link", se.fit = TRUE))
+  
+  # back-transform the predicted values and confidence intervals to probabilities
+  newdata <- within(newdata, {
+    PredictedProb <- plogis(fit)  # Predicted probabilities
+    LL <- plogis(fit - (1.96 * se.fit))  # Lower bound of the 95% CI
+    UL <- plogis(fit + (1.96 * se.fit))  # Upper bound of the 95% CI
+  })
+  
+  return(list(logistic_model, newdata))
+}
+
+ 
+plot_logit_SAaxis <- function(dataset, newdata, color) {
+  aggregated_axis <- get(paste0("aggregated_axis_", dataset, "_binary"))
+  title <- gsub("PD", "P-D", dataset)
+  plot <- ggplot() +
+  geom_point(data = aggregated_axis, 
+             aes(x = SA.axis_rank, y = maturation_status, fill = SA.axis_rank),  
+             color = "gray", alpha = 0.5, size = 4, shape = 21) +  # Points with gray outline and color fill based on SA.axis_rank
+  paletteer::scale_fill_paletteer_c("grDevices::RdYlBu", na.value = "grey100", direction = -1) +  # Correct fill color scale for SA.axis_rank
+  geom_ribbon(data = newdata, aes(x = SA.axis_rank, ymin = LL, ymax = UL), fill = color, alpha = 0.5) +  # Confidence interval
+  geom_line(data = newdata, aes(x = SA.axis_rank, y = PredictedProb), color = color, size = 1) +  # Predicted probabilities
+  labs(x = "S-A Axis Rank", y = "Probability of Maturation", title = title) + 
+  theme_classic() + 
+  theme(legend.position = "none",
+        plot.title = element_text(size = 20, hjust = 0.5),
+        axis.title.x = element_text(size = 20),
+        axis.title.y = element_text(size = 20),
+        axis.text.x = element_text(size = 20),
+        axis.text.y = element_text(size = 20)) 
+  
+  return(plot)
+  
+}
+ 
+```
+
+
+```{r sa axis logit, fig.height = 5, fig.width = 5}
+aggregated_axis_HCPD_binary <- aggregated_axis_HCPD_binary %>% mutate(maturation_status = ifelse(is.na(regional_mean_ageeffect), 0, 1))
+logit_SA_HCPD <- fit_logit_SAaxis("HCPD")
+plot_logit_SAaxis("HCPD", logit_SA_HCPD[[2]], color = color1) 
+
+
+aggregated_axis_HBN_binary <- aggregated_axis_HBN_binary %>% mutate(maturation_status = ifelse(is.na(regional_mean_ageeffect), 0, 1))
+logit_SA_HBN <- fit_logit_SAaxis("HBN")
+plot_logit_SAaxis("HBN", logit_SA_HBN[[2]], color = color2) 
+
+
+aggregated_axis_PNC_binary <- aggregated_axis_PNC_binary %>% mutate(maturation_status = ifelse(is.na(regional_mean_ageeffect), 0, 1))
+logit_SA_PNC <- fit_logit_SAaxis("PNC")
+plot_logit_SAaxis("PNC", logit_SA_PNC[[2]], color = color3) 
+
+```
+
+this shit is real. i just need to prove it with stats.
+```{r logit maps, fig.height = 5, fig.width = 5}
+
+agg_ageeffects_HCPD <- agg_ageeffects_HCPD %>% mutate(maturation_status = ifelse(is.na(regional_mean_ageeffect), 0, 1))
+agg_ageeffects_HBN <- agg_ageeffects_HBN %>% mutate(maturation_status = ifelse(is.na(regional_mean_ageeffect), 0, 1))
+agg_ageeffects_PNC <- agg_ageeffects_PNC %>% mutate(maturation_status = ifelse(is.na(regional_mean_ageeffect), 0, 1))
+
+
+fit_logit_maps <- function(dataset, map, map_name) {
+  agg_ageeffects <- get(paste0("agg_ageeffects_", dataset))
+  map <- data.frame(map$data) %>% setNames("map_measure")
+  agg_ageeffects_merged <- cbind(agg_ageeffects, map)
+
+  logistic_model <- glm(maturation_status ~ map_measure, family = binomial, data = agg_ageeffects_merged)
+  
+  # make sequence of map values for prediction
+  map_seq <- seq(min(agg_ageeffects_merged$map_measure, na.rm = T), 
+                   max(agg_ageeffects_merged$map_measure, na.rm = T), 
+                   length.out = 100)
+  
+  # new data frame for the prediction with the sequence of SA.axis_rank
+  newdata <- data.frame(map_measure = map_seq)
+  
+  # get predictions and standard errors from logistic model
+  newdata <- cbind(newdata, predict(logistic_model, newdata = newdata, type = "link", se.fit = TRUE))
+  
+  # back-transform the predicted values and confidence intervals to probabilities
+  newdata <- within(newdata, {
+    PredictedProb <- plogis(fit)  # Predicted probabilities
+    LL <- plogis(fit - (1.96 * se.fit))  # Lower bound of the 95% CI
+    UL <- plogis(fit + (1.96 * se.fit))  # Upper bound of the 95% CI
+  })
+  
+  assign(paste0("agg_ageeffects_", dataset, "_", map_name), agg_ageeffects_merged, envir = .GlobalEnv)
+  return(list(logistic_model, newdata))
+}
+
+ 
+ 
+
+ 
+plot_logit_map <- function(dataset, newdata, map_name, color) {
+  aggregated_df <- get(paste0("agg_ageeffects_", dataset, "_", map_name))
+  title <- gsub("PD", "P-D", dataset)
+  plot <- ggplot() +
+  geom_point(data = aggregated_df, 
+             aes(x = map_measure, y = maturation_status),  
+             color = color, fill = color, alpha = 0.5, size = 4, shape = 21) +  # Points with gray outline and color fill based on SA.axis_rank
+  geom_ribbon(data = newdata, aes(x = map_measure, ymin = LL, ymax = UL), fill = color, alpha = 0.5) +  # Confidence interval
+  geom_line(data = newdata, aes(x = map_measure, y = PredictedProb), color = color, size = 1) +  # Predicted probabilities
+  labs(x = "", y = "Probability of Maturation", title = title) + 
+  theme_classic() + 
+  theme(legend.position = "none",
+        plot.title = element_text(size = 20, hjust = 0.5),
+        axis.title.x = element_text(size = 20),
+        axis.title.y = element_text(size = 20),
+        axis.text.x = element_text(size = 20),
+        axis.text.y = element_text(size = 20)) 
+  
+  return(plot)
+  
+} 
+  
+  
+# t1t2_ageeffect_HCPD
+#cor.test(t1t2_mean_HCPD$data, agg_ageeffects$regional_mean_ageeffect, method = 'spearman')   ## 
+#cor.test(t1t2_roc_HCPD$data, agg_ageeffects$regional_mean_ageeffect, method = 'spearman') ##
+#cor.test(t1t2_maxslopeage_HCPD$data, agg_ageeffects$regional_mean_ageeffect, method = 'spearman') ##
+#cor.test(alff_pnc$data, agg_ageeffects$regional_mean_ageeffect, method = 'spearman')  ##
+#cor.test(alff_decline_pnc$data, agg_ageeffects$regional_mean_ageeffect, method = 'spearman') 
+```
+
+
+
+```{r logit maps plots, fig.height = 5, fig.width = 15}
+# t1/t2 age effect
+logit_HCPD_t1t2ageeffect <- fit_logit_maps("HCPD", t1t2_ageeffect_HCPD, "t1t2_ageeffect") 
+logit_HCPD_t1t2ageeffect_plot <- plot_logit_map("HCPD", logit_HCPD_t1t2ageeffect[[2]], "t1t2_ageeffect", color1)
+
+logit_HBN_t1t2ageeffect <- fit_logit_maps("HBN", t1t2_ageeffect_HCPD, "t1t2_ageeffect") 
+logit_HBN_t1t2ageeffect_plot <- plot_logit_map("HBN", logit_HBN_t1t2ageeffect[[2]], "t1t2_ageeffect", color2)
+
+logit_PNC_t1t2ageeffect <- fit_logit_maps("PNC", t1t2_ageeffect_HCPD, "t1t2_ageeffect") 
+logit_PNC_t1t2ageeffect_plot <- plot_logit_map("PNC", logit_PNC_t1t2ageeffect[[2]], "t1t2_ageeffect", color3)
+
+logit_t1t2ageeffect_final <- ggarrange(logit_HCPD_t1t2ageeffect_plot, logit_HBN_t1t2ageeffect_plot, logit_PNC_t1t2ageeffect_plot, ncol = 3)
+
+x.grob <- textGrob("T1w/T2w Partial R-squared (Age Effect)", 
+                   gp=gpar(col="black", fontsize=20))
+
+grid.arrange(arrangeGrob(logit_t1t2ageeffect_final, bottom = x.grob))
+
+# t1t2_mean_HCPD
+logit_HCPD_t1t2mean <- fit_logit_maps("HCPD", t1t2_mean_HCPD, "t1t2_mean") 
+logit_HCPD_t1t2mean_plot <- plot_logit_map("HCPD", logit_HCPD_t1t2mean[[2]], "t1t2_mean", color1)
+
+logit_HBN_t1t2mean <- fit_logit_maps("HBN", t1t2_mean_HCPD, "t1t2_mean") 
+logit_HBN_t1t2mean_plot <- plot_logit_map("HBN", logit_HBN_t1t2mean[[2]], "t1t2_mean", color2)
+
+logit_PNC_t1t2mean <- fit_logit_maps("PNC", t1t2_mean_HCPD, "t1t2_mean") 
+logit_PNC_t1t2mean_plot <- plot_logit_map("PNC", logit_PNC_t1t2mean[[2]], "t1t2_mean", color3)
+
+logit_t1t2mean_final <- ggarrange(logit_HCPD_t1t2mean_plot, logit_HBN_t1t2mean_plot, logit_PNC_t1t2mean_plot, ncol = 3)
+
+x.grob <- textGrob("Mean T1w/T2w", 
+                   gp=gpar(col="black", fontsize=20))
+
+grid.arrange(arrangeGrob(logit_t1t2mean_final, bottom = x.grob))
+
+
+
+# t1t2_roc_HCPD
+logit_HCPD_t1t2roc <- fit_logit_maps("HCPD", t1t2_roc_HCPD, "t1t2_roc") 
+logit_HCPD_t1t2roc_plot <- plot_logit_map("HCPD", logit_HCPD_t1t2roc[[2]], "t1t2_roc", color1)
+
+logit_HBN_t1t2roc <- fit_logit_maps("HBN", t1t2_roc_HCPD, "t1t2_roc") 
+logit_HBN_t1t2roc_plot <- plot_logit_map("HBN", logit_HBN_t1t2roc[[2]], "t1t2_roc", color2)
+
+logit_PNC_t1t2roc <- fit_logit_maps("PNC", t1t2_roc_HCPD, "t1t2_roc") 
+logit_PNC_t1t2roc_plot <- plot_logit_map("PNC", logit_PNC_t1t2roc[[2]], "t1t2_roc", color3)
+
+logit_t1t2roc_final <- ggarrange(logit_HCPD_t1t2roc_plot, logit_HBN_t1t2roc_plot, logit_PNC_t1t2roc_plot, ncol = 3)
+
+x.grob <- textGrob("T1w/T2w Annualized Rate of Change", 
+                   gp=gpar(col="black", fontsize=20))
+
+grid.arrange(arrangeGrob(logit_t1t2roc_final, bottom = x.grob))
+
+
+# t1t2_maxslopeage_HCPD
+logit_HCPD_t1t2maxslopeage <- fit_logit_maps("HCPD", t1t2_maxslopeage_HCPD, "t1t2_maxslopeage") 
+logit_HCPD_t1t2maxslopeage_plot <- plot_logit_map("HCPD", logit_HCPD_t1t2maxslopeage[[2]], "t1t2_maxslopeage", color1)
+summary(logit_HCPD_t1t2maxslopeage[[1]])
+
+logit_HBN_t1t2maxslopeage <- fit_logit_maps("HBN", t1t2_maxslopeage_HCPD, "t1t2_maxslopeage") 
+logit_HBN_t1t2maxslopeage_plot <- plot_logit_map("HBN", logit_HBN_t1t2maxslopeage[[2]], "t1t2_maxslopeage", color2)
+summary(logit_HBN_t1t2maxslopeage[[1]])
+
+logit_PNC_t1t2maxslopeage <- fit_logit_maps("PNC", t1t2_maxslopeage_HCPD, "t1t2_maxslopeage") 
+logit_PNC_t1t2maxslopeage_plot <- plot_logit_map("PNC", logit_PNC_t1t2maxslopeage[[2]], "t1t2_maxslopeage", color3)
+summary(logit_PNC_t1t2maxslopeage[[1]])
+
+logit_t1t2maxslopeage_final <- ggarrange(logit_HCPD_t1t2maxslopeage_plot, logit_HBN_t1t2maxslopeage_plot, logit_PNC_t1t2maxslopeage_plot, ncol = 3)
+
+x.grob <- textGrob("T1w/T2w Age of Maximum Growth Rate", 
+                   gp=gpar(col="black", fontsize=20))
+
+grid.arrange(arrangeGrob(logit_t1t2maxslopeage_final, bottom = x.grob))
+
+
+
+# alff_pnc
+logit_HCPD_alff_ageeffect <- fit_logit_maps("HCPD", alff_pnc, "alff_ageeffect") 
+logit_HCPD_alff_ageeffect_plot <- plot_logit_map("HCPD", logit_HCPD_alff_ageeffect[[2]], "alff_ageeffect", color1)
+
+logit_HBN_alff_ageeffect <- fit_logit_maps("HBN", alff_pnc, "alff_ageeffect") 
+logit_HBN_alff_ageeffect_plot <- plot_logit_map("HBN", logit_HBN_alff_ageeffect[[2]], "alff_ageeffect", color2)
+
+logit_PNC_alff_ageeffect <- fit_logit_maps("PNC", alff_pnc, "alff_ageeffect") 
+logit_PNC_alff_ageeffect_plot <- plot_logit_map("PNC", logit_PNC_alff_ageeffect[[2]], "alff_ageeffect", color3)
+
+logit_alff_ageeffect_final <- ggarrange(logit_HCPD_alff_ageeffect_plot, logit_HBN_alff_ageeffect_plot, logit_PNC_alff_ageeffect_plot, ncol = 3)
+
+x.grob <- textGrob("ALFF Partial R-squared (Age Effect)", 
+                   gp=gpar(col="black", fontsize=20))
+
+grid.arrange(arrangeGrob(logit_alff_ageeffect_final, bottom = x.grob))
+
+
+
+# alff_decline_pnc
+logit_HCPD_alff_decline <- fit_logit_maps("HCPD", alff_decline_pnc, "alff_decline") 
+logit_HCPD_alff_decline_plot <- plot_logit_map("HCPD", logit_HCPD_alff_decline[[2]], "alff_decline", color1)
+
+logit_HBN_alff_decline <- fit_logit_maps("HBN", alff_decline_pnc, "alff_decline") 
+logit_HBN_alff_decline_plot <- plot_logit_map("HBN", logit_HBN_alff_decline[[2]], "alff_decline", color2)
+
+logit_PNC_alff_decline <- fit_logit_maps("PNC", alff_decline_pnc, "alff_decline") 
+logit_PNC_alff_decline_plot <- plot_logit_map("PNC", logit_PNC_alff_decline[[2]], "alff_decline", color3)
+
+logit_alff_decline_final <- ggarrange(logit_HCPD_alff_decline_plot, logit_HBN_alff_decline_plot, logit_PNC_alff_decline_plot, ncol = 3)
+
+x.grob <- textGrob("ALFF Age of decline", 
+                   gp=gpar(col="black", fontsize=20))
+
+grid.arrange(arrangeGrob(logit_alff_decline_final, bottom = x.grob))
+
+```
+

@@ -1,0 +1,53 @@
+---
+title: "pretty colorz"
+author: "Audrey Luo"
+date: "2024-11-08"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r cars}
+summary(cars)
+
+ifo_hex_colors = ["#980461", "#9f1467", "#a61e6d", "#ae2874", "#b5307a", "#bc3780", "#c23e85", "#c9448b", "#d04b91", "#d85298", "#df599e", "#e760a5"]
+ifo_hex_colors = ["#E2438AFF", "#E44688FF", "#E64886FF", "#E84B84FF", "#EA4D82FF", "#EC5080FF", "#EC547EFF", "#ED577CFF", "#EE5B7AFF", "#EE5E78FF", "#EF6276FF", "#EF6575FF", "#F06873FF", "#F06B71FF", "#F16F6FFF", "#F1726DFF"] 
+ifo_hex_colors = ["#26185FFF", "#251C63FF", "#232167FF", "#20256CFF", "#1C2970FF", "#162D74FF", "#0D3178FF", "#00357CFF", "#003A80FF", "#003E84FF", "#004288FF", "#00468BFF", "#004A8FFF", "#004E93FF", "#005296FF", "#005699FF", "#005A9DFF", "#005FA0FF", "#0063A3FF"]
+
+hex_colors = ["#052632", "#155158", "#247D7E", "#34AAA4", "#4CC5B5", "#6CCFB0", "#8BDAAB", "#ABE5A7", "#C1EA97", "#D7EF88", "#EDF578", "#F7F676", "#F5F480", "#F2F28A", "#F0F095"]
+
+
+cmot_hex_colors = ["#3d27cd", "#492fd6", "#5437df", "#5f3fe9", "#6947f2", "#714df6", "#7952fa", "#8058fe", "#865dfe", "#8c62fe", "#9267ff", "#976cff"]
+
+
+cmot_hex_colors = ["#003037", "#005359", "#00787e", "#009fa5", "#47c8cd"]
+color_assoc <- "#004A8FFF"
+color_callosum <- "#06c5cc"
+
+
+"#08244d", "#2d2c62", "#513173", "#78327e", "#a03082", "#bb337c", "#d23a73", "#e54769", "#ed5d5d", "#f07354", "#ef8950", "#ec9e50");
+
+"#ffcaff" "#c3b8fb" "#76aaed" "#009ad0" "#0087a4" "#00716d"
+
+
+"#ffcaff" "#06c5cc" "#004A8FFF"
+"#ffcaff" "#ffc3e9" "#ffc3c6" "#ffcd9e" "#ffe17c" "#f9f871"
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.

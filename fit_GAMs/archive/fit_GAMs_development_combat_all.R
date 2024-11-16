@@ -65,8 +65,8 @@ run_gam.fit.smooth <- function(gam_df, smooth.var, covs, k, set.fx) {
                                                                              knots = k, 
                                                                              set_fx = set.fx))}, mc.cores = 4) 
   GAM_dev_measures <- do.call(rbind, GAM_dev_measures)
-  #write.csv(GAM_dev_measures, sprintf("%1$s/%2$s_GAM_dev_measures_age_mat.csv", GAM_outputs_dir, dataset), quote = F, row.names =F)
-  write.csv(GAM_dev_measures, sprintf("%1$s/%2$s_GAM_dev_measures.csv", GAM_outputs_dir, dataset), quote = F, row.names =F)
+  write.csv(GAM_dev_measures, sprintf("%1$s/%2$s_GAM_dev_measures_age_mat_combat_all_site.csv", GAM_outputs_dir, dataset), quote = F, row.names =F)
+  #write.csv(GAM_dev_measures, sprintf("%1$s/%2$s_GAM_dev_measures.csv", GAM_outputs_dir, dataset), quote = F, row.names =F)
 }
 
 # 2) run gam.derivatives to compute derivatives for my smooth (age) at each age  
@@ -83,7 +83,7 @@ run_gam.derivatives <- function(gam_df, smooth.var, covs, k, set.fx, num.draws, 
                                                                             return_posterior_derivatives = credible.interval)) %>% 
                                       mutate(tract_node = x)}, mc.cores = 4)
     smooth.derivatives <- do.call(rbind, smooth.derivatives)
-    write.csv(smooth.derivatives, sprintf("%1$s/%2$s_GAM_derivatives.csv", GAM_outputs_dir, dataset), quote = F, row.names =F)
+    write.csv(smooth.derivatives, sprintf("%1$s/%2$s_GAM_derivatives_combat_all_site.csv", GAM_outputs_dir, dataset), quote = F, row.names =F)
 }
 
 # 3) run gam.estimate.smooth to estimate zero-centered age smooths for each node 
@@ -99,7 +99,7 @@ run_gam.estimate.smooth <- function(gam_df, smooth.var, covs, k, set.fx, num.dra
                                                                            age1 = start_age,
                                                                            age2 = end_age)) %>% mutate(tract_node = x)}, mc.cores = 4)
   smooth.centered <- do.call(rbind, smooth.centered)
-  write.csv(smooth.centered, sprintf("%1$s/%2$s_GAM_smoothcentered.csv", GAM_outputs_dir, dataset), quote = F, row.names =F)
+  write.csv(smooth.centered, sprintf("%1$s/%2$s_GAM_smoothcentered_combat_all_site.csv", GAM_outputs_dir, dataset), quote = F, row.names =F)
 }
 
 
@@ -116,35 +116,16 @@ run_gam.smooth.predict <- function(gam_df, smooth.var, covs, k, set.fx, num.pred
                                                                             age1 = start_age,
                                                                             age2 = end_age)) %>% mutate(tract = x)}, mc.cores = 4)
   smooth.fittedvals <- do.call(rbind, smooth.fittedvals)
-  write.csv(smooth.fittedvals, sprintf("%1$s/%2$s_GAM_smooth_fittedvalues.csv", GAM_outputs_dir, dataset), quote = F, row.names =F)
+  write.csv(smooth.fittedvals, sprintf("%1$s/%2$s_GAM_smooth_fittedvalues_combat_all_site.csv", GAM_outputs_dir, dataset), quote = F, row.names =F)
 }
 
 
 ################### 
 # Load files  
 ###################
-if (dataset == "PNC" & !file.exists(sprintf("%1$s/all_subjects/collated_tract_profiles_final.RData", data_root))) {
-  print("Formatting PNC collated profiles tsv")
-  all_subjects <- fread(sprintf("%1$s/all_subjects/collated_tract_profiles_nocovbat.tsv", data_root))
-  all_subjects$tractID <- gsub("Fronto-occipital", "Fronto.occipital", all_subjects$tractID)
-  all_subjects <- all_subjects %>% mutate(hemi = ifelse(grepl("Left", tractID), "Left", "Right")) %>% 
-    mutate(tract_node = gsub(" ", "_", paste0(tractID, "_", nodeID)))
-  all_subjects$sub <- as.factor(all_subjects$sub)
-  all_subjects <- all_subjects %>% 
-    mutate(nodeID = str_extract(tract_node, "[0-9]+")) %>%
-    mutate(tractID = gsub("_[0-9]+", "", tract_node)) %>%
-    mutate(hemi = str_extract(tractID, "Left|Right"))
-  all_subjects$nodeID <- as.numeric(all_subjects$nodeID)
-  all_subjects$sub <- as.factor(all_subjects$sub)
-  all_subjects <- all_subjects %>% select(sub, tract_node, nodeID, tractID, hemi, dti_fa, dti_md) %>% arrange(sub, tractID, nodeID, hemi)
-  saveRDS(all_subjects, sprintf("%1$s/all_subjects/collated_tract_profiles_final.RData", data_root))
-  
-  tract_profiles_long <- all_subjects
-  
-} else {
-  print("Loading RData file")
-  tract_profiles_long <- readRDS(sprintf("%1$s/all_subjects/collated_tract_profiles_final.RData", data_root))
-}
+print("Loading RData file")
+tract_profiles_long <- readRDS("/cbica/projects/luo_wm_dev/input/covbat_all_datasets/collated_tract_profiles_combat_all_datasets_site.RData")
+# tract_profiles_long <- readRDS("/cbica/projects/luo_wm_dev/input/covbat_all_datasets/collated_tract_profiles_covbat_all_datasets.RData")
 
 ######################################################### 
 # Merge demographics and qc with tract profiles data
@@ -154,7 +135,7 @@ if (dataset == "PNC" & !file.exists(sprintf("%1$s/all_subjects/collated_tract_pr
 tract_profiles_wide <- tract_profiles_long %>% select(sub, tract_node, all_of(scalar)) %>% pivot_wider(names_from = "tract_node", values_from = !!sym(scalar))
 
 # merge
-gam_df <- merge(tract_profiles_wide, demographics, by = "sub")
+gam_df <- merge(tract_profiles_wide, demographics, by = "sub") # only merges harmonized data with subjects from dataset of interest
 
 ################### 
 # Fit da GAMz 
@@ -162,9 +143,9 @@ gam_df <- merge(tract_profiles_wide, demographics, by = "sub")
 # set variables for all the gams
 tract_node_labels = names(tract_profiles_wide)[-1]
 #sanity checks
-#tract_node_labels_PNC = names(tract_profiles_wide)[-1]
-#tract_node_labels_HCPD = names(tract_profiles_wide)[-1]
-#tract_node_labels_HBN = names(tract_profiles_wide)[-1]
+#tract_node_labels_PNC = names(tract_profiles_wide_PNC)[-1]
+#tract_node_labels_HCPD = names(tract_profiles_wide_HCPD)[-1]
+#tract_node_labels_HBN = names(tract_profiles_wide_HBN)[-1]
 #identical(tract_node_labels_PNC, tract_node_labels_HCPD)
 #identical(tract_node_labels_PNC, tract_node_labels_HBN)
 #identical(tract_node_labels_HCPD, tract_node_labels_HBN)

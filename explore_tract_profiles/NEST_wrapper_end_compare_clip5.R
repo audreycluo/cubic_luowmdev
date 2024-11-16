@@ -40,11 +40,6 @@ if (dir.exists(NEST_outputs_dir)) {
 clip_ends <- function(nodes_to_clip, nodes_per_tract) {
   c(0:(nodes_to_clip - 1), (nodes_per_tract - nodes_to_clip):(nodes_per_tract - 1))
 }
-# function for identifying peripheral nodes
-label_peripheral <- function(bin_size, nodes_per_tract, nodes_to_clip) {
-  c((nodes_to_clip):(nodes_to_clip + bin_size - 1), 
-    (nodes_per_tract - nodes_to_clip - bin_size):(nodes_per_tract - nodes_to_clip - 1))
-}
 
 # a wrapper function for running NEST on each tract
 NEST_wrapper <- function(tract, df, bin_size, nodes_to_clip) {
@@ -75,14 +70,15 @@ NEST_wrapper <- function(tract, df, bin_size, nodes_to_clip) {
   } else { # all other tracts including CST
     is_left <- grepl("^Left_", colnames_df)
     is_right <- grepl("^Right_", colnames_df)
-    # Create total node IDs: 0-99 for left, 100-199 for right
+    # create total node IDs: 0-99 for left, 100-199 for right
     total_node_ids <- ifelse(is_left, node_ids, node_ids + nodes_per_tract)
   }
+  
   
   # mapping from total_node_ids to column names
   node_id_to_colname <- setNames(colnames_df, total_node_ids)
   
-  # clips the ends of tracts and label peripheral vs. deep WM nodes
+  # clips the ends of tracts and label end1 vs end2
   if (str_detect(tract, "Callosum")) {
     # Total nodes (0 to 99)
     total_nodes <- nodes_per_tract
@@ -90,32 +86,11 @@ NEST_wrapper <- function(tract, df, bin_size, nodes_to_clip) {
     # clip ends
     clipped_nodes <- clip_ends(nodes_to_clip, nodes_per_tract)
     
-    # identify peripheral nodes
-    peripheral_nodes <- label_peripheral(bin_size, nodes_per_tract, nodes_to_clip)
-    
-    # identify deep nodes
-    deep_nodes <- c((50-bin_size+1):(50+bin_size))
-  } else if (str_detect(tract, "Corticospinal")) {
-    # Total nodes (0 to 199 for both hemispheres)
-    total_nodes <- nodes_per_tract * 2  
-    
-    # clip ends
-    clipped_nodes_left <- clip_ends(nodes_to_clip, nodes_per_tract)
-    clipped_nodes_right <- clip_ends(nodes_to_clip, nodes_per_tract) + nodes_per_tract
-    clipped_nodes <- c(clipped_nodes_left, clipped_nodes_right)
-    
-    # identify peripheral nodes (motor cortex only)
-    peripheral_nodes_left <- (nodes_to_clip):(nodes_to_clip + bin_size - 1)
-    peripheral_nodes_right <- (nodes_to_clip):(nodes_to_clip + bin_size - 1) + nodes_per_tract
-    peripheral_nodes <- c(peripheral_nodes_left, peripheral_nodes_right)
-    
-    # identify deep nodes (brainstem only)
-    deep_nodes_left <- (nodes_per_tract - nodes_to_clip - bin_size):(nodes_per_tract - nodes_to_clip - 1)
-    deep_nodes_right <- (nodes_per_tract - nodes_to_clip - bin_size):(nodes_per_tract - nodes_to_clip - 1) + nodes_per_tract
-    deep_nodes <- c(deep_nodes_left, deep_nodes_right)
-    
+    # identify nodes for each end
+    end1_nodes <- c((nodes_to_clip):(nodes_to_clip + bin_size - 1))
+    end2_nodes <- c((nodes_per_tract - nodes_to_clip - bin_size):(nodes_per_tract - nodes_to_clip - 1))
   } else {
-    # Total nodes (0 to 199 for both hemispheres)
+    #Total nodes (0 to 199 for both hemispheres)
     total_nodes <- nodes_per_tract * 2  
     
     # clip ends
@@ -123,23 +98,24 @@ NEST_wrapper <- function(tract, df, bin_size, nodes_to_clip) {
     clipped_nodes_right <- clip_ends(nodes_to_clip, nodes_per_tract) + nodes_per_tract
     clipped_nodes <- c(clipped_nodes_left, clipped_nodes_right)
     
-    # identify peripheral nodes
-    peripheral_nodes_left <- label_peripheral(bin_size, nodes_per_tract, nodes_to_clip)
-    peripheral_nodes_right <- label_peripheral(bin_size, nodes_per_tract, nodes_to_clip) + nodes_per_tract
-    peripheral_nodes <- c(peripheral_nodes_left, peripheral_nodes_right)
+    # identify nodes for each end
+    end1_nodes_left <- c((nodes_to_clip):(nodes_to_clip + bin_size - 1))
+    end2_nodes_left <- c((nodes_per_tract - nodes_to_clip - bin_size):(nodes_per_tract - nodes_to_clip - 1))
     
-    # identify deep nodes
-    deep_nodes_left <- c((50-bin_size+1):(50+bin_size))
-    deep_nodes_right <- c((50-bin_size+1):(50+bin_size)) + nodes_per_tract
-    deep_nodes <- c(deep_nodes_left, deep_nodes_right)
+    end1_nodes_right <- c((nodes_to_clip):(nodes_to_clip + bin_size - 1)) + nodes_per_tract
+    end2_nodes_right <- c((nodes_per_tract - nodes_to_clip - bin_size):(nodes_per_tract - nodes_to_clip - 1)) + nodes_per_tract
+    
+    end1_nodes <- c(end1_nodes_left, end1_nodes_right)
+    end2_nodes <- c(end2_nodes_left, end2_nodes_right)
+    
   }
   
   # node type identifier (peripheral = 1, deep = 2, clip or exclude = 0)
   node_type <- rep(0, total_nodes)
-  node_type[peripheral_nodes + 1] <- 1  # Peripheral nodes
-  node_type[deep_nodes + 1] <- 2        # Deep nodes
+  node_type[end1_nodes + 1] <- 1  # end1 nodes
+  node_type[end2_nodes + 1] <- 2  # end2 nodes
   
-  # keep only peripheral and deep nodes
+  # keep only end1 and end2 nodes
   nodes_to_keep <- setdiff(0:(total_nodes - 1), clipped_nodes)
   final_nodes <- nodes_to_keep[node_type[nodes_to_keep + 1] > 0]
   
@@ -153,35 +129,35 @@ NEST_wrapper <- function(tract, df, bin_size, nodes_to_clip) {
   X <- as.matrix(df_final)
   colnames(X) <- NULL
   dat <- covs
-  peripheral_idx <- rep(1, length(final_nodes))
-  peripheral_idx[final_nodes %in% deep_nodes] <- 0 # set indices corresponding to deep nodes to 0
-  net <- list(peripheral_nodes <- peripheral_idx) # list of nodes of interest (peripheral nodes)
+  end1_idx <- rep(1, length(final_nodes))
+  end1_idx[final_nodes %in% end2_nodes] <- 0 # set indices corresponding to end2 nodes to 0
+  net <- list(end2_nodes <- end1_idx) # list of nodes of interest (peripheral nodes)
   cbind(names(df_final), unlist(net))
   
   print(paste("Running NEST for", tract))
   print(paste("Number of nodes included as peripheral nodes:", bin_size))
   
-  # one-sided: is delta adj rsq more extreme peripheral vs. deep nodes?
-  print("Running one-sided NEST")
-  result_onesided <- NEST_audrey(
-    statFun = "gam.deltaRsq",
-    args = list(X = X, 
-                dat = dat, 
-                gam.formula = as.formula(X.v ~ s(age, k = 3, fx = TRUE) + sex + mean_fd), 
-                lm.formula = as.formula(X.v ~ age + sex + mean_fd),  
-                y.in.gam = "s(age)", 
-                y.in.lm = "age", 
-                y.permute = "age",  
-                n.perm = 9999),
-    net.maps = net,
-    one.sided = TRUE,
-    n.cores = 4, 
-    seed = 123, 
-    what.to.return = "everything"
-  )
-  saveRDS(result_onesided, paste0(NEST_outputs_dir, gsub(" ", "_", gsub("-", "_",tract)), "_bin", bin_size, "_clip", nodes_to_clip, "_1sided_covbat_all_site.RData"))
+  # one-sided: is delta adj rsq more extreme end1 vs. end2?
+  # print("Running one-sided NEST")
+  #result_onesided <- NEST_audrey(
+  #statFun = "gam.deltaRsq",
+  #args = list(X = X, 
+  #            dat = dat, 
+  #             gam.formula = as.formula(X.v ~ s(age, k = 3, fx = TRUE) + sex + mean_fd), 
+  #            lm.formula = as.formula(X.v ~ age + sex + mean_fd),  
+  #            y.in.gam = "s(age)", 
+  #            y.in.lm = "age", 
+  #            y.permute = "age",  
+  #            n.perm = 9999),
+  # net.maps = net,
+  # one.sided = TRUE,
+  # n.cores = 4, 
+  # seed = 123, 
+  #what.to.return = "everything"
+  #)
+  #saveRDS(result_onesided, paste0(NEST_outputs_dir, gsub(" ", "_", gsub("-", "_",tract)), "_bin", bin_size, "_clip", nodes_to_clip, "_1sided_end_compare.RData"))
   
-  # two-sided: is delta adj rsq different peripheral vs. deep nodes?
+  # two-sided: is delta adj rsq different end1 vs. end2?
   print("Running two-sided NEST")
   result_twosided <- NEST_audrey(
     statFun = "gam.deltaRsq",
@@ -200,16 +176,12 @@ NEST_wrapper <- function(tract, df, bin_size, nodes_to_clip) {
     what.to.return = "everything"
   )
   
-  saveRDS(result_twosided, paste0(NEST_outputs_dir,  gsub(" ", "_", gsub("-", "_",tract)), "_bin", bin_size, "_clip", nodes_to_clip, "_2sided_covbat_all_site.RData"))
+  saveRDS(result_twosided, paste0(NEST_outputs_dir,  gsub(" ", "_", gsub("-", "_",tract)), "_bin", bin_size, "_clip", nodes_to_clip, "_2sided_end_compare_covbat_all_site.RData"))
 }
 
-#df <- readRDS(sprintf("%1$s/%2$s/tract_profiles/all_subjects/tract_profiles_for_viz.RData", outputs_root, dataset))
-df <- readRDS(sprintf("%1$s/%2$s/tract_profiles/all_subjects/tract_profiles_for_viz_covbat_all_site.RData", outputs_root, dataset)) # to check cross dataset harmonization
-
+df <- readRDS(sprintf("%1$s/%2$s/tract_profiles/all_subjects/tract_profiles_for_viz_covbat_all_site.RData", outputs_root, dataset))
 print(paste0(dataset, " df loaded"))
 df$tract_label <- gsub(" ", "_", df$tract_label)
-#tracts <- unique(df$tract_label)  
-#write.table(tracts, "/cbica/projects/luo_wm_dev/input/tract_list/tract_list.txt", row.names=F, col.names=F, quote=F)
 
 # set var
 nodes_per_tract <- 100 # nodes per tract (nodeIDs from 0 to 99)
@@ -220,10 +192,13 @@ nodes_per_tract <- 100 # nodes per tract (nodeIDs from 0 to 99)
 ################### 
 NEST_wrapper(tract, df = df, bin_size = 5, nodes_to_clip = 3)
 #NEST_wrapper(tract, df = df, bin_size = 10, nodes_to_clip = 3)
-#NEST_wrapper(tract, df = df, bin_size = 15, nodes_to_clip = 3)
 
 NEST_wrapper(tract, df = df, bin_size = 5, nodes_to_clip = 5)
 NEST_wrapper(tract, df = df, bin_size = 10, nodes_to_clip = 5)
+#NEST_wrapper(tract, df = df, bin_size = 15, nodes_to_clip = 3)
+
+#NEST_wrapper(tract, df = df, bin_size = 5, nodes_to_clip = 5)
+#NEST_wrapper(tract, df = df, bin_size = 10, nodes_to_clip = 5)
 #NEST_wrapper(tract, df = df, bin_size = 15, nodes_to_clip = 5)
 
 

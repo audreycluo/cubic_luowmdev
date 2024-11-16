@@ -17,7 +17,7 @@ for dataset in "${datasets[@]}"; do
     logs_dir="/cbica/projects/luo_wm_dev/code/tract_profiles/logs/NEST/${dataset}"
     mkdir -p ${logs_dir}
 
-    sbatch --job-name=NEST_${dataset} \
+    sbatch --job-name=NEST_${dataset}_covbat_all \
            --nodes=1 \
            --ntasks=1 \
            --cpus-per-task=4 \

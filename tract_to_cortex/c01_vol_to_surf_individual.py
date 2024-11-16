@@ -115,22 +115,12 @@ threshold = 0.5 # even though the TDI maps are binarized, it seems like when we 
  
 # do vol_to_surf for lh tracts
 for tract in lh_tracts:
-    if tract in ["LeftPosteriorArcuate", "LeftVerticalOccipital"]:
-        cortical_map = apply_vol_to_surf(tdi_maps[tract], depth = 0.1, surf_mesh = lh_surf_mesh)
-        cortical_map = (cortical_map > threshold).astype(int)
-        save_gifti_file(cortical_map, subject, tract, depth = "0.1", outdir=out_dir)
-    else: 
         cortical_map = apply_vol_to_surf(tdi_maps[tract], depth = depth, surf_mesh = lh_surf_mesh)
         cortical_map = (cortical_map > threshold).astype(int)
         save_gifti_file(cortical_map, subject, tract, depth = f"{depth}", outdir=out_dir)
 
 # do vol_to_surf for rh tracts
 for tract in rh_tracts:
-    if tract in ["RightPosteriorArcuate", "RightVerticalOccipital"]:
-        cortical_map = apply_vol_to_surf(tdi_maps[tract], depth = 0.1, surf_mesh = rh_surf_mesh)
-        cortical_map = (cortical_map > threshold).astype(int)
-        save_gifti_file(cortical_map, subject, tract, depth = "0.1", outdir=out_dir)
-    else:
         cortical_map = apply_vol_to_surf(tdi_maps[tract], depth = depth, surf_mesh = rh_surf_mesh)
         cortical_map = (cortical_map > threshold).astype(int)
         save_gifti_file(cortical_map, subject, tract, depth = f"{depth}", outdir=out_dir)

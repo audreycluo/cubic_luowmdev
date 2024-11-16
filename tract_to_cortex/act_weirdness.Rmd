@@ -1,0 +1,30 @@
+---
+title: "Untitled"
+author: "Audrey Luo"
+date: "2024-10-11"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+ 
+ 
+```{r, fig.width = 20}
+
+ACT <- read.csv("/cbica/projects/luo_wm_dev/input/HBN/derivatives/babs_qsirecon_pyafq_act/merge_ds/qsirecon-PYAFQ/sub-NDARAA948VFH/ses-HBNsiteRU/dwi/sub-NDARAA948VFH_ses-HBNsiteRU_acq-64dir_space-T1w_desc-preproc_dwimap/sub-NDARAA948VFH_ses-HBNsiteRU_acq-64dir_coordsys-RASMM_trkmethod-probCSD_recogmethod-AFQ_desc-slCount_dwi.csv")
+noACT <- read.csv("/cbica/projects/luo_wm_dev/input/HBN/derivatives/babs_qsirecon_pyafq_noACT/merge_ds/qsirecon-PYAFQ/sub-NDARAA948VFH/ses-HBNsiteRU/dwi/sub-NDARAA948VFH_ses-HBNsiteRU_acq-64dir_space-T1w_desc-preproc_dwimap/sub-NDARAA948VFH_ses-HBNsiteRU_acq-64dir_coordsys-RASMM_trkmethod-probCSD_recogmethod-AFQ_desc-slCount_dwi.csv")
+
+
+ACT <- ACT %>% mutate(pipeline = "ACT")
+noACT <- noACT %>% mutate(pipeline = "noACT")
+
+all <- rbind(ACT, noACT) 
+all <- all %>% filter(X != "Total Recognized")
+
+
+ggplot(data = all, aes(x=X, y = n_streamlines, group = as.factor(pipeline))) + geom_bar(stat="identity", aes(fill = pipeline), position = "dodge") + theme(axis.text.x = element_text(angle=90))
+```
+ 
+ 

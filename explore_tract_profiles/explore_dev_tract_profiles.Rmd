@@ -34,7 +34,8 @@ point_size <- 2
 proj_root <- "/cbica/projects/luo_wm_dev/"
 input_root <- paste0(proj_root, "input")
 output_root <- paste0(proj_root, "output")
-png_dir <- "/Users/audluo/PennLINC/luowm_local/output/tract_profiles_testing/both_datasets/act_maxbval/"
+#png_dir <- "/Users/audluo/PennLINC/luowm_local/output/tract_profiles_testing/both_datasets/act_maxbval/"
+png_dir <- "/Users/audluo/Library/CloudStorage/Box-Box/Box_PhD_Land/PennLINC/luo_wm_dev/wm_manuscript/draft_figures/main"
 local_dir <- "/Users/audluo/Desktop/temp_code"
  
 text_size <- 20
@@ -50,11 +51,11 @@ default <- theme_set(theme_classic() +
 ```
 
 
-```{r load dev effects files}
+```{r old load dev effects files}
 # Define the datasets and scalars
 datasets <- c("HBN", "PNC", "HCPD")
 #scalars <- c("dki_fa", "dki_md", "dti_fa", "dti_md")
-scalars <- c("dti_md", "dti_fa")
+scalars <- c("dti_md")
 
 # Define the local save path
 save_path <- "/Users/audluo/Desktop/temp_code/"
@@ -113,6 +114,25 @@ load_and_save_data <- function(dataset, scalars) {
 for (dataset in datasets) {
   load_and_save_data(dataset, scalars)
 }
+
+```
+
+
+```{r load dev effects}
+PNC_GAM_derivatives_dti_md <- read.csv(sprintf("%1$s/%2$s/tract_profiles/GAM/dti_md/%2$s_GAM_derivatives_covbat_all_site.csv", output_root, "PNC"))
+PNC_GAM_ageeffects_dti_md <- read.csv(sprintf("%1$s/%2$s/tract_profiles/GAM/dti_md/%2$s_GAM_dev_measures_age_mat_covbat_all_site.csv", output_root, "PNC"))
+PNC_GAM_smoothcentered_md <- read.csv(sprintf("%1$s/%2$s/tract_profiles/GAM/dti_md/%2$s_GAM_smoothcentered_covbat_all_site.csv", output_root, "PNC"))
+PNC_GAM_smooth_fittedvalues_md <- read.csv(sprintf("%1$s/%2$s/tract_profiles/GAM/dti_md/%2$s_GAM_smooth_fittedvalues_covbat_all_site.csv", output_root, "PNC"))
+
+HCPD_GAM_derivatives_dti_md <- read.csv(sprintf("%1$s/%2$s/tract_profiles/GAM/dti_md/%2$s_GAM_derivatives_covbat_all_site.csv", output_root, "HCPD"))
+HCPD_GAM_ageeffects_dti_md <- read.csv(sprintf("%1$s/%2$s/tract_profiles/GAM/dti_md/%2$s_GAM_dev_measures_age_mat_covbat_all_site.csv", output_root, "HCPD"))
+HCPD_GAM_smoothcentered_md <- read.csv(sprintf("%1$s/%2$s/tract_profiles/GAM/dti_md/%2$s_GAM_smoothcentered_covbat_all_site.csv", output_root, "HCPD"))
+HCPD_GAM_smooth_fittedvalues_md <- read.csv(sprintf("%1$s/%2$s/tract_profiles/GAM/dti_md/%2$s_GAM_smooth_fittedvalues_covbat_all_site.csv", output_root, "HCPD"))
+
+HBN_GAM_derivatives_dti_md <- read.csv(sprintf("%1$s/%2$s/tract_profiles/GAM/dti_md/%2$s_GAM_derivatives_covbat_all_site.csv", output_root, "HBN"))
+HBN_GAM_ageeffects_dti_md <- read.csv(sprintf("%1$s/%2$s/tract_profiles/GAM/dti_md/%2$s_GAM_dev_measures_age_mat_covbat_all_site.csv", output_root, "HBN"))
+HBN_GAM_smoothcentered_md <- read.csv(sprintf("%1$s/%2$s/tract_profiles/GAM/dti_md/%2$s_GAM_smoothcentered_covbat_all_site.csv", output_root, "HBN"))
+HBN_GAM_smooth_fittedvalues_md <- read.csv(sprintf("%1$s/%2$s/tract_profiles/GAM/dti_md/%2$s_GAM_smooth_fittedvalues_covbat_all_site.csv", output_root, "HBN"))
 
 ```
 

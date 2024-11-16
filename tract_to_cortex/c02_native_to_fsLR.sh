@@ -39,12 +39,6 @@ exec 2> "${error_file}"
 module load connectome_workbench/1.4.2
 
 ########################################
-# Define variables passed from the submission script
-########################################
-subject=$1
-config_file=$2
-
-########################################
 # Set directories
 ########################################
 proj_root="/cbica/projects/luo_wm_dev/"
@@ -95,59 +89,38 @@ for tract_file in ${outputs_dir_native_acpc}/*.shape.gii; do
 
     # Extract tract label
     tract_fname=$(basename ${tract_file})
-    tract_label=$(echo ${tract_fname} | grep -oP '(?<=sub-\d{7}_)[^_]+')
+    tract_label=$(echo "${tract_fname}" | sed -n 's/^sub-[^_]*_\([^_]*\)_.*/\1/p')
     depth=$(echo "${tract_fname}" | sed -n 's/.*_\([0-9]*\.[0-9]*\)\.shape\.gii/\1/p')
-
     echo "Warping ${tract_label} ${depth} to fsLR"
 
     # Extract hemisphere
     hemi=$(echo "$tract_label" | grep -oE 'Left|Right')
-
    
     ###############
     # fsLR 32k
     ###############
-    # if callosum bundles:
-    if [[ "$tract_label" == *Callosum* ]]; then
+    
+    if [ ${hemi} = 'Left' ]; then
         wb_command -metric-resample \
-                ${tract_file} \
-                ${xfms_root}/${subject}/surfaces/freesurfer/${subject}.lh.sphere.freesurfer.surf.gii \
-                ${proj_root}/templates/fslr_32k/fs_LR-deformed_to-fsaverage.L.sphere.32k_fs_LR.surf.gii \
-                ADAP_BARY_AREA \
-                ${outputs_dir_fslr_32k}/${subject}.Left${tract_label}_${depth}.shape.gii \
-                -area-surfs ${outputs_dir_fslr_32k}/lh.midthickness.surf.gii ${outputs_dir_fslr_32k}/lh.midthickness.fslr_32k.surf.gii
+            ${tract_file} \
+            ${xfms_root}/${subject}/surfaces/freesurfer/${subject}.lh.sphere.freesurfer.surf.gii \
+            ${proj_root}/templates/fslr_32k/fs_LR-deformed_to-fsaverage.L.sphere.32k_fs_LR.surf.gii \
+            ADAP_BARY_AREA \
+            ${outputs_dir_fslr_32k}/${subject}.${tract_label}_${depth}.shape.gii \
+            -area-surfs ${outputs_dir_fslr_32k}/lh.midthickness.surf.gii ${outputs_dir_fslr_32k}/lh.midthickness.fslr_32k.surf.gii
 
+    # Right hemisphere
+    elif [ ${hemi} = 'Right' ]; then
         wb_command -metric-resample \
-                ${tract_file} \
-                ${xfms_root}/${subject}/surfaces/freesurfer/${subject}.rh.sphere.freesurfer.surf.gii \
-                ${proj_root}/templates/fslr_32k/fs_LR-deformed_to-fsaverage.R.sphere.32k_fs_LR.surf.gii \
-                ADAP_BARY_AREA \
-                ${outputs_dir_fslr_32k}/${subject}.Right${tract_label}_${depth}.shape.gii \
-                -area-surfs ${outputs_dir_fslr_32k}/rh.midthickness.surf.gii ${outputs_dir_fslr_32k}/rh.midthickness.fslr_32k.surf.gii
-    else # if other tracts: 
-        # Left hemisphere
-        if [ ${hemi} == 'Left' ]; then
-            wb_command -metric-resample \
-                ${tract_file} \
-                ${xfms_root}/${subject}/surfaces/freesurfer/${subject}.lh.sphere.freesurfer.surf.gii \
-                ${proj_root}/templates/fslr_32k/fs_LR-deformed_to-fsaverage.L.sphere.32k_fs_LR.surf.gii \
-                ADAP_BARY_AREA \
-                ${outputs_dir_fslr_32k}/${subject}.${tract_label}_${depth}.shape.gii \
-                -area-surfs ${outputs_dir_fslr_32k}/lh.midthickness.surf.gii ${outputs_dir_fslr_32k}/lh.midthickness.fslr_32k.surf.gii
-
-        # Right hemisphere
-        elif [ ${hemi} == 'Right' ]; then
-            wb_command -metric-resample \
-                ${tract_file} \
-                ${xfms_root}/${subject}/surfaces/freesurfer/${subject}.rh.sphere.freesurfer.surf.gii \
-                ${proj_root}/templates/fslr_32k/fs_LR-deformed_to-fsaverage.R.sphere.32k_fs_LR.surf.gii \
-                ADAP_BARY_AREA \
-                ${outputs_dir_fslr_32k}/${subject}.${tract_label}_${depth}.shape.gii \
-                -area-surfs ${outputs_dir_fslr_32k}/rh.midthickness.surf.gii ${outputs_dir_fslr_32k}/rh.midthickness.fslr_32k.surf.gii
-        fi    
+            ${tract_file} \
+            ${xfms_root}/${subject}/surfaces/freesurfer/${subject}.rh.sphere.freesurfer.surf.gii \
+            ${proj_root}/templates/fslr_32k/fs_LR-deformed_to-fsaverage.R.sphere.32k_fs_LR.surf.gii \
+            ADAP_BARY_AREA \
+            ${outputs_dir_fslr_32k}/${subject}.${tract_label}_${depth}.shape.gii \
+            -area-surfs ${outputs_dir_fslr_32k}/rh.midthickness.surf.gii ${outputs_dir_fslr_32k}/rh.midthickness.fslr_32k.surf.gii
+    fi    
         
-    fi
-
+    
        
 done
 

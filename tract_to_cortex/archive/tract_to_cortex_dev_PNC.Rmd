@@ -1,0 +1,1696 @@
+---
+title: "tract to cortex development"
+author: "Audrey Luo"
+date: "2024-10-11"
+output: html_document
+---
+```{r}
+library(ciftiTools)
+#ciftiTools.setOption('wb_path', '/Applications/workbench/')
+library(cifti)
+library(cowplot)
+library(data.table)
+library(dplyr)
+library(ggplot2)
+library(ggpubr)
+library(grid)
+library(gridExtra)
+library(gratia) 
+library(ggseg)
+library(ggsegGlasser)
+library(knitr)
+library(kableExtra)
+library(mgcv)
+library(RColorBrewer)
+library(scales)
+library(stringr)
+library(rjson)
+library(tidyr)
+
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE, include = TRUE) 
+
+font_size <- 20
+theme_set(theme_classic(base_family = "sans",base_size = font_size))
+line_size <- 1
+point_size <- 2
+
+proj_root <- "/cbica/projects/luo_wm_dev/"
+input_root <- paste0(proj_root, "input")
+output_root <- paste0(proj_root, "output")
+png_dir <- "/Users/audluo/PennLINC/luowm_local/output/tract_profiles_testing/all_datasets/tract_to_region"
+local_dir <- "/Users/audluo/Desktop/temp_code"
+ 
+
+```
+
+ 
+note:
+- for IFO, may need to use lower threshold - 10%
+
+
+# brain surface plot of age effects of peripheral white matter for each tract
+- first clip 3 nodes from each end of the tract
+- for each tract, average the 5 or 10 nodes on each end and get a value.
+- make a new column in the maps df and for every nonzero thresholded_probability, put that value in 
+
+```{r load glasser maps}
+# load glasser labels
+glasser_labels <- read.csv("/cbica/projects/luo_wm_dev/atlases/glasser/HCP-MMP1_UniqueRegionList.csv")
+glasser_labels$regionID <- c(1:360)
+glasser_labels$region <- gsub("7Pl", "7PL", glasser_labels$region)   
+
+# @param depth, A string
+load_maps <- function(depth, dataset) {
+  
+  config_file <- sprintf("%1$s/code/tract_profiles/config/config_%2$s.json", proj_root, dataset)
+  config <- fromJSON(paste(readLines(config_file), collapse=""))
+  
+  vol_to_surf_dir <- paste0(config$data_root, "/derivatives/vol_to_surf")
+  group_dir <- paste0(vol_to_surf_dir, "/group")
+  
+
+  pattern <- paste0(depth, ".*\\.csv$")
+
+  # load glasser maps for each tract... load for a specific depth?
+  glasser_csvs <- list.files(path = group_dir, pattern = pattern, full.names = T)
+  tract_names <- lapply(glasser_csvs, function(path) {
+    filename <- basename(path)
+    sub("_\\d+\\.\\d+_glasser\\.csv$", "", filename)
+  })
+  tract_names <- unlist(tract_names)
+  
+  glasser_maps <- lapply(glasser_csvs, read.csv)
+  names(glasser_maps) <- tract_names
+  
+  # merge labels with my maps
+  glasser_maps <- lapply(glasser_maps, merge, y = glasser_labels, by = "regionID")
+  
+  # separate lh and rh maps
+  lh_idx <- grep("Left", names(glasser_maps))
+  lh_maps <- glasser_maps[lh_idx]
+  assign(paste0("lh_maps_", dataset), lh_maps, envir = .GlobalEnv)
+  
+  rh_idx <- grep("Right", names(glasser_maps))
+  rh_maps <- glasser_maps[rh_idx]
+  assign(paste0("rh_maps_", dataset), rh_maps, envir = .GlobalEnv)
+}
+
+depths = c("1.5")
+
+lapply(depths, load_maps, "PNC")
+ 
+ 
+```
+
+# age effects
+```{r load dev effects files}
+scalar = "dti_md"
+PNC_ageeffects <- read.csv(paste0(output_root, "/", "PNC", "/tract_profiles/GAM/", scalar, "/PNC_GAM_dev_measures.csv"))
+HBN_ageeffects <- read.csv(paste0(output_root, "/", "HBN", "/tract_profiles/GAM/", scalar, "/HBN_GAM_dev_measures.csv"))
+PNC_ageeffects <- read.csv(paste0(output_root, "/", "PNC", "/tract_profiles/GAM/", scalar, "/PNC_GAM_dev_measures.csv"))
+```
+
+```{r function for formatting age effects}
+# make a list of the different df names: [dataset]_GAM_ageeffects_[scalar]
+datasets <- c("PNC", "HBN", "PNC")
+ageeffect_df_names <- c()
+for (dataset in datasets) {
+  ageeffect_df_names <- append(ageeffect_df_names, paste0(dataset, "_ageeffects"))
+}
+
+ 
+# format age effect df's
+format_ageeffect <- function(df) {
+  df <- get(df)
+  # add tractID, tract_label, and nodeID
+  df <- df %>% mutate(hemi = ifelse(grepl("Left", tract_node), "Left", 
+                                    ifelse(grepl("Right", tract_node), "Right", NA))) %>%
+    mutate(tractID = gsub("_[0-9]+", "", tract_node)) %>%
+    mutate(tract_label = gsub("Left |Right ", "", gsub("_", " ", gsub("Fronto.", "Fronto-", tractID)))) %>%
+    mutate(nodeID = str_extract(tract_node, "[0-9]+")) 
+  df$nodeID <- as.numeric(df$nodeID)
+  
+  # label main orientation
+  df <- df %>% 
+  mutate(main_orientation = case_when(
+    tract_label %in% c("Inferior Fronto-occipital",
+                   "Inferior Longitudinal", "Superior Longitudinal") ~ "AP",
+    tract_label %in% c("Arcuate") ~ "AP_frontal_temporal",
+    tract_label %in% c("Callosum Anterior Frontal", "Callosum Motor", "Callosum Occipital", "Callosum Orbital", 
+                       "Callosum Posterior Parietal", "Callosum Superior Frontal", "Callosum Superior Parietal", "Callosum Temporal") ~ "RL",
+    tract_label %in% c("Corticospinal", "Posterior Arcuate","Vertical Occipital") ~ "SI",
+    TRUE ~ NA_character_
+  ))
+  df$main_orientation <- as.factor(df$main_orientation)
+  df <- df %>% relocate(tract_label, tractID, nodeID, tract_node, hemi, main_orientation)
+  return(df)
+}
+
+ageeffect_dfs <- lapply(ageeffect_df_names, format_ageeffect)
+ 
+```
+
+```{r fdr correction}
+# Function for calculating number of significant nodes (FDR corrected)
+# @param df A dataframe with GAM results
+sig_nodes <- function(df) {
+
+  df$Anova.age.pvalue.fdr <- p.adjust(df$Anova.smooth.pvalue, method=c("fdr"))
+  cat(sprintf("There are %s/%s significant nodes\n", sum(df$Anova.age.pvalue.fdr < 0.05, na.rm=TRUE), nrow(df)))
+  df$significant.fdr <- df$Anova.age.pvalue.fdr < 0.05
+  df$significant.fdr[df$significant.fdr == TRUE] <- 1
+  df$significant.fdr[df$significant.fdr == FALSE] <- 0
+  return(df)
+}
+
+ageeffect.fdr_dfs <- lapply(ageeffect_dfs, sig_nodes)
+names(ageeffect.fdr_dfs) <- ageeffect_df_names
+  
+
+```
+
+```{r average tract age effects}
+library(ggplot2)
+library(dplyr)
+
+bin_num_nodes = 5
+clipEnds = 3
+
+average_tract_deveffect <- function(df, ageeffect_measure, bin_num_nodes, clipEnds) {
+  sqrt_n <- sqrt(bin_num_nodes) # n = number of nodes included in each bin (or level of node_position)
+  df <- df %>% filter(nodeID > (clipEnds-1) & nodeID < (99-clipEnds+1))
+  df_binned <- df %>%
+        filter(
+          nodeID < (bin_num_nodes + clipEnds) |  # Start of the tract
+          nodeID > (99 - bin_num_nodes - clipEnds) # End of the tract
+        ) %>%
+        mutate(
+        node_position = case_when(
+            tract_label == "Corticospinal" & nodeID < (bin_num_nodes + clipEnds) ~ "end1",
+            tract_label == "Corticospinal" & nodeID > (99 - bin_num_nodes - clipEnds) ~ "end2",
+            tract_label != "Corticospinal" & nodeID < (bin_num_nodes + clipEnds) ~ "end1",
+            tract_label != "Corticospinal" & nodeID > (99 - bin_num_nodes - clipEnds) ~ "end2", 
+            TRUE ~ NA_character_
+        )
+    ) %>%
+        #group_by(tract_label, node_position) %>%
+        group_by(tractID, node_position) %>% # removed hemi
+        summarise(
+          mean_ageeffect = abs(mean(get(ageeffect_measure), na.rm = TRUE)),
+          sd = abs(sd(get(ageeffect_measure), na.rm = TRUE)),
+          ymin_sd = abs(mean(get(ageeffect_measure), na.rm = TRUE)) - sd,
+          ymax_sd = abs(mean(get(ageeffect_measure), na.rm = TRUE)) + sd, 
+          se = sd(get(ageeffect_measure), na.rm = TRUE) / sqrt_n,
+          ymin_se = abs(mean(get(ageeffect_measure), na.rm = TRUE)) - se,
+          ymax_se = abs(mean(get(ageeffect_measure), na.rm = TRUE)) + se
+        )
+  df_binned$node_position <- factor(df_binned$node_position, levels = c("end1", "end2"))
+  
+  return(df_binned)
+}
+
+# end 1 is always the side at node 0
+# end 2 is always the side at node 99
+# refer to the main_orientation variable in gam_df to know the orientation of the tract
+# which goes from 0-99 (so SI means node 0 = superior, node 99 = inferior)
+ageeffect_measure = "GAM.smooth.AdjRsq"
+
+PNC_deveffects_5 <- average_tract_deveffect(ageeffect.fdr_dfs$PNC_ageeffects, ageeffect_measure, bin_num_nodes = 5, clipEnds = 3)  
+PNC_deveffects_10 <- average_tract_deveffect(ageeffect.fdr_dfs$PNC_ageeffects, ageeffect_measure, bin_num_nodes = 10, clipEnds = 3)  
+
+HBN_deveffects_5 <- average_tract_deveffect(ageeffect.fdr_dfs$HBN_ageeffects, ageeffect_measure, bin_num_nodes = 5, clipEnds = 3)  
+HBN_deveffects_10 <- average_tract_deveffect(ageeffect.fdr_dfs$HBN_ageeffects, ageeffect_measure, bin_num_nodes = 10, clipEnds = 3)  
+
+PNC_deveffects_5 <- average_tract_deveffect(ageeffect.fdr_dfs$PNC_ageeffects, ageeffect_measure, bin_num_nodes = 5, clipEnds = 3)  
+PNC_deveffects_10 <- average_tract_deveffect(ageeffect.fdr_dfs$PNC_ageeffects, ageeffect_measure, bin_num_nodes = 10, clipEnds = 3)  
+  
+ 
+```
+
+
+```{r test}
+
+plot_ends <- function(bundle_name, dataset) {
+  df <- get(paste0(bundle_name, "_deveffect_", dataset))
+   
+  if(grepl("L$", bundle_name)) {
+    hemi = "left"
+    cortical_pos <- c("left lateral", "left medial")
+  } else{
+    hemi = "right"
+    cortical_pos <- c("right lateral", "right medial")
+  }
+  plot <- ggplot() + 
+      geom_brain(data = df, atlas= glasser, 
+                 mapping=aes(fill=end), 
+                 show.legend=TRUE, 
+                 hemi = hemi,
+                 position = position_brain(cortical_pos))  +   
+    scale_fill_manual(values = c("end1" = "red", "end2" = "blue"), na.value = "grey88")  +
+      theme_void() +
+      theme(legend.position = "none",
+            legend.key.height = unit(1, 'cm'),
+            legend.key.width = unit(2.3, 'cm'),
+            legend.margin=margin(0,0,0,0),
+            legend.text = element_text(size=24),
+            legend.title = element_blank(),
+            plot.margin = unit(c(0.1, 0.1, 0.1, 0.1), "cm"),
+            plot.title = element_text(size=20, hjust = 0.5)) 
+ return(plot)
+             
+}
+```
+
+
+assigning age effects to endpoints: need to do this manually for each dataset and tract. rip.
+```{r assign age effects to cortical endpoints PNC}
+# have to do this manually T_T
+threshold = 0.3
+
+# for tracts with 1 endpoint (CST), extract the age effect for end1 (corresponds to cortical endpoint) 
+CSTL_deveffect_PNC <- lh_maps_PNC$LeftCorticospinal %>% mutate(
+  thresh_probability = ifelse(probability < threshold, NA, probability)
+  ) %>% 
+  select(thresh_probability, regionName, region, cortex) %>%
+  arrange(thresh_probability) %>% 
+  mutate(
+    mean_age_effect = ifelse(
+      !is.na(thresh_probability), 
+      PNC_deveffects_5 %>% filter(tractID == "Left_Corticospinal" & node_position == "end1") %>% pull(mean_ageeffect), NA)
+    ) %>% 
+   mutate(
+    end = ifelse(
+      !is.na(thresh_probability), 
+      "end1", NA)
+  ) %>%
+  relocate(mean_age_effect)
+
+CSTR_deveffect_PNC <- rh_maps_PNC$RightCorticospinal %>% mutate(
+  thresh_probability = ifelse(probability < threshold, NA, probability)
+  ) %>% 
+  select(thresh_probability, regionName, region, cortex) %>%
+  arrange(thresh_probability) %>% 
+  mutate(
+    mean_age_effect = ifelse(
+      !is.na(thresh_probability), 
+      PNC_deveffects_5 %>% filter(tractID == "Right_Corticospinal" & node_position == "end1") %>% pull(mean_ageeffect), NA)
+    ) %>% 
+   mutate(
+    end = ifelse(
+      !is.na(thresh_probability), 
+      "end1", NA)
+  ) %>%
+  relocate(mean_age_effect)
+ 
+# for tracts with 2 distinct cortical endpoints: ARC, ILF, IFO, SLF
+ARCL_deveffect_PNC <- lh_maps_PNC$LeftArcuate %>%
+  mutate(
+    thresh_probability = ifelse(probability < threshold, NA, probability)
+  ) %>%
+  select(thresh_probability, regionName, region, cortex) %>%
+  arrange(thresh_probability) %>%
+  mutate(
+    mean_age_effect = case_when(
+      !is.na(thresh_probability) & (str_detect(cortex, "(?i)frontal") | str_detect(cortex, "(?i)motor") | str_detect(cortex, "(?i)Posterior_Opercular")) ~ 
+        PNC_deveffects_5 %>% filter(tractID == "Left_Arcuate", node_position == "end1") %>% pull(mean_ageeffect),
+      !is.na(thresh_probability) & (str_detect(cortex, "(?i)Temp") | str_detect(cortex, "(?i)Auditory")) ~ 
+        PNC_deveffects_5 %>% filter(tractID == "Left_Arcuate", node_position == "end2") %>% pull(mean_ageeffect),
+      TRUE ~ NA_real_
+    )
+  ) %>%
+  mutate(
+    end = ifelse(
+      !is.na(thresh_probability) & (str_detect(cortex, "(?i)frontal") | str_detect(cortex, "motor") | str_detect(cortex, "Posterior_Opercular")), 
+      "end1", 
+      ifelse(
+        !is.na(thresh_probability) & (str_detect(cortex, "Temp") | str_detect(cortex, "Auditory") ), 
+        "end2", 
+        NA))
+    ) %>%
+  relocate(mean_age_effect)
+ 
+ARCR_deveffect_PNC <- rh_maps_PNC$RightArcuate %>%
+  mutate(
+    thresh_probability = ifelse(probability < threshold, NA, probability)
+  ) %>%
+  select(thresh_probability, regionName, region,  cortex) %>%
+  arrange(thresh_probability) %>%
+  mutate(
+    mean_age_effect = case_when(
+      !is.na(thresh_probability) & 
+        (str_detect(cortex, "(?i)frontal") | str_detect(cortex, "(?i)motor") | str_detect(cortex, "(?i)Posterior_Opercular")) ~ 
+          PNC_deveffects_5 %>% filter(tractID == "Left_Arcuate", node_position == "end1") %>% pull(mean_ageeffect),
+      !is.na(thresh_probability) & 
+        (str_detect(cortex, "(?i)Temp") | str_detect(cortex, "(?i)MT") | str_detect(cortex, "(?i)Auditory")) ~ 
+          PNC_deveffects_5 %>% filter(tractID == "Left_Arcuate", node_position == "end2") %>% pull(mean_ageeffect),
+      TRUE ~ NA_real_
+    ),
+    end = case_when(
+      !is.na(thresh_probability) & 
+        (str_detect(cortex, "(?i)frontal") | str_detect(cortex, "(?i)motor") | str_detect(cortex, "(?i)Posterior_Opercular")) ~ "end1",
+      !is.na(thresh_probability) & 
+        (str_detect(cortex, "(?i)Temp") | str_detect(cortex, "(?i)MT") | str_detect(cortex, "(?i)Auditory")) ~ "end2",
+      TRUE ~ NA_character_
+    )
+  ) %>%
+  relocate(mean_age_effect)
+
+ILFL_deveffect_PNC <- lh_maps_PNC$LeftInferiorLongitudinal %>%
+  mutate(
+    thresh_probability = ifelse(probability < threshold, NA, probability)
+  ) %>%
+  select(thresh_probability, regionName, region,  cortex) %>%
+  arrange(thresh_probability) %>%
+  mutate(
+    mean_age_effect = case_when(
+      !is.na(thresh_probability) & 
+      !str_detect(cortex, "(?i)visual|Inferior_Parietal|Occipital") ~ 
+        PNC_deveffects_5 %>% filter(tractID == "Left_Inferior_Longitudinal", node_position == "end1") %>% pull(mean_ageeffect),
+      !is.na(thresh_probability) & 
+      str_detect(cortex, "(?i)visual|Inferior_Parietal|Occipital") ~ 
+        PNC_deveffects_5 %>% filter(tractID == "Left_Inferior_Longitudinal", node_position == "end2") %>% pull(mean_ageeffect),
+      TRUE ~ NA_real_
+    ),
+    end = case_when(
+      !is.na(thresh_probability) & 
+      !str_detect(cortex, "(?i)visual|Inferior_Parietal|Occipital") ~ "end1",
+      !is.na(thresh_probability) & 
+      str_detect(cortex, "(?i)visual|Inferior_Parietal|Occipital") ~ "end2",
+      TRUE ~ NA_character_
+    )
+  ) %>%
+  relocate(mean_age_effect)
+
+ILFR_deveffect_PNC <- rh_maps_PNC$RightInferiorLongitudinal %>%
+  mutate(
+    thresh_probability = ifelse(probability < threshold, NA, probability)
+  ) %>%
+  select(thresh_probability, regionName, region,  cortex) %>%
+  arrange(thresh_probability) %>%
+  mutate(
+    mean_age_effect = ifelse(
+      !is.na(thresh_probability) & (!str_detect(cortex, "(?i)visual")) & region != "PHA3", 
+      PNC_deveffects_5 %>%  filter(tractID == "Right_Inferior_Longitudinal", node_position == "end1") %>% pull(mean_ageeffect),
+      ifelse(
+        !is.na(thresh_probability) & (str_detect(cortex, "(?i)visual")) | region == "PHA3", 
+      PNC_deveffects_5 %>%  filter(tractID == "Right_Inferior_Longitudinal", node_position == "end2") %>% pull(mean_ageeffect),
+        NA))
+    ) %>%
+  mutate(
+    end = ifelse(
+      !is.na(thresh_probability) & (!str_detect(cortex, "(?i)visual")) & region != "PHA3", 
+      "end1", 
+      ifelse(
+        !is.na(thresh_probability) & (str_detect(cortex, "(?i)visual")) | region == "PHA3", 
+        "end2", 
+        NA))
+    ) %>%
+  relocate(mean_age_effect) %>% arrange(end)
+
+IFOL_deveffect_PNC <- lh_maps_PNC$LeftInferiorFrontooccipital %>%
+  mutate(
+    thresh_probability = ifelse(probability < 0.1, NA, probability)
+  ) %>%
+  select(thresh_probability, regionName, region,  cortex) %>%
+  arrange(thresh_probability) %>%
+  mutate(mean_age_effect = case_when(
+    !is.na(thresh_probability) & 
+    (str_detect(cortex, "(?i)frontal|Auditory")) ~ 
+      PNC_deveffects_5 %>% filter(tractID == "Left_Inferior_Fronto.occipital", node_position == "end1") %>% pull(mean_ageeffect),
+    !is.na(thresh_probability) & 
+    str_detect(cortex, "(?i)visual") ~ 
+      PNC_deveffects_5 %>% filter(tractID == "Left_Inferior_Fronto.occipital", node_position == "end2") %>% pull(mean_ageeffect),
+    TRUE ~ NA_real_)) %>%
+  mutate(
+    end = ifelse(
+      !is.na(thresh_probability) & 
+      (str_detect(cortex, "(?i)frontal") | 
+       str_detect(cortex, "Auditory")), 
+      "end1", 
+      ifelse(
+        !is.na(thresh_probability) & 
+        (str_detect(cortex, "(?i)visual")), 
+        "end2", 
+        NA
+      )
+    )
+  ) %>%
+  relocate(mean_age_effect)
+ 
+IFOR_deveffect_PNC <- rh_maps_PNC$RightInferiorFrontooccipital %>%
+  mutate(
+    thresh_probability = ifelse(probability < 0.1, NA, probability)
+  ) %>%
+  select(thresh_probability, regionName, region,  cortex) %>%
+  arrange(thresh_probability) %>%
+  mutate(
+    mean_age_effect = ifelse(
+      !is.na(thresh_probability) & 
+      (str_detect(cortex, "(?i)frontal")  |
+       str_detect(cortex, "Auditory")), 
+      PNC_deveffects_5 %>% filter(tractID == "Right_Inferior_Fronto.occipital", node_position == "end1") %>% pull(mean_ageeffect),
+      ifelse(
+        !is.na(thresh_probability) & 
+        (str_detect(cortex, "(?i)visual")), 
+       PNC_deveffects_5 %>% filter(tractID == "Right_Inferior_Fronto.occipital", node_position == "end2") %>% pull(mean_ageeffect),
+        NA
+      )
+    )
+  ) %>%
+   mutate(
+    end = ifelse(
+      !is.na(thresh_probability) & 
+      (str_detect(cortex, "(?i)frontal") | 
+       str_detect(cortex, "Auditory")), 
+      "end1", 
+      ifelse(
+        !is.na(thresh_probability) & 
+        (str_detect(cortex, "(?i)visual")), 
+        "end2", 
+        NA
+      )
+    )
+  ) %>%
+  relocate(mean_age_effect)
+
+SLFL_deveffect_PNC <- lh_maps_PNC$LeftSuperiorLongitudinal %>%
+  mutate(
+    thresh_probability = ifelse(probability < threshold, NA, probability)
+  ) %>%
+  select(thresh_probability, regionName, region,  cortex) %>%
+  arrange(thresh_probability) %>%
+  mutate(
+    mean_age_effect = ifelse(
+      !is.na(thresh_probability) & 
+      (str_detect(cortex, "(?i)frontal") |
+         str_detect(cortex, "(?i)motor") | 
+         str_detect(cortex, "(?i)Opercular")), 
+      PNC_deveffects_5 %>% filter(tractID == "Left_Superior_Longitudinal", node_position == "end1") %>% pull(mean_ageeffect),
+      ifelse(
+        !is.na(thresh_probability) & 
+        (str_detect(cortex, "(?i)pariet|(?i)auditory")), 
+      PNC_deveffects_5 %>% filter(tractID == "Left_Superior_Longitudinal", node_position == "end2") %>% pull(mean_ageeffect),
+        NA))) %>%
+  mutate(end = ifelse(
+      !is.na(thresh_probability) & 
+      (str_detect(cortex, "(?i)frontal") |
+         str_detect(cortex, "(?i)motor") | 
+         str_detect(cortex, "(?i)Opercular")), 
+      "end1", 
+      ifelse(
+        !is.na(thresh_probability) & 
+        (str_detect(cortex, "(?i)pariet|(?i)auditory")), 
+        "end2", 
+        NA))) %>%
+  relocate(mean_age_effect)
+
+SLFR_deveffect_PNC <- rh_maps_PNC$RightSuperiorLongitudinal %>%
+  mutate(
+    thresh_probability = ifelse(probability < threshold, NA, probability)
+  ) %>%
+  select(thresh_probability, regionName, region,  cortex) %>%
+  arrange(thresh_probability) %>%
+  mutate(
+    mean_age_effect = ifelse(
+      !is.na(thresh_probability) & 
+      (str_detect(cortex, "(?i)frontal") |
+         str_detect(cortex, "(?i)motor") | 
+         str_detect(cortex, "(?i)Opercular")), 
+      PNC_deveffects_5 %>% filter(tractID == "Right_Superior_Longitudinal", node_position == "end1") %>% pull(mean_ageeffect),
+      ifelse(
+        !is.na(thresh_probability) & 
+        (str_detect(cortex, "(?i)pariet")), 
+      PNC_deveffects_5 %>% filter(tractID == "Right_Superior_Longitudinal", node_position == "end2") %>% pull(mean_ageeffect),
+      NA))) %>%
+  mutate(
+    end = ifelse(
+      !is.na(thresh_probability) & 
+      (str_detect(cortex, "(?i)frontal") |
+         str_detect(cortex, "(?i)motor") | 
+         str_detect(cortex, "(?i)Opercular")), 
+      "end1", 
+      ifelse(
+        !is.na(thresh_probability) & 
+        (str_detect(cortex, "(?i)pariet")), 
+        "end2", 
+        NA
+      )
+    )
+  ) %>%
+  relocate(mean_age_effect)
+  
+
+# for tracts with 2 cortical endpoints that require some manual work: pARC, VOF 
+pARCL_deveffect_PNC <- lh_maps_PNC$LeftPosteriorArcuate %>%
+  mutate(
+    thresh_probability = ifelse(probability < threshold, NA, probability)
+  ) %>%
+  select(thresh_probability, regionName, region,  cortex) %>%
+  arrange(thresh_probability) %>%
+  mutate(
+    mean_age_effect = ifelse( 
+      !is.na(thresh_probability) & 
+      (str_detect(cortex, "(?i)parietal")),  # might exclude TPOJ1 since its between the two endpoints
+      PNC_deveffects_5 %>% filter(tractID == "Left_Posterior_Arcuate", node_position == "end1") %>% pull(mean_ageeffect),
+      ifelse(
+        !is.na(thresh_probability) & 
+        (str_detect(cortex, "(?i)temporal") |
+           str_detect(cortex, "(?i)visual") |
+           str_detect(cortex, "(?i)auditory")), 
+       PNC_deveffects_5 %>% filter(tractID == "Left_Posterior_Arcuate", node_position == "end2") %>% pull(mean_ageeffect), 
+        NA))) %>%
+  mutate(
+    end = ifelse( 
+      !is.na(thresh_probability) & 
+      (str_detect(cortex, "(?i)parietal")),  # might exclude TPOJ1 since its between the two endpoints
+      "end1", 
+      ifelse(
+        !is.na(thresh_probability) & 
+        (str_detect(cortex, "(?i)temporal") |
+           str_detect(cortex, "(?i)visual") |
+           str_detect(cortex, "(?i)auditory")), 
+        "end2", 
+        NA
+      )
+    )
+  ) %>%
+  relocate(mean_age_effect)
+
+
+
+pARCR_deveffect_PNC <- rh_maps_PNC$RightPosteriorArcuate %>%
+  mutate(
+    thresh_probability = ifelse(probability < threshold, NA, probability)
+  ) %>%
+  select(thresh_probability, regionName, region,  cortex) %>%
+  arrange(thresh_probability) %>%
+  mutate(
+    mean_age_effect = ifelse( 
+      !is.na(thresh_probability) & 
+      (str_detect(cortex, "(?i)parietal")),  # might exclude TPOJ1 since its between the two endpoints
+      PNC_deveffects_5 %>% filter(tractID == "Right_Posterior_Arcuate", node_position == "end1") %>% pull(mean_ageeffect), 
+      ifelse(
+        !is.na(thresh_probability) & 
+        (str_detect(cortex, "(?i)temporal") |
+           str_detect(cortex, "(?i)visual") |
+           str_detect(cortex, "(?i)auditory")), 
+        PNC_deveffects_5 %>% filter(tractID == "Right_Posterior_Arcuate", node_position == "end2") %>% pull(mean_ageeffect), 
+        NA
+      )
+    )
+  ) %>%
+   mutate(
+    end = ifelse( 
+      !is.na(thresh_probability) & 
+      (str_detect(cortex, "(?i)parietal")),  # might exclude TPOJ1 since its between the two endpoints
+      "end1", 
+      ifelse(
+        !is.na(thresh_probability) & 
+        (str_detect(cortex, "(?i)temporal") |
+           str_detect(cortex, "(?i)visual") |
+           str_detect(cortex, "(?i)auditory")), 
+        "end2", 
+        NA
+      )
+    )
+  ) %>%
+  relocate(mean_age_effect)
+
+ 
+VOFL_deveffect_PNC <- lh_maps_PNC$LeftVerticalOccipital %>%
+  mutate(
+    thresh_probability = ifelse(probability < threshold, NA, probability)
+  ) %>%
+  select(thresh_probability, regionName, region,  cortex) %>%
+  arrange(thresh_probability) %>%
+  mutate(
+    mean_age_effect = ifelse( 
+      !is.na(thresh_probability) & 
+      (str_detect(cortex, "(?i)dorsal") | 
+       str_detect(cortex, "(?i)parietal") |
+         region == "LO1" |
+         region == "V3CD" |
+         region == "V4" | # kind of arbitrarily placing V3 and V4 for now
+         region == "MST" |
+         region == "MT" | 
+         region == "TPOJ3" |
+         region == "LO3"),   
+      PNC_deveffects_5 %>% filter(tractID == "Left_Vertical_Occipital", node_position == "end1") %>% pull(mean_ageeffect), 
+      ifelse(
+        !is.na(thresh_probability) & 
+        (str_detect(cortex, "(?i)ventral") | 
+         region == "PH" |
+         region == "LO2" |
+           region == "V3"), 
+        PNC_deveffects_5 %>% filter(tractID == "Left_Vertical_Occipital", node_position == "end2") %>% pull(mean_ageeffect), 
+        NA))) %>%
+  mutate(
+    end = ifelse( 
+      !is.na(thresh_probability) & 
+      (str_detect(cortex, "(?i)dorsal") | 
+       str_detect(cortex, "(?i)parietal") |
+       region == "LO1" |
+       region == "V3CD" |
+       region == "V4" | # kind of arbitrarily placing V3 and V4 for now
+       region == "MST" |
+       region == "MT" |
+       region == "TPOJ3" |
+       region == "LO3"),   
+      "end1", 
+      ifelse(
+        !is.na(thresh_probability) & 
+        (str_detect(cortex, "(?i)ventral") | 
+         region == "PH" |
+         region == "LO2" |
+           region == "V3" ), 
+        "end2", 
+        NA
+      )
+    )
+  ) %>%
+  relocate(mean_age_effect)
+
+
+VOFR_deveffect_PNC <- rh_maps_PNC$RightVerticalOccipital %>%
+  mutate(
+    thresh_probability = ifelse(probability < threshold, NA, probability)
+  ) %>%
+  select(thresh_probability, regionName, region,  cortex) %>%
+  arrange(thresh_probability) %>%
+  mutate(
+    mean_age_effect = ifelse( 
+      !is.na(thresh_probability) & 
+      (str_detect(cortex, "(?i)dorsal") | 
+       str_detect(cortex, "(?i)parietal") |
+       region == "LO1" |
+       region == "V3CD" |
+       region == "V4" | # kind of arbitrarily placing V3 and V4 for now
+       region == "LO3"),   
+       PNC_deveffects_5 %>% filter(tractID == "Right_Vertical_Occipital", node_position == "end1") %>% pull(mean_ageeffect), 
+      ifelse(
+        !is.na(thresh_probability) & 
+        (str_detect(cortex, "(?i)ventral") | 
+         region == "PH" |
+         region == "LO2" |
+         region == "MST" |
+         region == "V3"), 
+         PNC_deveffects_5 %>% filter(tractID == "Right_Vertical_Occipital", node_position == "end2") %>% pull(mean_ageeffect), NA
+      )
+    )
+  ) %>%
+  mutate(
+    end = ifelse( 
+      !is.na(thresh_probability) & 
+      (str_detect(cortex, "(?i)dorsal") |
+        str_detect(cortex, "(?i)parietal") |
+        region == "LO1" |
+        region == "V3CD" |
+        region == "V4"| # kind of arbitrarily placing V3 and V4 for now
+        region == "LO3"),   
+      "end1", 
+      ifelse(
+        !is.na(thresh_probability) & 
+        (str_detect(cortex, "(?i)ventral") | 
+         region == "PH" |
+         region == "LO2" |
+         region == "V3" | 
+         region == "MST" |
+         region == "FST"), 
+        "end2", 
+        NA
+      )
+    )
+  ) %>%
+  relocate(mean_age_effect)
+ 
+# callosum bundles
+COrbL_deveffect_PNC <- lh_maps_PNC$LeftCallosumOrbital %>% mutate(
+  thresh_probability = ifelse(probability < threshold, NA, probability)
+  ) %>% 
+  select(thresh_probability, regionName, region, cortex) %>%
+  arrange(thresh_probability) %>% 
+  mutate(
+    mean_age_effect = ifelse(
+      !is.na(thresh_probability), 
+      PNC_deveffects_5 %>% filter(tractID == "Callosum_Orbital" & node_position == "end2") %>% pull(mean_ageeffect), NA)
+    ) %>% 
+   mutate(
+    end = ifelse(
+      !is.na(thresh_probability), 
+      "end2", NA)
+  ) %>%
+  relocate(mean_age_effect)
+
+
+COrbR_deveffect_PNC <- rh_maps_PNC$RightCallosumOrbital %>% mutate(
+  thresh_probability = ifelse(probability < threshold, NA, probability)
+  ) %>% 
+  select(thresh_probability, regionName, region, cortex) %>%
+  arrange(thresh_probability) %>% 
+  mutate(
+    mean_age_effect = ifelse(
+      !is.na(thresh_probability), 
+      PNC_deveffects_5 %>% filter(tractID == "Callosum_Orbital" & node_position == "end1") %>% pull(mean_ageeffect), NA)
+    ) %>% 
+   mutate(
+    end = ifelse(
+      !is.na(thresh_probability), 
+      "end1", NA)
+  ) %>%
+  relocate(mean_age_effect)
+
+CAntFrL_deveffect_PNC <- lh_maps_PNC$LeftCallosumAnteriorFrontal %>% mutate(
+  thresh_probability = ifelse(probability < threshold, NA, probability)
+  ) %>% 
+  select(thresh_probability, regionName, region, cortex) %>%
+  arrange(thresh_probability) %>% 
+  mutate(
+    mean_age_effect = ifelse(
+      !is.na(thresh_probability), 
+      PNC_deveffects_5 %>% filter(tractID == "Callosum_Anterior_Frontal" & node_position == "end2") %>% pull(mean_ageeffect), NA)
+    ) %>% 
+   mutate(
+    end = ifelse(
+      !is.na(thresh_probability), 
+      "end2", NA)
+  ) %>%
+  relocate(mean_age_effect)
+ 
+CAntFrR_deveffect_PNC <- rh_maps_PNC$RightCallosumAnteriorFrontal %>% mutate(
+  thresh_probability = ifelse(probability < threshold, NA, probability)
+  ) %>% 
+  select(thresh_probability, regionName, region, cortex) %>%
+  arrange(thresh_probability) %>% 
+  mutate(
+    mean_age_effect = ifelse(
+      !is.na(thresh_probability), 
+      PNC_deveffects_5 %>% filter(tractID == "Callosum_Anterior_Frontal" & node_position == "end1") %>% pull(mean_ageeffect), NA)
+    ) %>% 
+   mutate(
+    end = ifelse(
+      !is.na(thresh_probability), 
+      "end1", NA)
+  ) %>%
+  relocate(mean_age_effect)
+
+CSupFrL_deveffect_PNC <- lh_maps_PNC$LeftCallosumSuperiorFrontal %>% mutate(
+  thresh_probability = ifelse(probability < threshold, NA, probability)
+  ) %>% 
+  select(thresh_probability, regionName, region, cortex) %>%
+  arrange(thresh_probability) %>% 
+  mutate(
+    mean_age_effect = ifelse(
+      !is.na(thresh_probability), 
+      PNC_deveffects_5 %>% filter(tractID == "Callosum_Superior_Frontal" & node_position == "end2") %>% pull(mean_ageeffect), NA)
+    ) %>% 
+   mutate(
+    end = ifelse(
+      !is.na(thresh_probability), 
+      "end2", NA)
+  ) %>%
+  relocate(mean_age_effect)
+
+CSupFrR_deveffect_PNC <- rh_maps_PNC$RightCallosumSuperiorFrontal %>% mutate(
+  thresh_probability = ifelse(probability < threshold, NA, probability)
+  ) %>% 
+  select(thresh_probability, regionName, region, cortex) %>%
+  arrange(thresh_probability) %>% 
+  mutate(
+    mean_age_effect = ifelse(
+      !is.na(thresh_probability), 
+      PNC_deveffects_5 %>% filter(tractID == "Callosum_Superior_Frontal" & node_position == "end1") %>% pull(mean_ageeffect), NA)
+    ) %>% 
+   mutate(
+    end = ifelse(
+      !is.na(thresh_probability), 
+      "end1", NA)
+  ) %>%
+  relocate(mean_age_effect)
+
+CMotL_deveffect_PNC <- lh_maps_PNC$LeftCallosumMotor %>% mutate(
+  thresh_probability = ifelse(probability < threshold, NA, probability)
+  ) %>% 
+  select(thresh_probability, regionName, region, cortex) %>%
+  arrange(thresh_probability) %>% 
+  mutate(
+    mean_age_effect = ifelse(
+      !is.na(thresh_probability), 
+      PNC_deveffects_5 %>% filter(tractID == "Callosum_Motor" & node_position == "end2") %>% pull(mean_ageeffect), NA)
+    ) %>% 
+   mutate(
+    end = ifelse(
+      !is.na(thresh_probability), 
+      "end2", NA)
+  ) %>%
+  relocate(mean_age_effect)
+
+CMotR_deveffect_PNC <- rh_maps_PNC$RightCallosumMotor %>% mutate(
+  thresh_probability = ifelse(probability < threshold, NA, probability)
+  ) %>% 
+  select(thresh_probability, regionName, region, cortex) %>%
+  arrange(thresh_probability) %>% 
+  mutate(
+    mean_age_effect = ifelse(
+      !is.na(thresh_probability), 
+      PNC_deveffects_5 %>% filter(tractID == "Callosum_Motor" & node_position == "end1") %>% pull(mean_ageeffect), NA)
+    ) %>% 
+   mutate(
+    end = ifelse(
+      !is.na(thresh_probability), 
+      "end1", NA)
+  ) %>%
+  relocate(mean_age_effect)
+
+CSupParL_deveffect_PNC <- lh_maps_PNC$LeftCallosumSuperiorParietal %>% mutate(
+  thresh_probability = ifelse(probability < threshold, NA, probability)
+  ) %>% 
+  select(thresh_probability, regionName, region, cortex) %>%
+  arrange(thresh_probability) %>% 
+  mutate(
+    mean_age_effect = ifelse(
+      !is.na(thresh_probability), 
+      PNC_deveffects_5 %>% filter(tractID == "Callosum_Superior_Parietal" & node_position == "end2") %>% pull(mean_ageeffect), NA)
+    ) %>% 
+   mutate(
+    end = ifelse(
+      !is.na(thresh_probability), 
+      "end2", NA)
+  ) %>%
+  relocate(mean_age_effect)
+
+CSupParR_deveffect_PNC <- rh_maps_PNC$RightCallosumSuperiorParietal %>% mutate(
+  thresh_probability = ifelse(probability < threshold, NA, probability)
+  ) %>% 
+  select(thresh_probability, regionName, region, cortex) %>%
+  arrange(thresh_probability) %>% 
+  mutate(
+    mean_age_effect = ifelse(
+      !is.na(thresh_probability), 
+      PNC_deveffects_5 %>% filter(tractID == "Callosum_Superior_Parietal" & node_position == "end1") %>% pull(mean_ageeffect), NA)
+    ) %>% 
+   mutate(
+    end = ifelse(
+      !is.na(thresh_probability), 
+      "end1", NA)
+  ) %>%
+  relocate(mean_age_effect)
+ 
+CPostParL_deveffect_PNC <- lh_maps_PNC$LeftCallosumPosteriorParietal %>% mutate(
+  thresh_probability = ifelse(probability < threshold, NA, probability)
+  ) %>% 
+  select(thresh_probability, regionName, region, cortex) %>%
+  arrange(thresh_probability) %>% 
+  mutate(
+    mean_age_effect = ifelse(
+      !is.na(thresh_probability), 
+      PNC_deveffects_5 %>% filter(tractID == "Callosum_Posterior_Parietal" & node_position == "end2") %>% pull(mean_ageeffect), NA)
+    ) %>% 
+   mutate(
+    end = ifelse(
+      !is.na(thresh_probability), 
+      "end2", NA)
+  ) %>%
+  relocate(mean_age_effect)
+
+CPostParR_deveffect_PNC <- rh_maps_PNC$RightCallosumPosteriorParietal %>% mutate(
+  thresh_probability = ifelse(probability < threshold, NA, probability)
+  ) %>% 
+  select(thresh_probability, regionName, region, cortex) %>%
+  arrange(thresh_probability) %>% 
+  mutate(
+    mean_age_effect = ifelse(
+      !is.na(thresh_probability), 
+      PNC_deveffects_5 %>% filter(tractID == "Callosum_Posterior_Parietal" & node_position == "end1") %>% pull(mean_ageeffect), NA)
+    ) %>% 
+   mutate(
+    end = ifelse(
+      !is.na(thresh_probability), 
+      "end1", NA)
+  ) %>%
+  relocate(mean_age_effect)
+
+CTempL_deveffect_PNC <- lh_maps_PNC$LeftCallosumTemporal %>% mutate(
+  thresh_probability = ifelse(probability < threshold, NA, probability)
+  ) %>% 
+  select(thresh_probability, regionName, region, cortex) %>%
+  arrange(thresh_probability) %>% 
+  mutate(
+    mean_age_effect = ifelse(
+      !is.na(thresh_probability), 
+      PNC_deveffects_5 %>% filter(tractID == "Callosum_Temporal" & node_position == "end2") %>% pull(mean_ageeffect), NA)
+    ) %>% 
+   mutate(
+    end = ifelse(
+      !is.na(thresh_probability), 
+      "end2", NA)
+  ) %>%
+  relocate(mean_age_effect)
+
+CTempR_deveffect_PNC <- rh_maps_PNC$RightCallosumTemporal %>% mutate(
+  thresh_probability = ifelse(probability < threshold, NA, probability)
+  ) %>% 
+  select(thresh_probability, regionName, region, cortex) %>%
+  arrange(thresh_probability) %>% 
+  mutate(
+    mean_age_effect = ifelse(
+      !is.na(thresh_probability), 
+      PNC_deveffects_5 %>% filter(tractID == "Callosum_Temporal" & node_position == "end1") %>% pull(mean_ageeffect), NA)
+    ) %>% 
+   mutate(
+    end = ifelse(
+      !is.na(thresh_probability), 
+      "end1", NA)
+  ) %>%
+  relocate(mean_age_effect)
+
+
+COccL_deveffect_PNC <- lh_maps_PNC$LeftCallosumOccipital %>% mutate(
+  thresh_probability = ifelse(probability < threshold, NA, probability)
+  ) %>% 
+  select(thresh_probability, regionName, region, cortex) %>%
+  arrange(thresh_probability) %>% 
+  mutate(
+    mean_age_effect = ifelse(
+      !is.na(thresh_probability), 
+      PNC_deveffects_5 %>% filter(tractID == "Callosum_Occipital" & node_position == "end2") %>% pull(mean_ageeffect), NA)
+    ) %>% 
+   mutate(
+    end = ifelse(
+      !is.na(thresh_probability), 
+      "end2", NA)
+  ) %>%
+  relocate(mean_age_effect)
+
+COccR_deveffect_PNC <- rh_maps_PNC$RightCallosumOccipital %>% mutate(
+  thresh_probability = ifelse(probability < threshold, NA, probability)
+  ) %>% 
+  select(thresh_probability, regionName, region, cortex) %>%
+  arrange(thresh_probability) %>% 
+  mutate(
+    mean_age_effect = ifelse(
+      !is.na(thresh_probability), 
+      PNC_deveffects_5 %>% filter(tractID == "Callosum_Occipital" & node_position == "end1") %>% pull(mean_ageeffect), NA)
+    ) %>% 
+   mutate(
+    end = ifelse(
+      !is.na(thresh_probability), 
+      "end1", NA)
+  ) %>%
+  relocate(mean_age_effect)
+ 
+```
+ 
+ 
+ 
+```{r functions for plotting age effect, fig.height = 14, fig.width = 14}
+
+# load my colormap :)
+colormap_file <- sprintf("%1$s/code/tract_profiles/colormaps/aquamarine.json", proj_root)
+colormap <- fromJSON(paste(readLines(colormap_file), collapse=""))
+aquamarine <- colorRampPalette(colormap)(15)
+ 
+
+plot_ageeffects <- function(bundle_name, dataset, ylim1, ylim2) {
+  df <- get(paste0(bundle_name, "_deveffect_", dataset))
+  if(grepl("L$", bundle_name)) {
+    hemi = "left"
+    cortical_pos <- c("left lateral", "left medial")
+  } else{
+    hemi = "right"
+    cortical_pos <- c("right lateral", "right medial")
+  }
+  plot <- ggplot() + 
+      geom_brain(data = df, atlas= glasser, 
+                 mapping=aes(fill=mean_age_effect), 
+                 show.legend=TRUE, 
+                 hemi = hemi,
+                 position = position_brain(cortical_pos)) + 
+    scale_fill_gradientn(colors = aquamarine, na.value = "grey92", limits = c(ylim1, ylim2), oob=squish) +
+    theme_void() +
+      theme(legend.position = "none",
+                  legend.title = element_blank(),
+            plot.margin = unit(c(0.1, 0.1, 0.1, 0.1), "cm"),
+            plot.title = element_blank()) 
+ return(plot)
+             
+}
+ 
+arrange_ageeffect_plots <- function(lh_plots, rh_plots) {
+  # arrange maps together  
+  ARC_plots <- ggarrange(lh_plots$ARCL, rh_plots$ARCR, ncol=1, nrow = 2)
+  ARC_final <- annotate_figure(ARC_plots, top = text_grob("Arcuate Fasciculus", 
+                 color = "black", face = "bold", size = 20))
+
+  
+  CST_plots <- ggarrange(lh_plots$CSTL, rh_plots$CSTR, ncol=1, nrow = 2)
+  CST_final <- annotate_figure(CST_plots, top = text_grob("Corticospinal Tract", 
+                 color = "black", face = "bold", size = 20))
+  
+  IFO_plots <- ggarrange(lh_plots$IFOL, rh_plots$IFOR, ncol=1, nrow = 2)
+  IFO_final <- annotate_figure(IFO_plots, top = text_grob("Inferior Fronto-occipital Fasciculus", 
+                 color = "black", face = "bold", size = 20))
+  
+  ILF_plots <- ggarrange(lh_plots$ILFL, rh_plots$ILFR, ncol=1, nrow = 2)
+  ILF_final <- annotate_figure(ILF_plots, top = text_grob("Inferior Longitudinal Fasciculus", 
+                 color = "black", face = "bold", size = 20))
+  
+  pARC_plots <- ggarrange(lh_plots$pARCL, rh_plots$pARCR, ncol=1, nrow = 2)
+  pARC_final <- annotate_figure(pARC_plots, top = text_grob("Posterior Arcuate Fasciculus", 
+                 color = "black", face = "bold", size = 20))
+  
+  SLF_plots <- ggarrange(lh_plots$SLFL, rh_plots$SLFR, ncol=1, nrow = 2)
+  SLF_final <- annotate_figure(SLF_plots, top = text_grob("Superior Longitudinal Fasciculus", 
+                 color = "black", face = "bold", size = 20))
+  
+  
+  VOF_plots <- ggarrange(lh_plots$VOFL, rh_plots$VOFR, ncol=1, nrow = 2)
+  VOF_final <- annotate_figure(VOF_plots, top = text_grob("Vertical Occipital Fasciculus", 
+                 color = "black", face = "bold", size = 20))
+  # stitch it all together
+  legend <- get_legend(lh_plots$VOFL + theme(legend.position = "bottom",
+                                            legend.key.height = unit(1.5, 'cm'),
+                                            legend.key.width = unit(3.5, 'cm'),
+                                            legend.margin=margin(100,300,0,0),
+                                            legend.text = element_text(size=20),
+                                            legend.title = element_blank()))
+   legend_title <- textGrob(expression(paste("Age Effect (Delta Adj", " R"^2, ")")), 
+                   gp=gpar(col="black", fontsize=20),  
+    hjust = 1.3,  
+    vjust = 0.05   
+  )
+  
+  legend_with_title <- arrangeGrob(
+    legend, legend_title,
+    ncol = 1, nrow = 2  
+  )
+  
+  # save out
+  #ggsave(sprintf("/Users/audluo/PennLINC/luowm_local/output/tract_profiles_testing/PNC/tract_to_region_ageeffects.png"),
+         #grid.arrange(ARC_final, ATR_final, CGC_final, CST_final, IFO_final, ILF_final, pARC_final, SLF_final, UNC_final, VOF_final, NULL, legend_with_title, 
+  #ncol = 3, nrow = 4) , height = 14, width = 14, units = "in")
+  return( grid.arrange(ARC_final, CST_final, IFO_final, ILF_final, pARC_final, SLF_final, VOF_final, NULL, legend_with_title, 
+  ncol = 3, nrow = 3) )
+}
+
+
+arrange_ageeffect_callosum_plots <- function(lh_plots, rh_plots) {
+  # arrange maps together  
+  COrb_plots <- ggarrange(lh_plots$COrbL, rh_plots$COrbR, ncol=1, nrow = 2)
+  COrb_final <- annotate_figure(COrb_plots, top = text_grob("Orbital", 
+                 color = "black", face = "bold", size = 20))
+
+  CAntFr_plots <- ggarrange(lh_plots$CAntFrL, rh_plots$CAntFrR, ncol=1, nrow = 2)
+  CAntFr_final <- annotate_figure(CAntFr_plots, top = text_grob("Anterior Frontal", 
+                 color = "black", face = "bold", size = 20))
+  
+  CSupFr_plots <- ggarrange(lh_plots$CSupFrL, rh_plots$CSupFrR, ncol=1, nrow = 2)
+  CSupFr_final <- annotate_figure(CSupFr_plots, top = text_grob("Superior Frontal", 
+                 color = "black", face = "bold", size = 20))
+  
+  CMot_plots <- ggarrange(lh_plots$CMotL, rh_plots$CMotR, ncol=1, nrow = 2)
+  CMot_final <- annotate_figure(CMot_plots, top = text_grob("Motor", 
+                 color = "black", face = "bold", size = 20))
+  
+  CSupPar_plots <- ggarrange(lh_plots$CSupParL, rh_plots$CSupParR, ncol=1, nrow = 2)
+  CSupPar_final <- annotate_figure(CSupPar_plots, top = text_grob("Superior Parietal", 
+                 color = "black", face = "bold", size = 20))
+  
+  CPostPar_plots <- ggarrange(lh_plots$CPostParL, rh_plots$CPostParR, ncol=1, nrow = 2)
+  CPostPar_final <- annotate_figure(CPostPar_plots, top = text_grob("Posterior Parietal", 
+                 color = "black", face = "bold", size = 20))
+  
+  CTemp_plots <- ggarrange(lh_plots$CTempL, rh_plots$CTempR, ncol=1, nrow = 2)
+  CTemp_final <- annotate_figure(CTemp_plots, top = text_grob("Temporal", 
+                 color = "black", face = "bold", size = 20))
+  
+  
+  COcc_plots <- ggarrange(lh_plots$COccL, rh_plots$COccR, ncol=1, nrow = 2)
+  COcc_final <- annotate_figure(COcc_plots, top = text_grob("Occipital", 
+                 color = "black", face = "bold", size = 20))
+ 
+  callosum_plots <- ggarrange(COrb_final, CAntFr_final, CSupFr_final, CMot_final, CSupPar_final, CPostPar_final, CTemp_final, COcc_final, ncol = 2, nrow = 4)
+
+# Extract the legend from one of the plots  
+  legend <- get_legend(
+    lh_plots$CAntFrL + 
+      theme(
+        legend.position = "bottom",
+        legend.key.height = unit(1.5, 'cm'),
+        legend.key.width = unit(3.5, 'cm'),
+        legend.margin = margin(0, 0, 0, 0),
+        legend.text = element_text(size = 20),
+        legend.title = element_blank()
+      )
+  )
+
+# Create the legend title separately using cowplot
+  legend_title <- ggdraw() + 
+    draw_label(
+      expression(paste("Age Effect (", Delta, " Adjusted ", R^2, ")")), 
+      fontface = 'bold', 
+      size = 20,
+      x = 0.5,   
+      hjust = 0.5
+    )
+
+  legend_with_title <- plot_grid(legend, legend_title, ncol = 1, rel_heights = c(0.8, 0.2))
+
+  final_plot <- plot_grid(callosum_plots, legend_with_title, ncol = 1, rel_heights = c(1, 0.12))
+  return(final_plot)
+}
+```
+
+
+
+
+
+```{r plot age effects, fig.height = 14, fig.width = 14}
+
+# get the range of age effects for the plot
+get_ageeffect_range <- rbind(ARCL_deveffect_PNC,
+                            ARCR_deveffect_PNC,
+                            ILFL_deveffect_PNC,
+                            ILFR_deveffect_PNC,
+                            IFOL_deveffect_PNC,
+                            IFOR_deveffect_PNC,
+                            SLFL_deveffect_PNC,
+                            SLFR_deveffect_PNC, 
+                            pARCL_deveffect_PNC,
+                            pARCR_deveffect_PNC,
+                            VOFL_deveffect_PNC,
+                            VOFR_deveffect_PNC)
+
+range(get_ageeffect_range$mean_age_effect, na.rm=T) # 0.1522728 0.4009296
+hist(get_ageeffect_range$mean_age_effect)
+
+get_ageeffect_range_call <- rbind(COrbL_deveffect_PNC,
+                            COrbR_deveffect_PNC,
+                            CAntFrL_deveffect_PNC,
+                            CAntFrR_deveffect_PNC,
+                            CSupFrL_deveffect_PNC,
+                            CSupFrR_deveffect_PNC,
+                            CMotL_deveffect_PNC,
+                            CMotR_deveffect_PNC, 
+                            CSupParL_deveffect_PNC,
+                            CSupParR_deveffect_PNC,
+                            CPostParL_deveffect_PNC,
+                            CPostParR_deveffect_PNC,
+                            CTempL_deveffect_PNC,
+                            CTempR_deveffect_PNC,
+                            COccL_deveffect_PNC,
+                            COccR_deveffect_PNC)
+
+range(get_ageeffect_range_call$mean_age_effect, na.rm=T) # 0.06137466 0.36230223
+hist(get_ageeffect_range_call$mean_age_effect)
+
+
+# association bundles + CST
+# plot age effects for each tract
+lh_ageeffect_plots <- lapply(c("ARCL", "CSTL" ,"ILFL", "IFOL", "SLFL", "pARCL", "VOFL"), plot_ageeffects, dataset="PNC", ylim1 = 0.15, ylim2 = 0.36)
+rh_ageeffect_plots <- lapply(c("ARCR", "CSTR", "ILFR", "IFOR", "SLFR", "pARCR", "VOFR"), plot_ageeffects, dataset="PNC", ylim1 = 0.15, ylim2 = 0.36)
+names(lh_ageeffect_plots) <- c("ARCL", "CSTL", "ILFL", "IFOL", "SLFL", "pARCL", "VOFL")
+names(rh_ageeffect_plots) <- c("ARCR", "CSTR", "ILFR", "IFOR", "SLFR", "pARCR", "VOFR")
+
+# arrange plots
+age_effect_plots <- arrange_ageeffect_plots(lh_ageeffect_plots, rh_ageeffect_plots)
+grid.newpage()       
+grid.draw(age_effect_plots)
+ggsave(paste0(png_dir, "/", "PNC", "/","dev.png"), age_effect_plots, height = 14, width = 14, units = "in")
+
+
+# the same cortical regions across different maps might have slightly different age effects, and that is okay. The age effects do tend to be in the same ballpark
+# this occurs because the age effects are projected to all the cortical regions that have a 30% or higher or being a cortical endpoint of a given tract
+# so for example, for IFO vs. VOF, the occipital lobe looks like there may be differences in age effect in the same brain region
+# it's likely because the exact cortical regions that one tract terminates on are slightly different than the other, but the age effect from the tract gets projected onto all of the regions at each tract end.
+```
+
+
+```{r callosum PNC age effects, fig.height = 20, fig.width = 15}
+# callosum bundles
+# plot age effects for each tract
+lh_ageeffect_callosum_plots <- lapply(c("COrbL", "CAntFrL" ,"CSupFrL", "CMotL", "CSupParL", "CPostParL", "CTempL", "COccL"), plot_ageeffects, dataset="PNC", ylim1 = 0.15, ylim2 = 0.36)
+rh_ageeffect_callosum_plots <- lapply(c("COrbR", "CAntFrR" ,"CSupFrR", "CMotR", "CSupParR", "CPostParR", "CTempR", "COccR"), plot_ageeffects, dataset="PNC", ylim1 = 0.15, ylim2 = 0.36)
+names(lh_ageeffect_callosum_plots) <- c("COrbL", "CAntFrL" ,"CSupFrL", "CMotL", "CSupParL", "CPostParL", "CTempL", "COccL")
+names(rh_ageeffect_callosum_plots) <- c("COrbR", "CAntFrR" ,"CSupFrR", "CMotR", "CSupParR", "CPostParR", "CTempR", "COccR")
+ 
+# arrange plots
+age_effect_callosum_plots_PNC <- arrange_ageeffect_callosum_plots(lh_ageeffect_callosum_plots, rh_ageeffect_callosum_plots)
+age_effect_callosum_plots_PNC
+
+ggsave(paste0(png_dir, "/", "PNC", "/","dev_callosum.png"), age_effect_callosum_plots_PNC, height = 20, width = 15, units = "in")
+
+```
+
+ 
+# aggregated age maps
+```{r aggregated age map}
+# lh callosum + tracts of interest only
+lh_by_region <- rbind(COrbL_deveffect_PNC, CAntFrL_deveffect_PNC, 
+                      CSupFrL_deveffect_PNC, CMotL_deveffect_PNC, 
+                      CSupParL_deveffect_PNC, CPostParL_deveffect_PNC, 
+                      CTempL_deveffect_PNC, COccL_deveffect_PNC, 
+                      ARCL_deveffect_PNC, IFOL_deveffect_PNC, SLFL_deveffect_PNC) %>% group_by(region) %>% 
+  summarise(regional_mean_ageeffect = mean(mean_age_effect, na.rm=T))
+
+length(which(is.na(lh_by_region$regional_mean_ageeffect)))  
+
+# lh all
+lh_by_region_all <- rbind(COrbL_deveffect_PNC, CAntFrL_deveffect_PNC, 
+                      CSupFrL_deveffect_PNC, CMotL_deveffect_PNC, 
+                      CSupParL_deveffect_PNC, CPostParL_deveffect_PNC, 
+                      CTempL_deveffect_PNC, COccL_deveffect_PNC, 
+                      ARCL_deveffect_PNC, IFOL_deveffect_PNC, SLFL_deveffect_PNC,
+                      CSTL_deveffect_PNC, ILFL_deveffect_PNC, pARCL_deveffect_PNC, VOFL_deveffect_PNC) %>% group_by(region) %>% 
+  summarise(regional_mean_ageeffect = mean(mean_age_effect, na.rm=T))
+
+length(which(is.na(lh_by_region_all$regional_mean_ageeffect)))  
+
+# lh callosum + most tracts minus pARC and VOF
+lh_by_region_subset <- rbind(COrbL_deveffect_PNC, CAntFrL_deveffect_PNC, 
+                      CSupFrL_deveffect_PNC, CMotL_deveffect_PNC, 
+                      CSupParL_deveffect_PNC, CPostParL_deveffect_PNC, 
+                      CTempL_deveffect_PNC, COccL_deveffect_PNC, 
+                      ARCL_deveffect_PNC, IFOL_deveffect_PNC, SLFL_deveffect_PNC,
+                      CSTL_deveffect_PNC, ILFL_deveffect_PNC) %>% group_by(region) %>% 
+  summarise(regional_mean_ageeffect = mean(mean_age_effect, na.rm=T))
+
+length(which(is.na(lh_by_region_subset$regional_mean_ageeffect)))  
+
+# callosum + tracts of interest only
+rh_by_region <- rbind(COrbR_deveffect_PNC, CAntFrR_deveffect_PNC, 
+                      CSupFrR_deveffect_PNC, CMotR_deveffect_PNC, 
+                      CSupParR_deveffect_PNC, CPostParR_deveffect_PNC, 
+                      CTempR_deveffect_PNC, COccR_deveffect_PNC, 
+                      ARCR_deveffect_PNC, IFOR_deveffect_PNC, SLFR_deveffect_PNC) %>% group_by(region) %>% 
+  summarise(regional_mean_ageeffect = mean(mean_age_effect, na.rm=T))
+
+length(which(is.na(rh_by_region$regional_mean_ageeffect))) 
+
+
+rh_by_region_all <- rbind(COrbR_deveffect_PNC, CAntFrR_deveffect_PNC, 
+                      CSupFrR_deveffect_PNC, CMotR_deveffect_PNC, 
+                      CSupParR_deveffect_PNC, CPostParR_deveffect_PNC, 
+                      CTempR_deveffect_PNC, COccR_deveffect_PNC, 
+                      ARCR_deveffect_PNC, IFOR_deveffect_PNC, SLFR_deveffect_PNC,
+                      CSTR_deveffect_PNC, ILFR_deveffect_PNC, pARCR_deveffect_PNC, VOFR_deveffect_PNC) %>% group_by(region) %>% 
+  summarise(regional_mean_ageeffect = mean(mean_age_effect, na.rm=T))
+
+length(which(is.na(rh_by_region_all$regional_mean_ageeffect)))  
+  
+  
+# rh callosum + most tracts minus pARC and VOF
+rh_by_region_subset <- rbind(COrbL_deveffect_PNC, CAntFrL_deveffect_PNC, 
+                      CSupFrL_deveffect_PNC, CMotL_deveffect_PNC, 
+                      CSupParL_deveffect_PNC, CPostParL_deveffect_PNC, 
+                      CTempL_deveffect_PNC, COccL_deveffect_PNC, 
+                      ARCL_deveffect_PNC, IFOL_deveffect_PNC, SLFL_deveffect_PNC,
+                      CSTL_deveffect_PNC, ILFL_deveffect_PNC) %>% group_by(region) %>% 
+  summarise(regional_mean_ageeffect = mean(mean_age_effect, na.rm=T))
+
+length(which(is.na(rh_by_region_subset$regional_mean_ageeffect)))  
+ 
+lh_by_region <- lh_by_region %>% mutate(coverage = ifelse(is.na(regional_mean_ageeffect), "no", "yes"))
+rh_by_region <- rh_by_region %>% mutate(coverage = ifelse(is.na(regional_mean_ageeffect), "no", "yes"))
+
+
+lh_by_region_all <- lh_by_region_all %>% mutate(coverage = ifelse(is.na(regional_mean_ageeffect), "no", "yes"))
+rh_by_region_all <- rh_by_region_all %>% mutate(coverage = ifelse(is.na(regional_mean_ageeffect), "no", "yes"))
+
+
+lh_by_region_subset <- lh_by_region_subset %>% mutate(coverage = ifelse(is.na(regional_mean_ageeffect), "no", "yes"))
+rh_by_region_subset <- rh_by_region_subset %>% mutate(coverage = ifelse(is.na(regional_mean_ageeffect), "no", "yes"))
+
+hist(lh_by_region_all$regional_mean_ageeffect, na.rm=T)
+hist(rh_by_region_all$regional_mean_ageeffect, na.rm=T)
+ 
+#write.csv(lh_by_region, "/cbica/projects/luo_wm_dev/output/PNC/tract_profiles/tract_to_cortex/PNC_lh_agg.csv", row.names=F)
+#write.csv(rh_by_region, "/cbica/projects/luo_wm_dev/output/PNC/tract_profiles/tract_to_cortex/PNC_rh_agg.csv", row.names=F)
+```
+
+
+```{r plot aggregated map, fig.height = 10, fig.width = 10}
+
+
+plot_aggregated_maps <- function(lh_by_region_df, rh_by_region_df) {
+  hemi = "left"
+  cortical_pos <- c("left lateral", "left medial")
+  lh_agg <- ggplot() + 
+      geom_brain(data = lh_by_region_df, atlas = glasser, 
+                 mapping=aes(fill = regional_mean_ageeffect, colour = coverage, size = I(0.4)), 
+                 show.legend=TRUE, 
+                 hemi = hemi,
+                 position = position_brain(cortical_pos)) + 
+    
+      paletteer::scale_fill_paletteer_c("grDevices::RdYlBu", na.value = "grey100", limits = c(0.16, 0.4), oob=squish, direction = -1) +  
+      scale_colour_manual(values = c(yes = "gray30", no = "grey84")) + 
+      theme_void() +
+      theme(legend.position = "none",
+            legend.key.height = unit(1, 'cm'),
+            legend.key.width = unit(2.3, 'cm'),
+            legend.margin=margin(0,0,0,0),
+            legend.text = element_text(size=24),
+            legend.title = element_blank(),
+            plot.margin = unit(c(0.1, 0.1, 0.1, 0.1), "cm"),
+            plot.title = element_text(size=20, hjust = 0.5)) + guides(
+    colour = "none",  # Remove legend for color
+    size = "none"     # Remove legend for size if not needed
+  )
+
+
+  hemi = "right"
+  cortical_pos <- c("right lateral", "right medial")
+
+
+
+  rh_agg <- ggplot() + 
+        geom_brain(data = rh_by_region_df, atlas = glasser, 
+                   mapping=aes(fill = regional_mean_ageeffect, colour = coverage, size = I(0.4)), 
+                   show.legend=TRUE, 
+                   hemi = hemi,
+                   position = position_brain(cortical_pos)) + 
+      
+        paletteer::scale_fill_paletteer_c("grDevices::RdYlBu", na.value = "grey100", limits = c(0.16, 0.4), oob=squish, direction = -1) +  
+        scale_colour_manual(values = c(yes = "gray30", no = "grey84")) + 
+        theme_void() +
+        theme(legend.position = "none",
+              legend.key.height = unit(1, 'cm'),
+              legend.key.width = unit(2.3, 'cm'),
+              legend.margin=margin(0,0,0,0),
+              legend.text = element_text(size=24),
+              legend.title = element_blank(),
+              plot.margin = unit(c(0.1, 0.1, 0.1, 0.1), "cm"),
+              plot.title = element_text(size=20, hjust = 0.5))  + guides(
+      colour = "none",  # Remove legend for color
+      size = "none"     # Remove legend for size if not needed
+    )
+  
+  
+  agg_plots <- ggarrange(lh_agg, rh_agg, ncol=1, nrow = 2)
+  agg_final <- annotate_figure(agg_plots, top = text_grob("Aggregated Age Effect Map Across Tracts", 
+                 color = "black", face = "bold", size = 20, vjust = -0.75)) + theme(plot.margin = unit(c(1, 0, 0, 0), "cm")) 
+  
+  
+  legend <- get_legend(lh_agg + theme(legend.position = "bottom",
+                                              legend.key.height = unit(1, 'cm'),
+                                              legend.key.width = unit(2, 'cm'),
+                                              legend.margin=margin(-90,0,0,0),
+                                              legend.text = element_text(size=20),
+                                              legend.title = element_blank()))
+  legend_title <- textGrob(expression(paste("Age Effect (Delta Adj", " R"^2, ")")), 
+                     gp=gpar(col="black", fontsize=20),  
+      hjust = 0.5,  
+      vjust = -6
+    )
+    
+    legend_with_title <- arrangeGrob(
+      legend, legend_title,
+      ncol = 1, nrow = 2  
+    )
+  
+  return(grid.arrange(agg_final, legend_with_title, ncol = 1, nrow = 2))
+  
+}
+
+
+agg_tracts_interest <- plot_aggregated_maps(lh_by_region, rh_by_region)
+ggsave(paste0(png_dir, "/", "PNC", "/","dev_aggregated.png"), agg_tracts_interest , height = 10, width = 10, units = "in")
+
+agg_all <- plot_aggregated_maps(lh_by_region_all, rh_by_region_all)
+ggsave(paste0(png_dir, "/", "PNC", "/","dev_all.png"), agg_all , height = 10, width = 10, units = "in")
+
+agg_subset <- plot_aggregated_maps(lh_by_region_subset, rh_by_region_subset)
+ggsave(paste0(png_dir, "/", "PNC", "/","dev_aggregated_subset.png"), agg_subset, height = 10, width = 10, units = "in")
+ 
+```
+
+
+# Avg difference in S-A axis rank between tract ends vs. Difference in age effect between tract ends (delta-delta)
+```{r load SA axis}
+# i'm bringing SA back (yeah)
+glasser_SAaxis <- read.csv("/cbica/projects/luo_wm_dev/SAaxis/glasser_SAaxis.csv")
+glasser_SAaxis <- glasser_SAaxis %>% select(SA.axis_rank, label)
+glasser_SAaxis$regionName <- gsub("_ROI", "", glasser_SAaxis$label)
+glasser_SAaxis$regionName <- gsub("^(.)_(.*)$", "\\2_\\1", glasser_SAaxis$region)
+```
+
+
+```{r functions for computing SA rank}
+
+# for each tract's endpoint, compute the mean S-A axis rank
+merge_SAaxis <- function(bundle_name, df_to_return = "endpoints_only", dataset) {
+  df <- get(paste0(bundle_name, "_deveffect_", dataset))
+  merged_df <- merge(df, glasser_SAaxis,  by = "regionName")
+  merged_df <- merged_df %>% arrange(thresh_probability)
+  
+  mean_df <- merged_df %>% group_by(end) %>% summarise(mean_SA = mean(SA.axis_rank, na.rm = T),
+                                                       median_SA = median(SA.axis_rank, na.rm = T),
+                                                      # sd_SA = sd(SA.axis_rank, na.rm = T),
+                                                       age_effect = mean(mean_age_effect)) %>% mutate(bundle_name = bundle_name)
+  
+  if(df_to_return == "all_regions") {
+    return(merged_df)
+  } else {
+    return(mean_df)
+  }
+}
+
+
+
+compute_endpoint_diffs <- function(bundle_name, diff_calculation = "abs_diff") {
+  if(grepl("L$", bundle_name)) {
+    SAranks_endpoints <- lh_SAranks_endpoints[[bundle_name]]
+  } else{
+    SAranks_endpoints <- rh_SAranks_endpoints[[bundle_name]]
+  }
+  
+  if(diff_calculation == "abs_diff") {
+    endpoints_diffs <- SAranks_endpoints %>% filter(if_all(everything(), ~ !is.na(.))) %>%
+      summarise(mean_SA_diff = abs(mean_SA[end == "end1"] - mean_SA[end == "end2"]),
+        age_effect_diff = abs(age_effect[end == "end1"] - age_effect[end == "end2"])) %>% 
+    mutate(bundle_name = bundle_name)
+  } else if (diff_calculation == "diff") {
+    endpoints_diffs <- SAranks_endpoints %>% filter(if_all(everything(), ~ !is.na(.))) %>%
+      summarise(mean_SA_diff = mean_SA[end == "end1"] - mean_SA[end == "end2"],
+        age_effect_diff = age_effect[end == "end1"] - age_effect[end == "end2"]) %>% 
+    mutate(bundle_name = bundle_name)
+  }
+  
+ return(endpoints_diffs)
+}
+
+  
+```
+
+```{r compute SA rank}
+# compute mean SA rank for cortical endpoints of each tract
+lh_names <- c("ARCL", "CSTL" ,"ILFL", "IFOL", "SLFL", "pARCL", "VOFL", "COrbL", "CAntFrL" ,"CSupFrL", "CMotL", "CSupParL", "CPostParL", "CTempL", "COccL")
+lh_SAranks <- lapply(lh_names, merge_SAaxis, "all_regions", dataset="PNC")
+lh_SAranks_endpoints <- lapply(lh_names, merge_SAaxis, "endpoints_only", dataset="PNC")
+ 
+rh_names <- c("ARCR", "CSTR" ,"ILFR", "IFOR", "SLFR", "pARCR", "VOFR", "COrbR", "CAntFrR" ,"CSupFrR", "CMotR", "CSupParR", "CPostParR", "CTempR", "COccR")
+rh_SAranks <- lapply(rh_names, merge_SAaxis, "all_regions", dataset="PNC")
+rh_SAranks_endpoints <- lapply(rh_names, merge_SAaxis, "endpoints_only", dataset="PNC")
+ 
+
+names(lh_SAranks) <- lh_names
+names(rh_SAranks) <- rh_names
+
+names(lh_SAranks_endpoints) <- lh_names
+names(rh_SAranks_endpoints) <- rh_names
+ 
+lh_all_endpoints <- bind_rows(lh_SAranks_endpoints) %>% filter(!is.na(end))
+rh_all_endpoints <- bind_rows(rh_SAranks_endpoints) %>% filter(!is.na(end))
+
+all_endpoints <- rbind(lh_all_endpoints, rh_all_endpoints) %>% arrange(bundle_name)
+# plot/correlation between the age effect of cortical endpoint and its mean SA axis - lol nope nothing
+cor.test(lh_all_endpoints$median_SA, lh_all_endpoints$age_effect) # lol average age effect and SA rank are def not correlated
+cor.test(rh_all_endpoints$median_SA, rh_all_endpoints$age_effect)
+cor.test(all_endpoints$mean_SA, all_endpoints$age_effect)
+ 
+all_endpoints_subset <- all_endpoints %>% filter(!str_detect(bundle_name, "pARC") & !str_detect(bundle_name, "VOF"))
+cor.test(all_endpoints_subset$mean_SA, all_endpoints_subset$age_effect)
+  
+
+SA_ageeffect_plot <- ggplot(all_endpoints, aes(x = mean_SA, y = age_effect, label = bundle_name)) +
+  geom_point(size = 3, aes(color = bundle_name, fill = bundle_name), shape = 21, alpha = 0.7) +  # Plot points
+  #geom_text(aes(label = bundle_name), vjust = -1, hjust = 0.5, size = 4) + 
+  ggrepel::geom_text_repel(position = position_jitter(seed = 1)) + # Add labels
+  theme_minimal() +
+  labs(
+    title = "Cortical Endpoints: \nMean SA Rank vs. Age Effect",
+    x = "Mean SA Rank of Endpoint",
+    y = "Age Effect"
+  ) + theme_classic() +
+  theme(legend.position = "none",
+    plot.title = element_text(hjust = 0.5, size = 14, face = "bold"),
+    axis.title = element_text(size = 12)
+  ) 
+ 
+```
+
+```{r, compute mean diffs}
+# compute mean difference in S-A rank between the 2 cortical endpoints by the difference in age effect
+# regular difference
+lh_diffs <- lapply(lh_names, compute_endpoint_diffs, "diff")
+rh_diffs <- lapply(rh_names, compute_endpoint_diffs, "diff")
+names(lh_diffs) <- lh_names
+names(rh_diffs) <- rh_names
+
+lh_diffs_all <- bind_rows(lh_diffs) %>%
+  filter(if_all(everything(), ~ !is.na(.)))
+rh_diffs_all <- bind_rows(rh_diffs) %>%
+  filter(if_all(everything(), ~ !is.na(.)))
+diffs_all <- rbind(lh_diffs_all, rh_diffs_all)
+
+# absolute difference (magnitude)
+lh_abs_diffs <- lapply(lh_names, compute_endpoint_diffs, "abs_diff")
+rh_abs_diffs <- lapply(rh_names, compute_endpoint_diffs, "abs_diff")
+names(lh_abs_diffs) <- lh_names
+names(rh_abs_diffs) <- rh_names
+
+lh_abs_diffs_all <- bind_rows(lh_abs_diffs) %>%
+  filter(if_all(everything(), ~ !is.na(.)))
+rh_abs_diffs_all <- bind_rows(rh_abs_diffs) %>%
+  filter(if_all(everything(), ~ !is.na(.)))
+abs_diffs_all <- rbind(lh_abs_diffs_all, rh_abs_diffs_all)
+
+ 
+diffs_plot <- ggplot(diffs_all, aes(x = mean_SA_diff, y = age_effect_diff, label = bundle_name)) +
+  geom_point(size = 3, aes(color = bundle_name, fill = bundle_name), shape = 21, alpha = 0.7) +  # Plot points
+  #geom_text(aes(label = bundle_name), vjust = -1, hjust = 0.5, size = 4) + 
+  ggrepel::geom_text_repel(position = position_jitter(seed = 1)) + # Add labels
+  
+  labs(
+    title = "Mean SA Difference \nvs Age Effect Difference between Endpoints",
+    x = "Difference in Mean SA Rank between Endpoints",
+    y = "Difference in Age Effect between Endpoints"
+  ) + theme_classic() +
+  theme(legend.position = "none",
+    plot.title = element_text(hjust = 0.5, size = 14, face = "bold"),
+    axis.title = element_text(size = 12)
+  )
+
+diffs_noILF <- diffs_all %>% filter(!str_detect(bundle_name, "ILF"))
+cor.test(diffs_all$mean_SA_diff, diffs_all$age_effect_diff)  # nothing
+cor.test(diffs_noILF$mean_SA_diff, diffs_noILF$age_effect_diff)  # nothing if exclude ilf
+ 
+abs_diff_plot <- ggplot(abs_diffs_all, aes(x = mean_SA_diff, y = age_effect_diff, label = bundle_name)) +
+  geom_point(size = 3, aes(color = bundle_name, fill = bundle_name), shape = 21, alpha = 0.7) +  # Plot points
+  #geom_text(aes(label = bundle_name), vjust = -1, hjust = 0.5, size = 4) + 
+  ggrepel::geom_text_repel(position = position_jitter(seed = 1)) + # Add labels
+ 
+  labs(
+    title = "Magnitude of Mean SA Difference \nvs Magnitude of Age Effect Difference between Endpoints",
+    x = "Absolute Difference in Mean SA Rank between Endpoints",
+    y = "Absolute Difference in Age Effect between Endpoints"
+  ) +  theme_classic() +
+  theme(legend.position = "none",
+    plot.title = element_text(hjust = 0.5, size = 14, face = "bold"),
+    axis.title = element_text(size = 12)
+  ) 
+
+abs_diff_plot
+
+cor.test(abs_diffs_all$mean_SA_diff, abs_diffs_all$age_effect_diff) # there is an effect here for PNC but probably wouldn't survive spinning?
+
+ggsave(ggsave(paste0(png_dir, "/", "PNC", "/","delta_delta.png"), diffs_plot, height = 6, width = 9, units = "in")
+
+
+ggsave(ggsave(paste0(png_dir, "/", "PNC", "/","delta_delta_abs.png"), abs_diff_plot, height = 6, width = 9, units = "in")
+ 
+```
+
+
+t1/t2 downloaded from https://balsa.wustl.edu/study/P2DmK
+alff maps downloaded from https://github.com/PennLINC/spatiotemp_dev_plasticity/tree/main/cortical_maps 
+
+```{r compare aggregated map with other maps}
+
+
+# t1/t2 and alff
+t1t2_ageeffect_HCPD <- read_cifti("/cbica/projects/luo_wm_dev/input/cortical_data/t1_t2_hcpd/Figure3_T1wT2w_sAge_partial_bayes_r2.pscalar.nii")
+t1t2_mean_HCPD <- read_cifti("/cbica/projects/luo_wm_dev/input/cortical_data/t1_t2_hcpd/Figure1_group_mean_T1wT2w_myelin.pscalar.nii")
+t1t2_roc_HCPD <- read_cifti("/cbica/projects/luo_wm_dev/input/cortical_data/t1_t2_hcpd/Figure4_mean_posterior_annualized_roc_T1wT2w.pscalar.nii")
+t1t2_maxslopeage_HCPD <- read_cifti("/cbica/projects/luo_wm_dev/input/cortical_data/t1_t2_hcpd/Figure6_median_posterior_age_of_max_slope_T1wT2w.pscalar.nii")
+
+alff_pnc <- read_cifti("/cbica/projects/luo_wm_dev/input/cortical_data/alff_pnc/AgeEffect_PartialR2.pscalar.nii")
+alff_decline_pnc <- read_cifti("/cbica/projects/luo_wm_dev/input/cortical_data/alff_pnc/AgeofDeclineOnset_FirstNegDeriv.pscalar.nii")
+ 
+#rh_lh_labels <- c(rbind(rh_by_region$region, lh_by_region$region))
+
+lh_glasser_labels <- glasser_labels[which(glasser_labels$LR == "L"),]
+lh_agg_final <- merge(lh_by_region_all, lh_glasser_labels, by = "region")
+lh_agg_final <- lh_agg_final %>% mutate(label = gsub("(.*)(_L)$", "L_\\1", regionName))  
+lh_agg_final$label <- paste0(lh_agg_final$label, "_ROI")
+ 
+rh_glasser_labels <- glasser_labels[which(glasser_labels$LR == "R"),]
+rh_agg_final <- merge(rh_by_region_all, rh_glasser_labels, by = "region")
+rh_agg_final <- rh_agg_final %>% mutate(label = gsub("(.*)(_R)$", "R_\\1", regionName))  
+rh_agg_final$label <- paste0(rh_agg_final$label, "_ROI")
+
+agg_final <- rbind(rh_agg_final, lh_agg_final)
+
+agg_final <- agg_final %>%
+  mutate(label = factor(label, levels = names(t1t2_ageeffect_HCPD$Parcel))) %>%
+  arrange(label)
+
+PNC_agg_ageeffects <- agg_final
+
+ 
+write.csv(PNC_agg_ageeffects, "/cbica/projects/luo_wm_dev/output/PNC/tract_profiles/tract_to_cortex/PNC_agg_ageeffects_ordered_all.csv")
+cor.test(t1t2_ageeffect_HCPD$data, PNC_agg_ageeffects$regional_mean_ageeffect, method = 'spearman') # r = 0.15, p = 0.0004 spearman (all)
+ 
+
+cor.test(t1t2_mean_HCPD$data, PNC_agg_ageeffects$regional_mean_ageeffect, method = 'spearman') # r = 0.14, p = 0.03 spearman (all)
+cor.test(t1t2_roc_HCPD$data, PNC_agg_ageeffects$regional_mean_ageeffect, method = 'spearman')  
+
+cor.test(t1t2_maxslopeage_HCPD$data, PNC_agg_ageeffects$regional_mean_ageeffect, method = 'spearman') # meh
+
+cor.test(alff_pnc$data, PNC_agg_ageeffects$regional_mean_ageeffect, method = 'spearman') # r = -0.04, p =NS
+cor.test(alff_decline_pnc$data, PNC_agg_ageeffects$regional_mean_ageeffect, method = 'spearman') # r = 0.26, pval = 0.00005
+
+ 
+ 
+hist(t1t2_ageeffect_PNC$data)
+hist(agg_final$regional_mean_ageeffect)
+hist(alff_pnc$data)
+
+```
+ 
+ 
+
+```{r spin test}
+
+source("/cbica/projects/luo_wm_dev/software/spin_test/perm.sphere.p.R")
+
+
+perm.id.full <- readRDS("/cbica/projects/luo_wm_dev/software/spin_test/rotate_parcellation/glasser.coords_sphericalrotations_N10k.rds")
+ 
+ 
+perm.sphere.p(x = PNC_agg_ageeffects$regional_mean_ageeffect, y = t1t2_ageeffect_HCPD$data, perm.id = perm.id.full, corr.type = "spearman")    
+perm.sphere.p(x = PNC_agg_ageeffects$regional_mean_ageeffect, y = t1t2_mean_HCPD$data, perm.id = perm.id.full, corr.type = "spearman")  
+perm.sphere.p(x = PNC_agg_ageeffects$regional_mean_ageeffect, y = t1t2_roc_HCPD$data, perm.id = perm.id.full, corr.type = "spearman")   
+perm.sphere.p(x = PNC_agg_ageeffects$regional_mean_ageeffect, y = t1t2_maxslopeage_HCPD$data, perm.id = perm.id.full, corr.type = "spearman")   
+
+perm.sphere.p(x = PNC_agg_ageeffects$regional_mean_ageeffect, y = alff_pnc$data, perm.id = perm.id.full, corr.type = "spearman")   
+perm.sphere.p(x = PNC_agg_ageeffects$regional_mean_ageeffect, y = alff_decline_pnc$data, perm.id = perm.id.full, corr.type = "spearman")   
+ 
+```
+
+
+
+```{r}
+PNC_agg <- read.csv("/cbica/projects/luo_wm_dev/output/PNC/tract_profiles/tract_to_cortex/PNC_agg_ageeffects_ordered_all.csv")
+
+HCPD_agg <- read.csv("/cbica/projects/luo_wm_dev/output/HCPD/tract_profiles/tract_to_cortex/HCPD_agg_ageeffects_ordered_all.csv")
+
+cor.test(PNC_agg$regional_mean_ageeffect, HCPD_agg$regional_mean_ageeffect, method = "pearson")
+
+
+
+cor.test(PNC_agg$regional_mean_ageeffect, PNC_agg_ageeffects$regional_mean_ageeffect, method = "pearson") # bin 10 and bin 5 are the same pretty much
+
+perm.sphere.p(x = PNC_agg$regional_mean_ageeffect, y = HCPD_agg$regional_mean_ageeffect, perm.id = perm.id.full, corr.type = "pearson")  # r = 0.8, p < 0.0001
+```
+
+ 

@@ -200,7 +200,7 @@ NEST_wrapper <- function(tract, df, bin_size, nodes_to_clip) {
     what.to.return = "everything"
   )
   
-  saveRDS(result_onesided, paste0(NEST_outputs_dir,  gsub(" ", "_", gsub("-", "_",tract)), "_bin", bin_size, "_clip", nodes_to_clip, "_2sided.RData"))
+  saveRDS(result_twosided, paste0(NEST_outputs_dir,  gsub(" ", "_", gsub("-", "_",tract)), "_bin", bin_size, "_clip", nodes_to_clip, "_2sided.RData"))
 }
 
 df <- readRDS(sprintf("%1$s/%2$s/tract_profiles/all_subjects/tract_profiles_for_viz.RData", outputs_root, dataset))

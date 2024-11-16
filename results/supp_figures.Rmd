@@ -1,0 +1,319 @@
+---
+title: "Supplementary Figures"
+author: "Audrey Luo"
+output: html_document
+---
+
+ 
+ 
+ might be supplement
+ 
+```{r}
+
+# spin test: spin the S-A axis then recompute average S-A rank for each end. 
+# spun p-value for t-test
+# @param SAaxis, vector of S-A axis ranks
+perm.sphere.SAaxis <- function(SAaxis, perm.id, dataset, spun_ttest = FALSE, alternative = "greater", var.equal = FALSE) {
+  
+  nroi = dim(perm.id)[1]  # number of regions
+  nperm = dim(perm.id)[2] # number of permutations
+  
+  # spin SA axis: permutation of measures
+  SAaxis.perm = array(NA,dim=c(nroi,nperm))
+  for (r in 1:nperm) {
+    for (i in 1:nroi) {
+      SAaxis.perm[i,r] = SAaxis[perm.id[i,r]]
+    }
+  }
+  
+  # if just want to compute spun p-value for age of maturation vs mean S-A rank for all cortical endpoints: 
+  if (spun_ttest == FALSE) { 
+    # empirical correlation
+    all_endpoints <- get(paste0("all_endpoints_", dataset))
+    rho.emp = cor(all_endpoints$mean_SA, all_endpoints$age_effect, method = "pearson", use="complete.obs")  
+    
+    # correlation between permuted S-A axis and age of maturation
+    rho.null.SAaxis = vector(length=nperm)
+    for (r in 1:nperm) {
+      #print(r)
+      # merging of permuted S-A axis to age of maturation df
+      perm_mean_SAaxis <- compute_mean_SA(dataset, SAaxis.perm[,r]) # merge permuted S-A rank with age of maturation AND compute mean permuted S-A ranks
+      perm_mean_SAaxis <- perm_mean_SAaxis[[3]] # get all_endpoints df
+      rho.null.SAaxis[r] = cor(perm_mean_SAaxis$mean_SA, perm_mean_SAaxis$age_effect, method="pearson", use="complete.obs")
+    }
+    # p-value definition depends on the sign of the empirical correlation
+    if (rho.emp>0) {
+      p.perm = sum(rho.null.SAaxis>rho.emp)/nperm
+    } else { 
+      p.perm = sum(rho.null.SAaxis<rho.emp)/nperm
+    } 
+    return(list(p.perm = p.perm, rho.emp = rho.emp))
+    # return p-value for the correlation between age of maturation vs. mean S-A rank for cortical endpoint
+    
+  } else if(spun_ttest == TRUE) {
+    
+    all_endpoints <- get(paste0("all_endpoints_", dataset))
+    all_endpoints_binary <- all_endpoints
+    max_value <- max(all_endpoints_binary$age_effect, na.rm = TRUE)
+    all_endpoints_binary$age_effect[all_endpoints_binary$age_effect == max_value] <- NA
+    all_endpoints_binary <- all_endpoints_binary %>% mutate(maturation_status = ifelse(is.na(age_effect), 0, 1)) # 0 = not matured, 1 = matured
+    
+    # empirical correlation
+    rho.emp = cor(all_endpoints_binary$mean_SA, all_endpoints_binary$age_effect, method = "spearman", use="complete.obs")  
+    
+    # empirical t value
+    t.emp <- t.test(all_endpoints_binary$mean_SA[which(all_endpoints_binary$maturation_status == 0)], # compare differences in sa rank
+                    all_endpoints_binary$mean_SA[which(all_endpoints_binary$maturation_status == 1)], 
+                    alternative = alternative, var.equal = var.equal)$statistic # hypothesis is non-matured tract ends have greater S-A rank
+    
+    # set vector for correlations between permuted S-A axis and age of maturation
+    rho.null.SAaxis = vector(length=nperm)
+    # set vector for t-tests between permuted S-A axis differences and age of maturation differences between endpoints
+    t.null.SAaxis = vector(length=nperm)
+    for (r in 1:nperm) {
+      print(r)
+      # merging of permuted S-A axis to age of maturation df
+      perm_mean_SAaxis <- compute_mean_SA(dataset, SAaxis.perm[,r]) # merge permuted S-A rank with age of maturation AND compute mean permuted S-A ranks
+      perm_mean_SAaxis <- perm_mean_SAaxis[[3]] # get all_endpoints df
+      max_value_perm <- max(perm_mean_SAaxis$age_effect, na.rm = TRUE)
+      perm_mean_SAaxis$age_effect[perm_mean_SAaxis$age_effect == max_value_perm] <- NA
+      rho.null.SAaxis[r] = cor(perm_mean_SAaxis$mean_SA, perm_mean_SAaxis$age_effect, method="spearman", use="complete.obs")
+      
+      perm_mean_SAaxis <- perm_mean_SAaxis %>% mutate(maturation_status = ifelse(is.na(age_effect), 0, 1)) # 0 = not matured, 1 = matured
+      
+      # calculate t-test and permuted t-test: do tract ends that have NOT matured between endpoints actually have greater s-a ranks than tract ends that have matured?? 
+      t.null.SAaxis[r] <- t.test(perm_mean_SAaxis$mean_SA[which(perm_mean_SAaxis$maturation_status == 0)], 
+                                 perm_mean_SAaxis$mean_SA[which(perm_mean_SAaxis$maturation_status == 1)], 
+                                 alternative = alternative, var.equal = var.equal)$statistic
+    }
+    # p-value definition depends on the sign of the empirical correlation
+    if (rho.emp>0) {
+      p.perm.cor = sum(rho.null.SAaxis>rho.emp)/nperm
+    } else { np
+      p.perm.cor = sum(rho.null.SAaxis<rho.emp)/nperm
+    } 
+    
+    # p-value definition for t-test
+    if (t.emp>0) {
+      p.perm.t = sum(t.null.SAaxis>t.emp)/nperm
+    } else { 
+      p.perm.t= sum(t.null.SAaxis<t.emp)/nperm
+    } 
+    
+    return(list(rho.emp = rho.emp, p.perm.cor = p.perm.cor, t.emp = t.emp, p.perm.t = p.perm.t))
+  }
+}
+
+
+```
+ 
+ 
+ 
+
+work for double checking why seeing differneces 
+```{r make cortical endpoint maps for age of maturation}
+threshold=0.3
+
+HCPD_deveffects_10_agemat <- ageeffect.fdr_dfs$HCPD_ageeffects %>% filter((nodeID < 15 & nodeID > 4) | (nodeID < 95 & nodeID > 84)) %>% mutate(node_position = case_when((nodeID < 15 & nodeID > 4) ~ "end1", (nodeID < 95 & nodeID > 84) ~ "end2")) %>%
+  select(tract_label, tractID, nodeID, node_position, hemi, smooth.peak.change, smooth.decrease.offset, smooth.last.change, smooth.slowing.onset) %>%
+  group_by(tractID, node_position, hemi) %>% summarise(mean_peak_change = mean(smooth.peak.change, na.rm = T),
+                              mean_ageeffect = mean(smooth.decrease.offset, na.rm = T), # mean_ageeffect = mean_age_mat
+                              mean_last_change = mean(smooth.last.change, na.rm = T),
+                              mean_dev_slowing = mean(smooth.slowing.onset, na.rm = T))
+
+HBN_deveffects_10_agemat <- ageeffect.fdr_dfs$HBN_ageeffects %>% filter((nodeID < 15 & nodeID > 4) | (nodeID < 95 & nodeID > 84)) %>% mutate(node_position = case_when((nodeID < 15 & nodeID > 4) ~ "end1", (nodeID < 95 & nodeID > 84) ~ "end2")) %>%
+  select(tract_label, tractID, nodeID, node_position, hemi, smooth.peak.change, smooth.decrease.offset, smooth.last.change, smooth.slowing.onset) %>%
+  group_by(tractID, node_position, hemi) %>% summarise(mean_peak_change = mean(smooth.peak.change, na.rm = T),
+                              mean_ageeffect = mean(smooth.decrease.offset, na.rm = T),
+                              mean_last_change = mean(smooth.last.change, na.rm = T),
+                              mean_dev_slowing = mean(smooth.slowing.onset, na.rm = T))
+       
+ 
+PNC_deveffects_10_agemat <- ageeffect.fdr_dfs$PNC_ageeffects %>% filter((nodeID < 15 & nodeID > 4) | (nodeID < 95 & nodeID > 84)) %>% mutate(node_position = case_when((nodeID < 15 & nodeID > 4) ~ "end1", (nodeID < 95 & nodeID > 84) ~ "end2")) %>%
+  select(tract_label, tractID, nodeID, node_position, hemi, smooth.peak.change, smooth.decrease.offset, smooth.last.change, smooth.slowing.onset) %>%
+  group_by(tractID, node_position, hemi) %>% summarise(mean_peak_change = mean(smooth.peak.change, na.rm = T),
+                              mean_ageeffect = mean(smooth.decrease.offset, na.rm = T),
+                              mean_last_change = mean(smooth.last.change, na.rm = T),
+                              mean_dev_slowing = mean(smooth.slowing.onset, na.rm = T))
+  
+
+make_maps("HCPD", "10_agemat") # makes [bundle_name]_deveffect_[dataset] for each dataset and bundle. e.g. IFOL_deveffect_HCPD
+make_maps("HBN", "10_agemat")
+make_maps("PNC", "10_agemat")
+
+```
+
+
+
+may delete
+```{r make cortical endpoint maps for age of peak}
+HCPD_deveffects_5_agemat <- ageeffect.fdr_dfs$HCPD_ageeffects %>% filter((nodeID < 11 & nodeID > 4) | (nodeID < 95 & nodeID > 89)) %>% mutate(node_position = case_when((nodeID < 11 & nodeID > 4) ~ "end1", (nodeID < 95 & nodeID > 89) ~ "end2")) %>%
+  select(tract_label, tractID, nodeID, node_position, hemi, smooth.peak.change, smooth.decrease.offset, smooth.last.change, smooth.slowing.onset) %>%
+  group_by(tractID, node_position, hemi) %>% summarise(mean_agepeak = mean(smooth.peak.change, na.rm = T),
+                              mean_agemat = mean(smooth.decrease.offset, na.rm = T),                         
+                              mean_last_change = mean(smooth.last.change, na.rm = T),
+                              mean_ageeffect = mean(smooth.slowing.onset, na.rm = T))
+
+HBN_deveffects_5_agemat <- ageeffect.fdr_dfs$HBN_ageeffects %>% filter((nodeID < 11 & nodeID > 4) | (nodeID < 95 & nodeID > 89)) %>% mutate(node_position = case_when((nodeID < 11 & nodeID > 4) ~ "end1", (nodeID < 95 & nodeID > 89) ~ "end2")) %>%
+  select(tract_label, tractID, nodeID, node_position, hemi, smooth.peak.change, smooth.decrease.offset, smooth.last.change, smooth.slowing.onset) %>%
+  group_by(tractID, node_position, hemi) %>% summarise(mean_agepeak = mean(smooth.peak.change, na.rm = T),
+                                                       mean_agemat = mean(smooth.decrease.offset, na.rm = T),     
+                              mean_last_change = mean(smooth.last.change, na.rm = T),
+                              mean_ageeffect = mean(smooth.slowing.onset, na.rm = T))
+       
+ 
+PNC_deveffects_5_agemat <- ageeffect.fdr_dfs$PNC_ageeffects %>% filter((nodeID < 11 & nodeID > 4) | (nodeID < 95 & nodeID > 89)) %>% mutate(node_position = case_when((nodeID < 11 & nodeID > 4) ~ "end1", (nodeID < 95 & nodeID > 89) ~ "end2")) %>%
+  select(tract_label, tractID, nodeID, node_position, hemi, smooth.peak.change, smooth.decrease.offset, smooth.last.change, smooth.slowing.onset) %>%
+  group_by(tractID, node_position, hemi) %>% summarise(mean_agepeak = mean(smooth.peak.change, na.rm = T),
+                                                       mean_agemat = mean(smooth.decrease.offset, na.rm = T),     
+                              mean_last_change = mean(smooth.last.change, na.rm = T),
+                              mean_ageeffect = mean(smooth.slowing.onset, na.rm = T))
+  
+ 
+make_maps("HCPD", "5_agemat") # makes [bundle_name]_deveffect_[dataset] for each dataset and bundle. e.g. IFOL_deveffect_HCPD
+make_maps("HBN", "5_agemat")
+make_maps("PNC", "5_agemat")
+
+```
+
+
+```{r tract level plot meanSA by mat status pearson, fig.height = 5, fig.width = 15}
+
+plot_meanSA_by_age_mat <- function(dataset, annot_text, binary=NULL) {
+  title = gsub("PD", "P-D", dataset) # for HCPD
+  
+  if(is.null(binary)) {
+    all_endpoints <- get(paste0("all_endpoints_", dataset))
+    
+    SA_plot <- ggplot(all_endpoints, aes(x = mean_SA, y = age_effect, label = bundle_name)) +
+    geom_point(aes(fill = mean_SA, color = mean_SA, shape = end), size = 4) + 
+      paletteer::scale_fill_paletteer_c("grDevices::ag_Sunset", direction = -1, 
+                                        limits = c(min(all_endpoints$mean_SA), max(all_endpoints$mean_SA)), oob = squish) + 
+      paletteer::scale_color_paletteer_c("grDevices::ag_Sunset", direction = -1,
+                                         limits = c(min(all_endpoints$mean_SA), max(all_endpoints$mean_SA)), oob = squish) +
+      scale_shape_manual(values = c(19,1)) + 
+    geom_smooth(data = all_endpoints, method='lm', se=TRUE, fill=alpha(c("gray70"),.9), col="black") + 
+      ggrepel::geom_text_repel(
+      position = position_jitter(seed = 3), 
+      box.padding = 0.5,  # Increase space around labels
+      point.padding = 0.5,  # Increase space around points
+      segment.color = "gray",  # Line color connecting point to label
+      segment.size = 0.5,  # Line thickness
+      max.overlaps = Inf 
+    )  + 
+    annotate(geom="text", x=180, y=26, label=annot_text, color="black", size=5) + 
+    labs(title = title) + theme_classic() +
+    theme(legend.position = "none",
+          legend.text = element_text(size = 20),
+          legend.title = element_text(size = 20),
+      plot.title = element_text(hjust = 0.5, size = 20),
+      axis.title = element_blank(),
+      axis.text.x = element_text(size = 20),
+      axis.text.y = element_text(size = 20)) + xlim(15, 340) + ylim(14, 26) + guides(shape = guide_legend("Endpoint"), color = FALSE, fill = FALSE) 
+  } else {
+    all_endpoints <- get(paste0("all_endpoints_", dataset))
+    all_endpoints_binary <- all_endpoints
+    max_value <- max(all_endpoints_binary$age_effect, na.rm = TRUE)
+    all_endpoints_binary$age_effect[all_endpoints_binary$age_effect == max_value] <- NA
+    all_endpoints_binary <- all_endpoints_binary %>% mutate(maturation_status = ifelse(is.na(age_effect), 0, 1)) # 0 = not matured, 1 = matured
+    
+     SA_plot <- ggplot(all_endpoints_binary, aes(x = mean_SA, y = age_effect, label = bundle_name)) +
+    geom_point(aes(fill = mean_SA, color = mean_SA, shape = end), size = 4) + 
+      paletteer::scale_fill_paletteer_c("grDevices::ag_Sunset", direction = -1, 
+                                        limits = c(min(all_endpoints$mean_SA), max(all_endpoints$mean_SA)), oob = squish) + 
+      paletteer::scale_color_paletteer_c("grDevices::ag_Sunset", direction = -1,
+                                         limits = c(min(all_endpoints$mean_SA), max(all_endpoints$mean_SA)), oob = squish) +
+      scale_shape_manual(values = c(19,1)) + 
+    geom_smooth(data = all_endpoints, method='lm', se=TRUE, fill=alpha(c("gray70"),.9), col="black") + 
+      ggrepel::geom_text_repel(
+      position = position_jitter(seed = 3), 
+      box.padding = 0.5,  # space around labels
+      point.padding = 0.5,  # space around points
+      segment.color = "gray",  # line color connecting point to label
+      segment.size = 0.5,  # line thickness
+      max.overlaps = Inf 
+    )  + 
+    annotate(geom="text", x=180, y=26, label=annot_text, color="black", size=5) + 
+    labs(title = title) + theme_classic() +
+    theme(legend.position = "none",
+          legend.text = element_text(size = 20),
+          legend.title = element_text(size = 20),
+      plot.title = element_text(hjust = 0.5, size = 20),
+      axis.title = element_blank(),
+      axis.text.x = element_text(size = 20),
+      axis.text.y = element_text(size = 20)) + xlim(15, 340) + ylim(14, 26) + guides(shape = guide_legend("Endpoint"), color = FALSE, fill = FALSE) 
+ 
+  }
+ 
+  return(SA_plot)
+}
+
+#cor(all_endpoints_HCPD$mean_SA, all_endpoints_HCPD$age_effect, method = "pearson", use="complete.obs") 
+#cor(all_endpoints_HBN$mean_SA, all_endpoints_HBN$age_effect, method = "pearson", use="complete.obs")  
+#cor(all_endpoints_PNC$mean_SA, all_endpoints_PNC$age_effect, method = "pearson", use="complete.obs")  
+
+perm.sphere.SAaxis(glasser_SAaxis$SA.axis_rank, perm.id.full, "HCPD") # pspin = 0, r = 0.8680093  
+perm.sphere.SAaxis(glasser_SAaxis$SA.axis_rank, perm.id.full, "HBN") # pspin = NS, r - 0.17 
+perm.sphere.SAaxis(glasser_SAaxis$SA.axis_rank, perm.id.full, "PNC") # pspin = 0, r = 0.8133823
+
+SA_age_mat_PNC <- plot_meanSA_by_age_mat("PNC", expression(paste(italic("r"), " = 0.81, ",  , italic(p[spin]), "< 0.0001")))
+SA_age_mat_HCPD <- plot_meanSA_by_age_mat("HCPD", expression(paste(italic("r"), " = 0.87, ",  , italic(p[spin]), "< 0.0001")))
+SA_age_mat_HBN <- plot_meanSA_by_age_mat("HBN", expression(paste(italic("r"), " = 0.17, ",  , italic(p[spin]), "= N.S.")))
+
+SA_age_mat_plot_final <- ggarrange(SA_age_mat_PNC, SA_age_mat_HCPD, SA_age_mat_HBN, ncol = 3, common.legend = T, legend = "bottom")
+
+x.grob <- textGrob("Mean S-A Axis Rank of Cortical Endpoint", 
+                   gp=gpar(col="black", fontsize=20))
+
+y.grob <- textGrob("Age of Maturation (Years)", 
+                   gp=gpar(col="black", fontsize=20), rot=90)
+
+grid.arrange(arrangeGrob(SA_age_mat_plot_final, left = y.grob, bottom = x.grob))
+
+ggsave(paste0(png_dir, "fig7_SA_tract_level_pearson.png"), grid.arrange(arrangeGrob(SA_age_mat_plot_final, left = y.grob, bottom = x.grob)), height = 5, width = 15, units = "in")
+
+```
+
+
+ 
+```{r tract level plot meanSA by mat status ttest and spearman, fig.height = 5, fig.width = 15}
+ 
+
+all_endpoints_HCPD_binary <- all_endpoints_HCPD
+max_value <- max(all_endpoints_HCPD_binary$age_effect, na.rm = TRUE)
+all_endpoints_HCPD_binary$age_effect[all_endpoints_HCPD_binary$age_effect == max_value] <- NA
+all_endpoints_HCPD_binary <- all_endpoints_HCPD_binary %>% mutate(maturation_status = ifelse(is.na(age_effect), 0, 1)) # 0 = not matured, 1 = matured
+cor(all_endpoints_HCPD_binary$mean_SA, all_endpoints_HCPD_binary$age_effect, method = "spearman", use="complete.obs")  # r = 0.5122549
+
+
+
+all_endpoints_HBN_binary <- all_endpoints_HBN
+max_value <- max(all_endpoints_HBN_binary$age_effect, na.rm = TRUE)
+all_endpoints_HBN_binary$age_effect[all_endpoints_HBN_binary$age_effect == max_value] <- NA
+all_endpoints_HBN_binary <- all_endpoints_HBN_binary %>% mutate(maturation_status = ifelse(is.na(age_effect), 0, 1)) 
+cor(all_endpoints_HBN_binary$mean_SA, all_endpoints_HBN_binary$age_effect, method = "spearman", use="complete.obs")  # r = 0.5402868
+
+
+all_endpoints_PNC_binary <- all_endpoints_PNC
+max_value <- max(all_endpoints_PNC_binary$age_effect, na.rm = TRUE)
+all_endpoints_PNC_binary$age_effect[all_endpoints_PNC_binary$age_effect == max_value] <- NA
+all_endpoints_PNC_binary <- all_endpoints_PNC_binary %>% mutate(maturation_status = ifelse(is.na(age_effect), 0, 1)) 
+cor(all_endpoints_PNC_binary$mean_SA, all_endpoints_PNC_binary$age_effect, method = "spearman", use="complete.obs")  # 0.5930435
+
+
+# empirical correlation
+rho.emp = cor(all_endpoints_binary$mean_SA, all_endpoints_binary$age_effect, method = "spearman", use="complete.obs")  
+
+
+# need to redo this since i think this was computed on bin = 10
+# each spin test takes a long time since I'm spinning the S-A axis, recomputing the mean S-A rank for each tract end from the spun S-A axis, then doing correlation and t-test
+perm.sphere.SAaxis(glasser_SAaxis$SA.axis_rank, spun_ttest = TRUE, perm.id.full, "HCPD") # spearman r = 0.5122549, pspin = ; t =  , pspin =  
+perm.sphere.SAaxis(glasser_SAaxis$SA.axis_rank, spun_ttest = TRUE, perm.id.full, "HBN")  # spearman r = 0.5402868, pspin = ; t = , pspin =  
+perm.sphere.SAaxis(glasser_SAaxis$SA.axis_rank, spun_ttest = TRUE, perm.id.full, "PNC")  # spearman r = 0.5930435, pspin = ; t = , pspin =   
+ 
+#ggsave(paste0(png_dir, "/", "all_datasets", "/","SA_age_mat_plot.png"), 
+      # grid.arrange(arrangeGrob(SA_age_mat_plot_final, left = y.grob, bottom = x.grob)), height = 5, width = 15, units = "in")
+
+
+
+```

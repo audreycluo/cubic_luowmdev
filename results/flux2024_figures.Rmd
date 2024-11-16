@@ -63,6 +63,11 @@ https://yeatmanlab.github.io/pyAFQ/explanations/bundle_orientation.html#bundle-o
 HCPD <- readRDS(sprintf("%1$s/%2$s/tract_profiles/all_subjects/tract_profiles_for_viz.RData", output_root, "HCPD"))
 HBN <- readRDS(sprintf("%1$s/%2$s/tract_profiles/all_subjects/tract_profiles_for_viz.RData", output_root, "HBN"))
 PNC <- readRDS(sprintf("%1$s/%2$s/tract_profiles/all_subjects/tract_profiles_for_viz.RData", output_root, "PNC"))
+
+
+HCPD <- readRDS(sprintf("%1$s/%2$s/tract_profiles/all_subjects/tract_profiles_for_viz_combat_all_site.RData", output_root, "HCPD"))
+HBN <- readRDS(sprintf("%1$s/%2$s/tract_profiles/all_subjects/tract_profiles_for_viz_combat_all_site.RData", output_root, "HBN"))
+PNC <- readRDS(sprintf("%1$s/%2$s/tract_profiles/all_subjects/tract_profiles_for_viz_combat_all_site.RData", output_root, "PNC"))
 ```
 
 ```{r functions for visualizing baseline tract profiles, fig.height = 20, fig.width = 10}
@@ -100,7 +105,7 @@ plot_mean_var <- function(tract, scalar, variance_measure, color1, color2, color
   
   df_profiles <- rbind(summary_HCPD, summary_HBN, summary_PNC)
   df <- df_profiles %>% filter(tract_label == tract)
-
+  df$Dataset <- factor(df$Dataset, levels = c("PNC", "HCPD", "HBN"))
   # plot
   if(str_detect(tract, "Callosum")) {
     plot <- ggplot(data = df, aes(x = nodeID, y = get(mean_scalar))) +
@@ -593,6 +598,24 @@ HBN_ageeffects <- read.csv(paste0(output_root, "/", "HBN", "/tract_profiles/GAM/
 PNC_ageeffects <- read.csv(paste0(output_root, "/", "PNC", "/tract_profiles/GAM/", scalar, "/PNC_GAM_dev_measures.csv"))
 ```
 
+```{r load dev effects}
+PNC_GAM_derivatives_dti_md <- read.csv(sprintf("%1$s/%2$s/tract_profiles/GAM/dti_md/%2$s_GAM_derivatives_combat_all_site.csv", output_root, "PNC"))
+PNC_ageeffects <- read.csv(sprintf("%1$s/%2$s/tract_profiles/GAM/dti_md/%2$s_GAM_dev_measures_age_mat_combat_all_site.csv", output_root, "PNC"))
+PNC_GAM_smoothcentered_md <- read.csv(sprintf("%1$s/%2$s/tract_profiles/GAM/dti_md/%2$s_GAM_smoothcentered_combat_all_site.csv", output_root, "PNC"))
+PNC_GAM_smooth_fittedvalues_md <- read.csv(sprintf("%1$s/%2$s/tract_profiles/GAM/dti_md/%2$s_GAM_smooth_fittedvalues_combat_all_site.csv", output_root, "PNC"))
+
+HCPD_GAM_derivatives_dti_md <- read.csv(sprintf("%1$s/%2$s/tract_profiles/GAM/dti_md/%2$s_GAM_derivatives_combat_all_site.csv", output_root, "HCPD"))
+HCPD_ageeffects <- read.csv(sprintf("%1$s/%2$s/tract_profiles/GAM/dti_md/%2$s_GAM_dev_measures_age_mat_combat_all_site.csv", output_root, "HCPD"))
+HCPD_GAM_smoothcentered_md <- read.csv(sprintf("%1$s/%2$s/tract_profiles/GAM/dti_md/%2$s_GAM_smoothcentered_combat_all_site.csv", output_root, "HCPD"))
+HCPD_GAM_smooth_fittedvalues_md <- read.csv(sprintf("%1$s/%2$s/tract_profiles/GAM/dti_md/%2$s_GAM_smooth_fittedvalues_combat_all_site.csv", output_root, "HCPD"))
+
+HBN_GAM_derivatives_dti_md <- read.csv(sprintf("%1$s/%2$s/tract_profiles/GAM/dti_md/%2$s_GAM_derivatives_combat_all_site.csv", output_root, "HBN"))
+HBN_ageeffects <- read.csv(sprintf("%1$s/%2$s/tract_profiles/GAM/dti_md/%2$s_GAM_dev_measures_age_mat_combat_all_site.csv", output_root, "HBN"))
+HBN_GAM_smoothcentered_md <- read.csv(sprintf("%1$s/%2$s/tract_profiles/GAM/dti_md/%2$s_GAM_smoothcentered_combat_all_site.csv", output_root, "HBN"))
+HBN_GAM_smooth_fittedvalues_md <- read.csv(sprintf("%1$s/%2$s/tract_profiles/GAM/dti_md/%2$s_GAM_smooth_fittedvalues_combat_all_site.csv", output_root, "HBN"))
+
+```
+
 ```{r function for formatting age effects}
 # make a list of the different df names: [dataset]_GAM_ageeffects_[scalar]
 datasets <- c("HCPD", "HBN", "PNC")
@@ -828,7 +851,7 @@ plot_age_effect_clipEnds <- function(tract, scalar, ageeffect_measure, color1, c
 ageeffect_measure = "GAM.smooth.AdjRsq"
 tracts = unique(ageeffect.fdr_dfs$HCPD_ageeffects$tract_label)
 dti_md_ageeffects_plots <- lapply(tracts, plot_age_effect_clipEnds, scalar = "dti_md", ageeffect_measure = ageeffect_measure, 
-                                color1 = color1, color2 = color2, color3 = color3, clipEnds = 3, ylim2 = 0.5, ylim1 = 0)
+                                color1 = color1, color2 = color2, color3 = color3, clipEnds = 5, ylim2 = 0.5, ylim1 = 0)
 names(dti_md_ageeffects_plots) <- tracts
 ```
 
@@ -840,7 +863,7 @@ y.grob <- textGrob(expression("Magnitude of Age Effect (" * Delta * " Adjusted "
 
 grid.arrange(arrangeGrob(dti_md_ageeffects_assoc_plots, left = y.grob))
 
-ggsave(paste0(png_dir, "dti_md_ageeffect_association.png"), grid.arrange(arrangeGrob(dti_md_ageeffects_assoc_plots, left = y.grob)), height = 20, width = 16, units = "in")
+ggsave(paste0(png_dir, "dti_md_ageeffect_association_combat_all.png"), grid.arrange(arrangeGrob(dti_md_ageeffects_assoc_plots, left = y.grob)), height = 20, width = 16, units = "in")
 ```
 
 ```{r dti md tracts age effects callosum, fig.height = 20, fig.width = 10}

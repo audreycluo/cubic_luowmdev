@@ -1,0 +1,166 @@
+---
+title: "Untitled"
+author: "Audrey Luo"
+date: "2024-11-04"
+output: html_document
+---
+
+
+```{r load glasser tract to region maps, results = hide}
+library(dplyr)
+library(ggseg)
+library(ggplot2)
+library(ggsegGlasser)
+library(ggpubr)
+
+library(ciftiTools)
+#ciftiTools.setOption('wb_path', '/Applications/workbench/')
+library(cifti)
+
+
+# load glasser labels
+glasser_labels <- read.csv("/cbica/projects/luo_wm_dev/atlases/glasser/HCP-MMP1_UniqueRegionList.csv")
+glasser_labels$regionID <- c(1:360)
+glasser_labels$region <- gsub("7Pl", "7PL", glasser_labels$region)   
+ 
+
+
+t1t2 <- read.csv("/Users/audluo/cbica/projects/luo_wm_dev/input/cortical_data/t1t2_hcpd/n628_hcpd_newCorr_myelin_Aug2021.csv")
+
+names(t1t2)[360:362]
+
+t1t2 <- t1t2[,c(1:361)]
+
+names(t1t2)
+
+t1t2 <- t1t2[sapply(t1t2, is.numeric)]
+
+# Calculate the mean for each variable (column)
+mean_row <- colMeans(t1t2, na.rm = TRUE)
+
+# Convert it into a data frame if you need the result as a 1-row summary
+mean_row_df <- as.data.frame(mean_row)
+df <- mean_row_df %>% setNames(c('myelin'))
+
+df <- cbind(df, glasser_labels)
+
+hemi = "left"
+cortical_pos1 <- "left lateral" 
+cortical_pos2 <- "left medial"
+
+palette <- colorRampPalette(c("darkred", "#301934", "#6A89A7" ,"green", "yellow", "orange", "red"))
+plot_lh_lateral <- ggplot() + 
+    geom_brain(data = df[c(1:180),], atlas= glasser, 
+               mapping=aes(fill=myelin), 
+               show.legend=TRUE, 
+               hemi = hemi,
+               position = position_brain(cortical_pos1)) +
+    #paletteer::scale_fill_paletteer_c("grDevices::RdYlBu", direction = -1 , na.value = "white") +
+    scale_fill_gradientn(colors = palette(100), na.value = "white") +
+
+    #scale_fill_gradientn(colors = aquamarine, na.value = "white", limits = c(ylim1, ylim2), oob=squish) +
+    theme_void() +
+    theme(legend.position = "bottom",
+          legend.title = element_blank(),
+          plot.margin = unit(c(0.1, 0.01, 0.1, 0.1), "cm"),
+          plot.title = element_blank()) 
+  
+plot_lh_medial <- ggplot() + 
+    geom_brain(data = df[c(1:180),], atlas= glasser, 
+               mapping=aes(fill=myelin), 
+               show.legend=TRUE, 
+               hemi = hemi,
+               position = position_brain(cortical_pos2)) +
+    scale_fill_gradientn(colors = palette(100), na.value = "white") +
+    #scale_fill_gradientn(colors = aquamarine, na.value = "white", limits = c(ylim1, ylim2), oob=squish) +
+    theme_void() +
+    theme(legend.position = "bottom",
+          legend.title = element_blank(),
+          plot.margin = unit(c(0.1, 0.1, 0.1, 0.01), "cm"),
+          plot.title = element_blank())
+
+
+
+
+hemi = "right"
+cortical_pos1 <- "right lateral" 
+cortical_pos2 <- "right medial"
+
+palette <- colorRampPalette(c("darkred", "#301934", "#6A89A7" ,"green", "yellow", "orange", "red"))
+plot_rh_lateral <- ggplot() + 
+    geom_brain(data = df[c(1:180),], atlas= glasser, 
+               mapping=aes(fill=myelin), 
+               show.legend=TRUE, 
+               hemi = hemi,
+               position = position_brain(cortical_pos1)) +
+    #paletteer::scale_fill_paletteer_c("grDevices::RdYlBu", direction = -1 , na.value = "white") +
+    scale_fill_gradientn(colors = palette(100), na.value = "white") +
+
+    #scale_fill_gradientn(colors = aquamarine, na.value = "white", limits = c(ylim1, ylim2), oob=squish) +
+    theme_void() +
+    theme(legend.position = "bottom",
+          legend.title = element_blank(),
+          plot.margin = unit(c(0.1, 0.01, 0.1, 0.1), "cm"),
+          plot.title = element_blank()) 
+  
+plot_rh_medial <- ggplot() + 
+    geom_brain(data = df[c(1:180),], atlas= glasser, 
+               mapping=aes(fill=myelin), 
+               show.legend=TRUE, 
+               hemi = hemi,
+               position = position_brain(cortical_pos2)) +
+    scale_fill_gradientn(colors = palette(100), na.value = "white") +
+    #scale_fill_gradientn(colors = aquamarine, na.value = "white", limits = c(ylim1, ylim2), oob=squish) +
+    theme_void() +
+    theme(legend.position = "bottom",
+          legend.title = element_blank(),
+          plot.margin = unit(c(0.1, 0.1, 0.1, 0.01), "cm"),
+          plot.title = element_blank())
+  
+
+ggarrange(plot_lh_lateral, plot_rh_lateral, plot_lh_medial, plot_rh_medial, nrow=2, ncol = 2, common.legend=T, legend = "bottom")
+```
+
+
+```{r}
+
+
+glasser_labels <- read.csv("/cbica/projects/luo_wm_dev/atlases/glasser/HCP-MMP1_UniqueRegionList.csv")
+glasser_labels$regionID <- c(1:360)
+glasser_labels$region <- gsub("7Pl", "7PL", glasser_labels$region)   
+ 
+
+
+t1t2 <- read.csv("/Users/audluo/cbica/projects/luo_wm_dev/input/cortical_data/t1t2_hcpd/n628_hcpd_newCorr_myelin_Aug2021.csv")
+
+names(t1t2) 
+
+t1t2 <- t1t2[,c(1:361)]
+
+names(t1t2)
+
+t1t2 <- t1t2[sapply(t1t2, is.numeric)]
+t1t2$subject_id <- gsub("HCD", "sub-", t1t2$subject_id)
+t1t2 <- t1t2 %>% rename(sub=subject_id)
+config_data <- fromJSON(file=sprintf("/cbica/projects/luo_wm_dev/code/tract_profiles/config/config_%1$s.json", "HCPD"))
+demographics <- read.csv(config_data$demo_qc)
+
+x <- left_join(demographics, t1t2, by = "sub")
+
+names(t1t2) 
+
+agemat <- read.csv("/cbica/projects/luo_wm_dev/output/HCPD/tract_profiles/GAM/dti_md/HCPD_GAM_t1t2_measures_age_mat.csv")
+agemat$GAM.smooth.partialR2
+
+t1t2_ageeffect_HCPD <- read_cifti("/cbica/projects/luo_wm_dev/input/cortical_data/t1t2_hcpd/Figure3_T1wT2w_sAge_partial_bayes_r2.pscalar.nii")
+t1t2_maxslopeage_HCPD <- read_cifti("/cbica/projects/luo_wm_dev/input/cortical_data/t1t2_hcpd/Figure6_median_posterior_age_of_max_slope_T1wT2w.pscalar.nii")
+
+cor.test(agemat$GAM.smooth.partialR2, t1t2_ageeffect_HCPD$data) # my partial Rsq is very similar to graham's
+cor.test(agemat$smooth.increase.offset, t1t2_maxslopeage_HCPD$data) # but age of maturation is quite differt
+ 
+
+hist(agemat$smooth.increase.offset)
+hist(agemat$smooth.last.change)
+hist(t1t2_maxslopeage_HCPD$data)
+```
+

@@ -1,0 +1,393 @@
+---
+title: "tract to cortex depth testing"
+author: "Audrey Luo"
+date: "2024-10-11"
+output: html_document
+---
+ 
+ 
+ 
+```{r setup, include=FALSE}
+library(ciftiTools)
+#ciftiTools.setOption('wb_path', '/Applications/workbench/')
+library(cifti)
+library(cowplot)
+library(data.table)
+library(dplyr)
+library(ggplot2)
+library(ggpubr)
+library(grid)
+library(gridExtra)
+library(gratia) 
+library(ggseg)
+library(ggsegGlasser)
+library(kableExtra)
+library(mgcv)
+library(RColorBrewer)
+library(scales)
+library(stringr)
+library(tidyr)
+library(rjson)
+library(plotly)
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE, include = TRUE) 
+
+fontsize = 16
+theme_set(theme_classic(base_family = "sans",base_size = fontsize))
+line_size <- 1
+point_size <- 2
+
+proj_root <- "/cbica/projects/luo_wm_dev/"
+#input_root <- "/cbica/projects/luo_wm_dev/input"
+#output_root <- "/cbica/projects/luo_wm_dev/output"
+dataset <- "PNC"
+config_file <- sprintf("%1$s/code/tract_profiles/config/config_%2$s.json", proj_root, dataset)
+config <- fromJSON(paste(readLines(config_file), collapse=""))
+
+vol_to_surf_dir <- paste0(config$data_root, "/derivatives/vol_to_surf")
+group_dir <- paste0(vol_to_surf_dir, "/group")
+```
+
+
+# plot the brain surfaces on glasser at different thresholds  
+```{r load glasser maps}
+# load glasser labels
+glasser_labels <- read.csv("/cbica/projects/luo_wm_dev/atlases/glasser/HCP-MMP1_UniqueRegionList.csv")
+glasser_labels$regionID <- c(1:360)
+glasser_labels$region <- gsub("7Pl", "7PL", glasser_labels$region)   
+
+# @param depth, A string
+load_maps <- function(depth) {
+  pattern <- paste0(depth, ".*\\.csv$")
+
+  # load glasser maps for each tract... load for a specific depth?
+  glasser_csvs <- list.files(path = group_dir, pattern = pattern, full.names = T)
+  tract_names <- lapply(glasser_csvs, function(path) {
+    filename <- basename(path)
+    sub("_\\d+\\.\\d+_glasser\\.csv$", "", filename)
+  })
+  tract_names <- unlist(tract_names)
+  
+  glasser_maps <- lapply(glasser_csvs, read.csv)
+  names(glasser_maps) <- tract_names
+  
+  # merge labels with my maps
+  glasser_maps <- lapply(glasser_maps, merge, y = glasser_labels, by = "regionID")
+  
+  # separate lh and rh maps
+  lh_idx <- grep("Left", names(glasser_maps))
+  lh_maps <- glasser_maps[lh_idx]
+  assign(paste0("lh_maps_", depth), lh_maps, envir = .GlobalEnv)
+  
+  rh_idx <- grep("Right", names(glasser_maps))
+  rh_maps <- glasser_maps[rh_idx]
+  assign(paste0("rh_maps_", depth), rh_maps, envir = .GlobalEnv)
+}
+
+depths = c("0.1", "0.5", "1.0", "1.25", "1.5", "2.0", "2.5")
+
+lapply(depths, load_maps)
+ 
+```
+
+
+
+```{r function for plotting maps}
+# load my colormap :)
+colormap_file <- sprintf("%1$s/code/tract_profiles/colormaps/aquamarine.json", proj_root)
+colormap <- fromJSON(paste(readLines(colormap_file), collapse=""))
+aquamarine <- colorRampPalette(colormap)(15)
+ 
+plot_maps <- function(map, hemi, threshold) {
+  map <- map %>% mutate(thresh_probability = ifelse(probability < threshold, NA, probability)) 
+  
+  if(hemi == "left") {
+    cortical_pos <- c("left lateral", "left medial")
+  } else {
+    cortical_pos <- c("right lateral", "right medial")
+  } 
+  if(all(is.na(map$thresh_probability))) {
+     plot <- ggplot() + 
+      geom_brain(data = map, atlas = glasser, 
+                 mapping = aes(fill = "grey92"),  
+                 show.legend = FALSE, 
+                 hemi = hemi,
+                 position = position_brain(cortical_pos)) +
+      scale_fill_manual(values = "grey92") +  
+      theme_void() +
+      theme(legend.position = "none",
+            legend.key.height = unit(1, 'cm'),
+            legend.key.width = unit(2.3, 'cm'),
+            legend.margin=margin(0,0,0,0),
+            legend.text = element_text(size=24),
+            legend.title = element_blank(),
+            plot.margin = unit(c(0.1, 0.1, 0.1, 0.1), "cm"),
+            plot.title = element_text(size = 20, hjust = 0.5)) 
+     
+  } else { 
+    plot <- ggplot() + 
+      geom_brain(data = map, atlas= glasser, 
+                 mapping=aes(fill=thresh_probability), 
+                 show.legend=TRUE, 
+                 hemi = hemi,
+                 position = position_brain(cortical_pos)) + 
+      scale_fill_gradientn(colors = aquamarine, na.value = "grey92", limits = c(threshold, 1)) +  
+      theme_void() +
+      theme(legend.position = "none",
+            legend.key.height = unit(1, 'cm'),
+            legend.key.width = unit(2.3, 'cm'),
+            legend.margin=margin(0,0,0,0),
+            legend.text = element_text(size=24),
+            legend.title = element_blank(),
+            plot.margin = unit(c(0.1, 0.1, 0.1, 0.1), "cm"),
+            plot.title = element_text(size=20, hjust = 0.5)) 
+  }
+  
+  
+  return(plot)
+}
+
+
+wrapper_plot_maps <- function(threshold, lh_map_list, rh_map_list, dataset, depth) {
+  # plot individual maps
+  lh_plots <- lapply(lh_map_list, plot_maps, hemi = "left", threshold = threshold)
+  rh_plots <- lapply(rh_map_list, plot_maps, hemi = "right", threshold = threshold)
+  print("plots made")
+  # arrange maps together  
+  ARC_plots <- ggarrange(lh_plots$LeftArcuate, rh_plots$RightArcuate, ncol=1, nrow = 2)
+  ARC_final <- annotate_figure(ARC_plots, top = text_grob("Arcuate Fasciculus", 
+                 color = "black", face = "bold", size = fontsize))
+  
+  CST_plots <- ggarrange(lh_plots$LeftCorticospinal, rh_plots$RightCorticospinal, ncol=1, nrow = 2)
+  CST_final <- annotate_figure(CST_plots, top = text_grob("Corticospinal Tract", 
+                 color = "black", face = "bold", size = fontsize))
+  
+  IFO_plots <- ggarrange(lh_plots$LeftInferiorFrontooccipital, rh_plots$RightInferiorFrontooccipital, ncol=1, nrow = 2)
+  IFO_final <- annotate_figure(IFO_plots, top = text_grob("Inferior Fronto-occipital Fasciculus", 
+                 color = "black", face = "bold", size = fontsize))
+  
+  ILF_plots <- ggarrange(lh_plots$LeftInferiorLongitudinal, rh_plots$RightInferiorLongitudinal, ncol=1, nrow = 2)
+  ILF_final <- annotate_figure(ILF_plots, top = text_grob("Inferior Longitudinal Fasciculus", 
+                 color = "black", face = "bold", size = fontsize))
+  
+  pARC_plots <- ggarrange(lh_plots$LeftPosteriorArcuate, rh_plots$RightPosteriorArcuate, ncol=1, nrow = 2)
+  pARC_final <- annotate_figure(pARC_plots, top = text_grob("Posterior Arcuate Fasciculus", 
+                 color = "black", face = "bold", size = fontsize))
+  
+  SLF_plots <- ggarrange(lh_plots$LeftSuperiorLongitudinal, rh_plots$RightSuperiorLongitudinal, ncol=1, nrow = 2)
+  SLF_final <- annotate_figure(SLF_plots, top = text_grob("Superior Longitudinal Fasciculus", 
+                 color = "black", face = "bold", size = fontsize))
+  
+  VOF_plots <- ggarrange(lh_plots$LeftVerticalOccipital, rh_plots$RightVerticalOccipital, ncol=1, nrow = 2)
+  VOF_final <- annotate_figure(VOF_plots, top = text_grob("Vertical Occipital Fasciculus", 
+                 color = "black", face = "bold", size = fontsize))
+  
+  
+  # stitch it all together
+  print("making legend")
+  lh_data <- lh_map_list$LeftArcuate %>%
+  mutate(thresh_probability = ifelse(probability < threshold, NA, probability))
+
+  # Check if all thresh_probability values are NA
+  if (all(is.na(lh_data$thresh_probability))) {
+    print(paste("Warning: All thresholded probabilities are NA for threshold", 
+                threshold, "depth", depth, ". Not plotting"))
+    legend <- NULL # Set legend to NULL or handle as needed
+  } else {
+    # Proceed with legend plot creation if there are valid (non-NA) values
+    legend.plot <- ggplot() +
+      geom_brain(data = lh_data, atlas = glasser,
+                 mapping = aes(fill = thresh_probability),
+                 show.legend = TRUE, hemi = "left") +
+      scale_fill_gradientn(colors = aquamarine, na.value = "grey92", limits = c(threshold, 1)) +
+      theme_void() +
+      theme(
+        legend.position = "bottom",
+        legend.key.height = unit(1, 'cm'),
+        legend.key.width = unit(2.3, 'cm'),
+        legend.margin = margin(20, 0, 10, 0),
+        legend.text = element_text(size = fontsize),
+        legend.title = element_blank(),
+        plot.margin = unit(c(0.1, 0.1, 0.1, 0.1), "cm"),
+        plot.title = element_text(size = 20, hjust = 0.5)
+      )
+    legend <- get_legend(legend.plot)
+  }
+  
+  maps_plot <- ggarrange(ARC_final, CST_final, IFO_final, ILF_final, pARC_final, SLF_final, VOF_final, ncol= 3, nrow = 3, legend.grob = legend, legend = "bottom")
+  percent <- paste0(threshold * 100, "%")
+  x.grob <- textGrob(sprintf("Population Probability (Threshold = %1$s)", percent), 
+                       gp=gpar(col="black", fontface = "bold", fontsize=fontsize))
+  # save out
+  ggsave(sprintf("/Users/audluo/PennLINC/luowm_local/output/tract_profiles_testing/all_datasets/tract_to_region/%1$s/%1$s_thresh%2$s_depth%3$s.png", dataset, threshold, depth),
+         grid.arrange(arrangeGrob(maps_plot, bottom = x.grob)), height = 14, width = 14, units = "in")
+  return(grid.arrange(arrangeGrob(maps_plot, bottom = x.grob)))
+}
+
+
+
+
+wrapper_callosum_plot_maps <- function(threshold, lh_map_list, rh_map_list, dataset, depth) {
+  # plot individual maps
+  lh_plots <- lapply(lh_map_list, plot_maps, hemi = "left", threshold = threshold)
+  rh_plots <- lapply(rh_map_list, plot_maps, hemi = "right", threshold = threshold)
+  
+  # arrange maps together  
+  orbital_plots <- ggarrange(lh_plots$LeftCallosumOrbital, rh_plots$RightCallosumOrbital, ncol=1, nrow = 2)
+  orbital_final <- annotate_figure(orbital_plots, top = text_grob("Orbital", 
+                 color = "black", face = "bold", size = fontsize))
+  
+  anteriorfrontal_plots <- ggarrange(lh_plots$LeftCallosumAnteriorFrontal, rh_plots$RightCallosumAnteriorFrontal, ncol=1, nrow = 2)
+  anteriorfrontal_final <- annotate_figure(anteriorfrontal_plots, top = text_grob("Anterior Frontal", 
+                 color = "black", face = "bold", size = fontsize))
+  
+  superiorfrontal_plots <- ggarrange(lh_plots$LeftCallosumSuperiorFrontal, rh_plots$RightCallosumSuperiorFrontal, ncol=1, nrow = 2)
+  superiorfrontal_final <- annotate_figure(superiorfrontal_plots, top = text_grob("Superior Frontal", 
+                 color = "black", face = "bold", size = fontsize))
+  
+  motor_plots <- ggarrange(lh_plots$LeftCallosumMotor, rh_plots$RightCallosumMotor, ncol=1, nrow = 2)
+  motor_final <- annotate_figure(motor_plots, top = text_grob("Motor", 
+                 color = "black", face = "bold", size = fontsize))
+  
+  superiorparietal_plots <- ggarrange(lh_plots$LeftCallosumSuperiorParietal, rh_plots$RightCallosumSuperiorParietal, ncol=1, nrow = 2)
+  superiorparietal_final <- annotate_figure(superiorparietal_plots, top = text_grob("Superior Parietal", 
+                 color = "black", face = "bold", size = fontsize))
+  
+  posteriorparietal_plots <- ggarrange(lh_plots$LeftCallosumPosteriorParietal, rh_plots$RightCallosumPosteriorParietal, ncol=1, nrow = 2)
+  posteriorparietal_final <- annotate_figure(posteriorparietal_plots, top = text_grob("Posterior Parietal", 
+                 color = "black", face = "bold", size = fontsize))
+  
+   
+  temporal_plots <- ggarrange(lh_plots$LeftCallosumTemporal, rh_plots$RightCallosumTemporal, ncol=1, nrow = 2)
+  temporal_final <- annotate_figure(temporal_plots, top = text_grob("Temporal", 
+                 color = "black", face = "bold", size = fontsize))
+  
+  occipital_plots <- ggarrange(lh_plots$LeftCallosumOccipital, rh_plots$RightCallosumOccipital, ncol=1, nrow = 2)
+  occipital_final <- annotate_figure(occipital_plots, top = text_grob("Occipital", 
+                 color = "black", face = "bold", size = fontsize))
+  
+  
+  # stitch it all together
+  
+  lh_data <- lh_map_list$LeftCallosumSuperiorFrontal %>%
+  mutate(thresh_probability = ifelse(probability < threshold, NA, probability))
+
+  # Check if all thresh_probability values are NA
+  if (all(is.na(lh_data$thresh_probability))) {
+    print(paste("Warning: All thresholded probabilities are NA for threshold", 
+                threshold, "depth", depth, ". Not plotting"))
+    legend <- NULL # Set legend to NULL or handle as needed
+  } else {
+    # Proceed with legend plot creation if there are valid (non-NA) values
+    legend.plot <- ggplot() +
+      geom_brain(data = lh_data, atlas = glasser,
+                 mapping = aes(fill = thresh_probability),
+                 show.legend = TRUE, hemi = "left") +
+      scale_fill_gradientn(colors = aquamarine, na.value = "grey92", limits = c(threshold, 1)) +
+      theme_void() +
+      theme(
+        legend.position = "bottom",
+        legend.key.height = unit(1, 'cm'),
+        legend.key.width = unit(2.3, 'cm'),
+        legend.margin = margin(20, 0, 10, 0),
+        legend.text = element_text(size = fontsize),
+        legend.title = element_blank(),
+        plot.margin = unit(c(0.1, 0.1, 0.1, 0.1), "cm"),
+        plot.title = element_text(size = 20, hjust = 0.5)
+      )
+    legend <- get_legend(legend.plot)
+  }
+  
+
+  maps_plot <- ggarrange(orbital_final, anteriorfrontal_final, 
+                         superiorfrontal_final, motor_final, 
+                         superiorparietal_final, posteriorparietal_final, 
+                         temporal_final, occipital_final, ncol= 2, nrow = 4, 
+                         legend.grob = legend, legend = "bottom")
+  percent <- paste0(threshold * 100, "%")
+  x.grob <- textGrob(sprintf("Population Probability (Threshold = %1$s)", percent), 
+                       gp=gpar(col="black", fontface = "bold", fontsize=fontsize))
+  # save out
+  ggsave(sprintf("/Users/audluo/PennLINC/luowm_local/output/tract_profiles_testing/all_datasets/tract_to_region/%1$s/%1$s_callosum_thresh%2$s_depth%3$s.png", dataset, threshold, depth),
+         grid.arrange(arrangeGrob(maps_plot, bottom = x.grob)), height = 14, width = 10, units = "in")
+  return(grid.arrange(arrangeGrob(maps_plot, bottom = x.grob)))
+}
+
+```
+
+depths: 0.1, 0.5, 1.0, 1.25, 1.5, 2.0, 2.5
+
+```{r display thresholded maps for depths, fig.height = 14, fig.width = 14}
+thresholded_plots_PNC_0.1 <- lapply(c(0.1, 0.2, 0.3, 0.4, 0.5), wrapper_plot_maps, lh_map_list = lh_maps_0.1, rh_map_list = rh_maps_0.1, dataset = "PNC", depth = depth) # glasser in ggseg is missing 10pp_L so there will always be some errors -_-
+ 
+grid.newpage()       
+grid.draw(thresholded_plots[[1]])
+grid.newpage()       
+grid.draw(thresholded_plots[[2]])
+grid.newpage()       
+grid.draw(thresholded_plots[[3]])
+grid.newpage()       
+grid.draw(thresholded_plots[[4]])
+grid.newpage()       
+grid.draw(thresholded_plots[[5]])
+
+
+
+
+thresholded_plots_PNC_1.25 <- lapply(c(0.3, 0.4, 0.5, 0.6, 0.7, 0.8), wrapper_plot_maps, lh_map_list = lh_maps_1.25, rh_map_list = rh_maps_1.25, dataset = "PNC", depth = "1.25")
+
+thresholded_plots_PNC_1.5 <- lapply(c(0.3, 0.4, 0.5, 0.6, 0.7, 0.8), wrapper_plot_maps, lh_map_list = lh_maps_1.5, rh_map_list = rh_maps_1.5, dataset = "PNC", depth = "1.5")
+
+thresholded_plots_PNC_2.0 <- lapply(c(0.3, 0.4, 0.5, 0.6, 0.7, 0.8), wrapper_plot_maps, lh_map_list = lh_maps_2.0, rh_map_list = rh_maps_2.0, dataset = "PNC", depth = "2.0")
+
+thresholded_plots_PNC_2.5 <- lapply(c(0.3, 0.4, 0.5, 0.6, 0.7, 0.8), wrapper_plot_maps, lh_map_list = lh_maps_2.5, rh_map_list = rh_maps_2.5, dataset = "PNC", depth = "2.5")
+
+
+
+
+
+thresholded_plots_PNC_1.25 <- lapply(c(0.1, 0.2), wrapper_plot_maps, lh_map_list = lh_maps_1.25, rh_map_list = rh_maps_1.25, dataset = "PNC", depth = "1.25")
+
+thresholded_plots_PNC_1.5 <- lapply(c(0.1, 0.2), wrapper_plot_maps, lh_map_list = lh_maps_1.5, rh_map_list = rh_maps_1.5, dataset = "PNC", depth = "1.5")
+
+thresholded_plots_PNC_2.0 <- lapply(c(0.1, 0.2), wrapper_plot_maps, lh_map_list = lh_maps_2.0, rh_map_list = rh_maps_2.0, dataset = "PNC", depth = "2.0")
+
+thresholded_plots_PNC_2.5 <- lapply(c(0.1, 0.2), wrapper_plot_maps, lh_map_list = lh_maps_2.5, rh_map_list = rh_maps_2.5, dataset = "PNC", depth = "2.5")
+```
+
+
+```{r display thresholded maps for depths, fig.height = 14, fig.width = 14}
+thresholded_plots_PNC_0.1 <- lapply(c(0.1, 0.2, 0.3, 0.4, 0.5), wrapper_callosum_plot_maps, lh_map_list = lh_maps_0.1, rh_map_list = rh_maps_0.1, dataset = "PNC", depth = depth) # glasser in ggseg is missing 10pp_L so there will always be some errors -_-
+ 
+grid.newpage()       
+grid.draw(thresholded_plots[[1]])
+grid.newpage()       
+grid.draw(thresholded_plots[[2]])
+grid.newpage()       
+grid.draw(thresholded_plots[[3]])
+grid.newpage()       
+grid.draw(thresholded_plots[[4]])
+grid.newpage()       
+grid.draw(thresholded_plots[[5]])
+
+
+
+
+thresholded_plots_PNC_1.25 <- lapply(c(0.3, 0.4, 0.5, 0.6, 0.7, 0.8), wrapper_callosum_plot_maps, lh_map_list = lh_maps_1.25, rh_map_list = rh_maps_1.25, dataset = "PNC", depth = 1.25)
+ 
+thresholded_plots_PNC_1.5 <- lapply(c(0.3, 0.4, 0.5, 0.6, 0.7, 0.8), wrapper_callosum_plot_maps, lh_map_list = lh_maps_1.5, rh_map_list = rh_maps_1.5, dataset = "PNC", depth = 1.5)
+
+thresholded_plots_PNC_2.0 <- lapply(c(0.3, 0.4, 0.5, 0.6, 0.7, 0.8), wrapper_callosum_plot_maps, lh_map_list = lh_maps_2.0, rh_map_list = rh_maps_2.0, dataset = "PNC", depth = 2.0)
+
+thresholded_plots_PNC_2.5 <- lapply(c(0.3, 0.4, 0.5, 0.6, 0.7, 0.8), wrapper_callosum_plot_maps, lh_map_list = lh_maps_2.5, rh_map_list = rh_maps_2.5, dataset = "PNC", depth = 2.5)
+
+
+
+
+thresholded_plots_PNC_1.25 <- lapply(c(0.1, 0.2), wrapper_callosum_plot_maps, lh_map_list = lh_maps_1.25, rh_map_list = rh_maps_1.25, dataset = "PNC", depth = 1.25)
+ 
+thresholded_plots_PNC_1.5 <- lapply(c(0.1, 0.2), wrapper_callosum_plot_maps, lh_map_list = lh_maps_1.5, rh_map_list = rh_maps_1.5, dataset = "PNC", depth = 1.5)
+
+thresholded_plots_PNC_2.0 <- lapply(c(0.1, 0.2), wrapper_callosum_plot_maps, lh_map_list = lh_maps_2.0, rh_map_list = rh_maps_2.0, dataset = "PNC", depth = 2.0)
+
+thresholded_plots_PNC_2.5 <- lapply(c(0.1, 0.2), wrapper_callosum_plot_maps, lh_map_list = lh_maps_2.5, rh_map_list = rh_maps_2.5, dataset = "PNC", depth = 2.5)
+```

@@ -37,6 +37,8 @@ exec 2> "${error_file}"
 source /cbica/projects/luo_wm_dev/miniconda3/etc/profile.d/conda.sh
 conda activate luo_wm_dev
  
+python c01_vol_to_surf_individual.py ${subject} ${config_file} 0.1 || { echo "Python script failed for ${subject}, depth 0.1"; exit 1; } # this depth may be best for pARC and VOF
+python c01_vol_to_surf_individual.py ${subject} ${config_file} 0.5 || { echo "Python script failed for ${subject}, depth 0.5"; exit 1; }
 python c01_vol_to_surf_individual.py ${subject} ${config_file} 1.0 || { echo "Python script failed for ${subject}, depth 1.0"; exit 1; }
 python c01_vol_to_surf_individual.py ${subject} ${config_file} 1.25 || { echo "Python script failed for ${subject}, depth 1.25"; exit 1; }
 python c01_vol_to_surf_individual.py ${subject} ${config_file} 1.5 || { echo "Python script failed for ${subject}, depth 1.5"; exit 1; }

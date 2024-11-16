@@ -1,0 +1,3093 @@
+---
+title: "age of maturation all datasets"
+author: "Audrey Luo"
+output: html_document
+---
+
+```{r}
+library(ciftiTools)
+#ciftiTools.setOption('wb_path', '/Applications/workbench/')
+library(cifti)
+library(cowplot)
+library(data.table)
+library(dplyr)
+library(ggplot2)
+library(ggpubr)
+library(grid)
+library(gridExtra)
+library(gratia) 
+library(ggseg)
+library(ggsegGlasser)
+library(knitr)
+library(kableExtra)
+library(mgcv)
+library(RColorBrewer)
+library(scales)
+library(stringr)
+library(rjson)
+library(tidyr)
+
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE, include = TRUE) 
+
+font_size <- 20
+theme_set(theme_classic(base_family = "sans",base_size = font_size))
+line_size <- 1
+point_size <- 2
+
+proj_root <- "/cbica/projects/luo_wm_dev/"
+input_root <- paste0(proj_root, "input")
+output_root <- paste0(proj_root, "output")
+png_dir <- "/Users/audluo/PennLINC/luowm_local/output/tract_profiles_testing/all_datasets/tract_to_region"
+local_dir <- "/Users/audluo/Desktop/temp_code"
+```
+
+note:
+- for IFO, need to use lower threshold - 10%
+
+
+# brain surface plot of age effects of peripheral white matter for each tract
+- first clip 3 nodes from each end of the tract
+- for each tract, average the 5 nodes on each end and get a value (age maps are pretty much identical with 10 nodes)
+- make a new column in the maps df and for every nonzero thresholded_probability, put that value in 
+
+```{r load glasser maps}
+# load glasser labels
+glasser_labels <- read.csv("/cbica/projects/luo_wm_dev/atlases/glasser/HCP-MMP1_UniqueRegionList.csv")
+glasser_labels$regionID <- c(1:360)
+glasser_labels$region <- gsub("7Pl", "7PL", glasser_labels$region)   
+
+# @param depth, A string
+load_maps <- function(depth, dataset) {
+  
+  config_file <- sprintf("%1$s/code/tract_profiles/config/config_%2$s.json", proj_root, dataset)
+  config <- fromJSON(paste(readLines(config_file), collapse=""))
+  
+  vol_to_surf_dir <- paste0(config$data_root, "/derivatives/vol_to_surf")
+  group_dir <- paste0(vol_to_surf_dir, "/group")
+  
+
+  pattern <- paste0(depth, ".*\\.csv$")
+
+  # load glasser maps for each tract... load for a specific depth?
+  glasser_csvs <- list.files(path = group_dir, pattern = pattern, full.names = T)
+  tract_names <- lapply(glasser_csvs, function(path) {
+    filename <- basename(path)
+    sub("_\\d+\\.\\d+_glasser\\.csv$", "", filename)
+  })
+  tract_names <- unlist(tract_names)
+  
+  glasser_maps <- lapply(glasser_csvs, read.csv)
+  names(glasser_maps) <- tract_names
+  
+  # merge labels with my maps
+  glasser_maps <- lapply(glasser_maps, merge, y = glasser_labels, by = "regionID")
+  
+  # separate lh and rh maps
+  lh_idx <- grep("Left", names(glasser_maps))
+  lh_maps <- glasser_maps[lh_idx]
+  assign(paste0("lh_maps_", dataset), lh_maps, envir = .GlobalEnv)
+  
+  rh_idx <- grep("Right", names(glasser_maps))
+  rh_maps <- glasser_maps[rh_idx]
+  assign(paste0("rh_maps_", dataset), rh_maps, envir = .GlobalEnv)
+}
+
+depths = c("1.5")
+
+lapply(depths, load_maps, "HCPD")
+lapply(depths, load_maps, "HBN")
+lapply(depths, load_maps, "PNC")
+ 
+```
+
+# load age effects / age of maturation
+```{r load dev effects files}
+scalar = "dti_md"
+HCPD_ageeffects <- read.csv(paste0(output_root, "/", "HCPD", "/tract_profiles/GAM/", scalar, "/HCPD_GAM_dev_measures.csv"))
+HBN_ageeffects <- read.csv(paste0(output_root, "/", "HBN", "/tract_profiles/GAM/", scalar, "/HBN_GAM_dev_measures.csv"))
+PNC_ageeffects <- read.csv(paste0(output_root, "/", "PNC", "/tract_profiles/GAM/", scalar, "/PNC_GAM_dev_measures.csv"))
+```
+
+```{r function for formatting age effects}
+# make a list of the different df names: [dataset]_GAM_ageeffects_[scalar]
+datasets <- c("HCPD", "HBN", "PNC")
+ageeffect_df_names <- c()
+for (dataset in datasets) {
+  ageeffect_df_names <- append(ageeffect_df_names, paste0(dataset, "_ageeffects"))
+}
+
+ 
+# format age effect df's
+format_ageeffect <- function(df) {
+  df <- get(df)
+  # add tractID, tract_label, and nodeID
+  df <- df %>% mutate(hemi = ifelse(grepl("Left", tract_node), "Left", 
+                                    ifelse(grepl("Right", tract_node), "Right", NA))) %>%
+    mutate(tractID = gsub("_[0-9]+", "", tract_node)) %>%
+    mutate(tract_label = gsub("Left |Right ", "", gsub("_", " ", gsub("Fronto.", "Fronto-", tractID)))) %>%
+    mutate(nodeID = str_extract(tract_node, "[0-9]+")) 
+  df$nodeID <- as.numeric(df$nodeID)
+  
+  # label main orientation
+  df <- df %>% 
+  mutate(main_orientation = case_when(
+    tract_label %in% c("Inferior Fronto-occipital",
+                   "Inferior Longitudinal", "Superior Longitudinal") ~ "AP",
+    tract_label %in% c("Arcuate") ~ "AP_frontal_temporal",
+    tract_label %in% c("Callosum Anterior Frontal", "Callosum Motor", "Callosum Occipital", "Callosum Orbital", 
+                       "Callosum Posterior Parietal", "Callosum Superior Frontal", "Callosum Superior Parietal", "Callosum Temporal") ~ "RL",
+    tract_label %in% c("Corticospinal", "Posterior Arcuate","Vertical Occipital") ~ "SI",
+    TRUE ~ NA_character_
+  ))
+  df$main_orientation <- as.factor(df$main_orientation)
+  df <- df %>% relocate(tract_label, tractID, nodeID, tract_node, hemi, main_orientation)
+  return(df)
+}
+
+ageeffect_dfs <- lapply(ageeffect_df_names, format_ageeffect)
+ 
+```
+
+```{r fdr correction}
+# Function for calculating number of significant nodes (FDR corrected)
+# @param df A dataframe with GAM results
+sig_nodes <- function(df) {
+
+  df$Anova.age.pvalue.fdr <- p.adjust(df$Anova.smooth.pvalue, method=c("fdr"))
+  cat(sprintf("There are %s/%s significant nodes\n", sum(df$Anova.age.pvalue.fdr < 0.05, na.rm=TRUE), nrow(df)))
+  df$significant.fdr <- df$Anova.age.pvalue.fdr < 0.05
+  df$significant.fdr[df$significant.fdr == TRUE] <- 1
+  df$significant.fdr[df$significant.fdr == FALSE] <- 0
+  return(df)
+}
+
+ageeffect.fdr_dfs <- lapply(ageeffect_dfs, sig_nodes)
+names(ageeffect.fdr_dfs) <- ageeffect_df_names
+
+```
+
+```{r function assign age effects to cortical endpoints}
+# function for assigning age effects to endpoints: need to do this manually for each tract (but code is applicable to all datasets)
+
+threshold = 0.3
+
+# have to do this manually T_T
+make_maps <- function(dataset, bin_num_nodes) {
+  
+  lh_maps <- get(paste0("lh_maps_", dataset))
+  rh_maps <- get(paste0("rh_maps_", dataset))
+  deveffects <- get(paste0(dataset, "_deveffects_", bin_num_nodes))
+  
+  # for tracts with 1 endpoint (CST), extract the age effect for end1 (corresponds to cortical endpoint) 
+  CSTL_deveffect <- lh_maps$LeftCorticospinal %>% mutate(
+    thresh_probability = ifelse(probability < threshold, NA, probability)
+    ) %>% 
+    select(thresh_probability, regionName, region, cortex) %>%
+    arrange(thresh_probability) %>% 
+    mutate(
+      mean_age_effect = ifelse(
+        !is.na(thresh_probability), 
+        deveffects %>% filter(tractID == "Left_Corticospinal" & node_position == "end1") %>% pull(mean_ageeffect), NA)
+      ) %>% 
+     mutate(
+      end = ifelse(
+        !is.na(thresh_probability), 
+        "end1", NA)
+    ) %>%
+    relocate(mean_age_effect)
+  
+  CSTR_deveffect <- rh_maps$RightCorticospinal %>% mutate(
+    thresh_probability = ifelse(probability < threshold, NA, probability)
+    ) %>% 
+    select(thresh_probability, regionName, region, cortex) %>%
+    arrange(thresh_probability) %>% 
+    mutate(
+      mean_age_effect = ifelse(
+        !is.na(thresh_probability), 
+        deveffects %>% filter(tractID == "Right_Corticospinal" & node_position == "end1") %>% pull(mean_ageeffect), NA)
+      ) %>% 
+     mutate(
+      end = ifelse(
+        !is.na(thresh_probability), 
+        "end1", NA)
+    ) %>%
+    relocate(mean_age_effect)
+   
+  # for tracts with 2 distinct cortical endpoints: ARC, ILF, IFO, SLF
+  ARCL_deveffect <- lh_maps$LeftArcuate %>%
+    mutate(
+      thresh_probability = ifelse(probability < threshold, NA, probability)
+    ) %>%
+    select(thresh_probability, regionName, region, cortex) %>%
+    arrange(thresh_probability) %>%
+    mutate(
+      mean_age_effect = case_when(
+        !is.na(thresh_probability) & (str_detect(cortex, "(?i)frontal") | str_detect(cortex, "(?i)motor") | str_detect(cortex, "(?i)Posterior_Opercular")) ~ 
+          deveffects %>% filter(tractID == "Left_Arcuate", node_position == "end1") %>% pull(mean_ageeffect),
+        !is.na(thresh_probability) & (str_detect(cortex, "(?i)Temp") | str_detect(cortex, "(?i)Auditory")) ~ 
+          deveffects %>% filter(tractID == "Left_Arcuate", node_position == "end2") %>% pull(mean_ageeffect),
+        TRUE ~ NA_real_
+      )
+    ) %>%
+    mutate(
+      end = ifelse(
+        !is.na(thresh_probability) & (str_detect(cortex, "(?i)frontal") | str_detect(cortex, "motor") | str_detect(cortex, "Posterior_Opercular")), 
+        "end1", 
+        ifelse(
+          !is.na(thresh_probability) & (str_detect(cortex, "Temp") | str_detect(cortex, "Auditory") ), 
+          "end2", 
+          NA))
+      ) %>%
+    relocate(mean_age_effect)
+  
+  ARCR_deveffect <- rh_maps$RightArcuate %>%
+    mutate(
+      thresh_probability = ifelse(probability < threshold, NA, probability)
+    ) %>%
+    select(thresh_probability, regionName, region,  cortex) %>%
+    arrange(thresh_probability) %>%
+    mutate(
+      mean_age_effect = case_when(
+        !is.na(thresh_probability) & 
+          (str_detect(cortex, "(?i)frontal") | str_detect(cortex, "(?i)motor") | str_detect(cortex, "(?i)Posterior_Opercular")) ~ 
+            deveffects %>% filter(tractID == "Left_Arcuate", node_position == "end1") %>% pull(mean_ageeffect),
+        !is.na(thresh_probability) & 
+          (str_detect(cortex, "(?i)Temp") | str_detect(cortex, "(?i)MT") | str_detect(cortex, "(?i)Auditory")) ~ 
+            deveffects %>% filter(tractID == "Left_Arcuate", node_position == "end2") %>% pull(mean_ageeffect),
+        TRUE ~ NA_real_
+      ),
+      end = case_when(
+        !is.na(thresh_probability) & 
+          (str_detect(cortex, "(?i)frontal") | str_detect(cortex, "(?i)motor") | str_detect(cortex, "(?i)Posterior_Opercular")) ~ "end1",
+        !is.na(thresh_probability) & 
+          (str_detect(cortex, "(?i)Temp") | str_detect(cortex, "(?i)MT") | str_detect(cortex, "(?i)Auditory")) ~ "end2",
+        TRUE ~ NA_character_
+      )
+    ) %>%
+    relocate(mean_age_effect)
+   
+  ILFL_deveffect <- lh_maps$LeftInferiorLongitudinal %>%
+    mutate(
+      thresh_probability = ifelse(probability < threshold, NA, probability)
+    ) %>%
+    select(thresh_probability, regionName, region,  cortex) %>%
+    arrange(thresh_probability) %>%
+    mutate(
+      mean_age_effect = case_when(
+        !is.na(thresh_probability) & 
+        !str_detect(cortex, "(?i)visual|Inferior_Parietal|Occipital") ~ 
+          deveffects %>% filter(tractID == "Left_Inferior_Longitudinal", node_position == "end1") %>% pull(mean_ageeffect),
+        !is.na(thresh_probability) & 
+        str_detect(cortex, "(?i)visual|Inferior_Parietal|Occipital") ~ 
+          deveffects %>% filter(tractID == "Left_Inferior_Longitudinal", node_position == "end2") %>% pull(mean_ageeffect),
+        TRUE ~ NA_real_
+      ),
+      end = case_when(
+        !is.na(thresh_probability) & 
+        !str_detect(cortex, "(?i)visual|Inferior_Parietal|Occipital") ~ "end1",
+        !is.na(thresh_probability) & 
+        str_detect(cortex, "(?i)visual|Inferior_Parietal|Occipital") ~ "end2",
+        TRUE ~ NA_character_
+      )
+    ) %>%
+    relocate(mean_age_effect)
+  
+  
+  ILFR_deveffect <- rh_maps$RightInferiorLongitudinal %>%
+    mutate(
+      thresh_probability = ifelse(probability < threshold, NA, probability)
+    ) %>%
+    select(thresh_probability, regionName, region,  cortex) %>%
+    arrange(thresh_probability) %>%
+    mutate(
+      mean_age_effect = ifelse(
+        !is.na(thresh_probability) & (!str_detect(cortex, "(?i)visual")) & region != "PHA3", 
+        deveffects %>%  filter(tractID == "Right_Inferior_Longitudinal", node_position == "end1") %>% pull(mean_ageeffect),
+        ifelse(
+          !is.na(thresh_probability) & (str_detect(cortex, "(?i)visual")) | region == "PHA3", 
+        deveffects %>%  filter(tractID == "Right_Inferior_Longitudinal", node_position == "end2") %>% pull(mean_ageeffect),
+          NA))
+      ) %>%
+    mutate(
+      end = ifelse(
+        !is.na(thresh_probability) & (!str_detect(cortex, "(?i)visual")) & region != "PHA3", 
+        "end1", 
+        ifelse(
+          !is.na(thresh_probability) & (str_detect(cortex, "(?i)visual")) | region == "PHA3", 
+          "end2", 
+          NA))
+      ) %>%
+    relocate(mean_age_effect) %>% arrange(end)
+  
+  
+  IFOL_deveffect <- lh_maps$LeftInferiorFrontooccipital %>%
+    mutate(
+      thresh_probability = ifelse(probability < 0.1, NA, probability)
+    ) %>%
+    select(thresh_probability, regionName, region,  cortex) %>%
+    arrange(thresh_probability) %>%
+    mutate(mean_age_effect = case_when(
+      !is.na(thresh_probability) & 
+      (str_detect(cortex, "(?i)frontal|Auditory")) ~ 
+        deveffects %>% filter(tractID == "Left_Inferior_Fronto.occipital", node_position == "end1") %>% pull(mean_ageeffect),
+      !is.na(thresh_probability) & 
+      str_detect(cortex, "(?i)visual") ~ 
+        deveffects %>% filter(tractID == "Left_Inferior_Fronto.occipital", node_position == "end2") %>% pull(mean_ageeffect),
+      TRUE ~ NA_real_)) %>%
+    mutate(
+      end = ifelse(
+        !is.na(thresh_probability) & 
+        (str_detect(cortex, "(?i)frontal") | 
+         str_detect(cortex, "Auditory")), 
+        "end1", 
+        ifelse(
+          !is.na(thresh_probability) & 
+          (str_detect(cortex, "(?i)visual")), 
+          "end2", 
+          NA
+        )
+      )
+    ) %>%
+    relocate(mean_age_effect)
+   
+  IFOR_deveffect <- rh_maps$RightInferiorFrontooccipital %>%
+    mutate(
+      thresh_probability = ifelse(probability < 0.1, NA, probability)
+    ) %>%
+    select(thresh_probability, regionName, region,  cortex) %>%
+    arrange(thresh_probability) %>%
+    mutate(
+      mean_age_effect = ifelse(
+        !is.na(thresh_probability) & 
+        (str_detect(cortex, "(?i)frontal")  |
+         str_detect(cortex, "Auditory")), 
+        deveffects %>% filter(tractID == "Right_Inferior_Fronto.occipital", node_position == "end1") %>% pull(mean_ageeffect),
+        ifelse(
+          !is.na(thresh_probability) & 
+          (str_detect(cortex, "(?i)visual")), 
+         deveffects %>% filter(tractID == "Right_Inferior_Fronto.occipital", node_position == "end2") %>% pull(mean_ageeffect),
+          NA
+        )
+      )
+    ) %>%
+     mutate(
+      end = ifelse(
+        !is.na(thresh_probability) & 
+        (str_detect(cortex, "(?i)frontal") | 
+         str_detect(cortex, "Auditory")), 
+        "end1", 
+        ifelse(
+          !is.na(thresh_probability) & 
+          (str_detect(cortex, "(?i)visual")), 
+          "end2", 
+          NA
+        )
+      )
+    ) %>%
+    relocate(mean_age_effect)
+  
+  SLFL_deveffect <- lh_maps$LeftSuperiorLongitudinal %>%
+    mutate(
+      thresh_probability = ifelse(probability < threshold, NA, probability)
+    ) %>%
+    select(thresh_probability, regionName, region,  cortex) %>%
+    arrange(thresh_probability) %>%
+    mutate(
+      mean_age_effect = ifelse(
+        !is.na(thresh_probability) & 
+        (str_detect(cortex, "(?i)frontal") |
+           str_detect(cortex, "(?i)motor") | 
+           str_detect(cortex, "(?i)Opercular")), 
+        deveffects %>% filter(tractID == "Left_Superior_Longitudinal", node_position == "end1") %>% pull(mean_ageeffect),
+        ifelse(
+          !is.na(thresh_probability) & 
+          (str_detect(cortex, "(?i)pariet|(?i)auditory")), 
+        deveffects %>% filter(tractID == "Left_Superior_Longitudinal", node_position == "end2") %>% pull(mean_ageeffect),
+          NA))) %>%
+    mutate(end = ifelse(
+        !is.na(thresh_probability) & 
+        (str_detect(cortex, "(?i)frontal") |
+           str_detect(cortex, "(?i)motor") | 
+           str_detect(cortex, "(?i)Opercular")), 
+        "end1", 
+        ifelse(
+          !is.na(thresh_probability) & 
+          (str_detect(cortex, "(?i)pariet|(?i)auditory")), 
+          "end2", 
+          NA))) %>%
+    relocate(mean_age_effect)
+  
+  SLFR_deveffect <- rh_maps$RightSuperiorLongitudinal %>%
+    mutate(
+      thresh_probability = ifelse(probability < threshold, NA, probability)
+    ) %>%
+    select(thresh_probability, regionName, region,  cortex) %>%
+    arrange(thresh_probability) %>%
+    mutate(
+      mean_age_effect = ifelse(
+        !is.na(thresh_probability) & 
+        (str_detect(cortex, "(?i)frontal") |
+           str_detect(cortex, "(?i)motor") | 
+           str_detect(cortex, "(?i)Opercular")), 
+        deveffects %>% filter(tractID == "Right_Superior_Longitudinal", node_position == "end1") %>% pull(mean_ageeffect),
+        ifelse(
+          !is.na(thresh_probability) & 
+          (str_detect(cortex, "(?i)pariet")), 
+        deveffects %>% filter(tractID == "Right_Superior_Longitudinal", node_position == "end2") %>% pull(mean_ageeffect),
+        NA))) %>%
+    mutate(
+      end = ifelse(
+        !is.na(thresh_probability) & 
+        (str_detect(cortex, "(?i)frontal") |
+           str_detect(cortex, "(?i)motor") | 
+           str_detect(cortex, "(?i)Opercular")), 
+        "end1", 
+        ifelse(
+          !is.na(thresh_probability) & 
+          (str_detect(cortex, "(?i)pariet")), 
+          "end2", 
+          NA
+        )
+      )
+    ) %>%
+    relocate(mean_age_effect)
+    
+  # for tracts with 2 cortical endpoints that require some manual work: pARC, VOF 
+  pARCL_deveffect <- lh_maps$LeftPosteriorArcuate %>%
+    mutate(
+      thresh_probability = ifelse(probability < threshold, NA, probability)
+    ) %>%
+    select(thresh_probability, regionName, region,  cortex) %>%
+    arrange(thresh_probability) %>%
+    mutate(
+      mean_age_effect = ifelse( 
+        !is.na(thresh_probability) & 
+        (str_detect(cortex, "(?i)parietal")),  # might exclude TPOJ1 since its between the two endpoints
+        deveffects %>% filter(tractID == "Left_Posterior_Arcuate", node_position == "end1") %>% pull(mean_ageeffect),
+        ifelse(
+          !is.na(thresh_probability) & 
+          (str_detect(cortex, "(?i)temporal") |
+             str_detect(cortex, "(?i)visual") |
+             str_detect(cortex, "(?i)auditory")), 
+         deveffects %>% filter(tractID == "Left_Posterior_Arcuate", node_position == "end2") %>% pull(mean_ageeffect), 
+          NA))) %>%
+    mutate(
+      end = ifelse( 
+        !is.na(thresh_probability) & 
+        (str_detect(cortex, "(?i)parietal")),  # might exclude TPOJ1 since its between the two endpoints
+        "end1", 
+        ifelse(
+          !is.na(thresh_probability) & 
+          (str_detect(cortex, "(?i)temporal") |
+             str_detect(cortex, "(?i)visual") |
+             str_detect(cortex, "(?i)auditory")), 
+          "end2", 
+          NA
+        )
+      )
+    ) %>%
+    relocate(mean_age_effect)
+  
+  pARCR_deveffect <- rh_maps$RightPosteriorArcuate %>%
+    mutate(
+      thresh_probability = ifelse(probability < threshold, NA, probability)
+    ) %>%
+    select(thresh_probability, regionName, region,  cortex) %>%
+    arrange(thresh_probability) %>%
+    mutate(
+      mean_age_effect = ifelse( 
+        !is.na(thresh_probability) & 
+        (str_detect(cortex, "(?i)parietal")),  # might exclude TPOJ1 since its between the two endpoints
+        deveffects %>% filter(tractID == "Right_Posterior_Arcuate", node_position == "end1") %>% pull(mean_ageeffect), 
+        ifelse(
+          !is.na(thresh_probability) & 
+          (str_detect(cortex, "(?i)temporal") |
+             str_detect(cortex, "(?i)visual") |
+             str_detect(cortex, "(?i)auditory")), 
+          deveffects %>% filter(tractID == "Right_Posterior_Arcuate", node_position == "end2") %>% pull(mean_ageeffect), 
+          NA
+        )
+      )
+    ) %>%
+     mutate(
+      end = ifelse( 
+        !is.na(thresh_probability) & 
+        (str_detect(cortex, "(?i)parietal")),  # might exclude TPOJ1 since its between the two endpoints
+        "end1", 
+        ifelse(
+          !is.na(thresh_probability) & 
+          (str_detect(cortex, "(?i)temporal") |
+             str_detect(cortex, "(?i)visual") |
+             str_detect(cortex, "(?i)auditory")), 
+          "end2", 
+          NA
+        )
+      )
+    ) %>%
+    relocate(mean_age_effect)
+  
+  VOFL_deveffect <- lh_maps$LeftVerticalOccipital %>%
+    mutate(
+      thresh_probability = ifelse(probability < threshold, NA, probability)
+    ) %>%
+    select(thresh_probability, regionName, region,  cortex) %>%
+    arrange(thresh_probability) %>%
+    mutate(
+      mean_age_effect = ifelse( 
+        !is.na(thresh_probability) & 
+        (str_detect(cortex, "(?i)dorsal") | 
+         str_detect(cortex, "(?i)parietal") |
+           region == "LO1" |
+           region == "V3CD" |
+           region == "V4" | # kind of arbitrarily placing V3 and V4 for now
+           region == "MST" |
+           region == "MT" | 
+           region == "TPOJ3" |
+           region == "LO3"),   
+        deveffects %>% filter(tractID == "Left_Vertical_Occipital", node_position == "end1") %>% pull(mean_ageeffect), 
+        ifelse(
+          !is.na(thresh_probability) & 
+          (str_detect(cortex, "(?i)ventral") | 
+           region == "PH" |
+           region == "LO2" |
+             region == "V3"), 
+          deveffects %>% filter(tractID == "Left_Vertical_Occipital", node_position == "end2") %>% pull(mean_ageeffect), 
+          NA))) %>%
+    mutate(
+      end = ifelse( 
+        !is.na(thresh_probability) & 
+        (str_detect(cortex, "(?i)dorsal") | 
+         str_detect(cortex, "(?i)parietal") |
+         region == "LO1" |
+         region == "V3CD" |
+         region == "V4" | # kind of arbitrarily placing V3 and V4 for now
+         region == "MST" |
+         region == "MT" |
+         region == "TPOJ3" |
+         region == "LO3"),   
+        "end1", 
+        ifelse(
+          !is.na(thresh_probability) & 
+          (str_detect(cortex, "(?i)ventral") | 
+           region == "PH" |
+           region == "LO2" |
+             region == "V3" ), 
+          "end2", 
+          NA
+        )
+      )
+    ) %>%
+    relocate(mean_age_effect)
+  
+  
+  VOFR_deveffect <- rh_maps$RightVerticalOccipital %>%
+    mutate(
+      thresh_probability = ifelse(probability < threshold, NA, probability)
+    ) %>%
+    select(thresh_probability, regionName, region,  cortex) %>%
+    arrange(thresh_probability) %>%
+    mutate(
+      mean_age_effect = ifelse( 
+        !is.na(thresh_probability) & 
+        (str_detect(cortex, "(?i)dorsal") | 
+         str_detect(cortex, "(?i)parietal") |
+         region == "LO1" |
+         region == "V3CD" |
+         region == "V4" | # kind of arbitrarily placing V3 and V4 for now
+         region == "LO3" | 
+         region == "TPOJ3"),   
+         deveffects %>% filter(tractID == "Right_Vertical_Occipital", node_position == "end1") %>% pull(mean_ageeffect), 
+        ifelse(
+          !is.na(thresh_probability) & 
+          (str_detect(cortex, "(?i)ventral") | 
+           region == "PH" |
+           region == "LO2" |
+           region == "MST" |
+           region == "V3"), 
+           deveffects %>% filter(tractID == "Right_Vertical_Occipital", node_position == "end2") %>% pull(mean_ageeffect), NA
+        )
+      )
+    ) %>%
+    mutate(
+      end = ifelse( 
+        !is.na(thresh_probability) & 
+        (str_detect(cortex, "(?i)dorsal") |
+          str_detect(cortex, "(?i)parietal") |
+          region == "LO1" |
+          region == "V3CD" |
+          region == "V4"| # kind of arbitrarily placing V3 and V4 for now
+          region == "LO3" | 
+          region == "TPOJ3"),   
+        "end1", 
+        ifelse(
+          !is.na(thresh_probability) & 
+          (str_detect(cortex, "(?i)ventral") | 
+           region == "PH" |
+           region == "LO2" |
+           region == "V3" | 
+           region == "MST" |
+           region == "FST"), 
+          "end2", 
+          NA
+        )
+      )
+    ) %>%
+    relocate(mean_age_effect)
+   
+  
+  # callosum bundles
+  COrbL_deveffect <- lh_maps$LeftCallosumOrbital %>% mutate(
+    thresh_probability = ifelse(probability < threshold, NA, probability)
+    ) %>% 
+    select(thresh_probability, regionName, region, cortex) %>%
+    arrange(thresh_probability) %>% 
+    mutate(
+      mean_age_effect = ifelse(
+        !is.na(thresh_probability), 
+        deveffects %>% filter(tractID == "Callosum_Orbital" & node_position == "end2") %>% pull(mean_ageeffect), NA)
+      ) %>% 
+     mutate(
+      end = ifelse(
+        !is.na(thresh_probability), 
+        "end2", NA)
+    ) %>%
+    relocate(mean_age_effect)
+  
+  COrbR_deveffect <- rh_maps$RightCallosumOrbital %>% mutate(
+    thresh_probability = ifelse(probability < threshold, NA, probability)
+    ) %>% 
+    select(thresh_probability, regionName, region, cortex) %>%
+    arrange(thresh_probability) %>% 
+    mutate(
+      mean_age_effect = ifelse(
+        !is.na(thresh_probability), 
+        deveffects %>% filter(tractID == "Callosum_Orbital" & node_position == "end1") %>% pull(mean_ageeffect), NA)
+      ) %>% 
+     mutate(
+      end = ifelse(
+        !is.na(thresh_probability), 
+        "end1", NA)
+    ) %>%
+    relocate(mean_age_effect)
+  
+  
+  CAntFrL_deveffect <- lh_maps$LeftCallosumAnteriorFrontal %>% mutate(
+    thresh_probability = ifelse(probability < threshold, NA, probability)
+    ) %>% 
+    select(thresh_probability, regionName, region, cortex) %>%
+    arrange(thresh_probability) %>% 
+    mutate(
+      mean_age_effect = ifelse(
+        !is.na(thresh_probability), 
+        deveffects %>% filter(tractID == "Callosum_Anterior_Frontal" & node_position == "end2") %>% pull(mean_ageeffect), NA)
+      ) %>% 
+     mutate(
+      end = ifelse(
+        !is.na(thresh_probability), 
+        "end2", NA)
+    ) %>%
+    relocate(mean_age_effect)
+  
+  CAntFrR_deveffect <- rh_maps$RightCallosumAnteriorFrontal %>% mutate(
+    thresh_probability = ifelse(probability < threshold, NA, probability)
+    ) %>% 
+    select(thresh_probability, regionName, region, cortex) %>%
+    arrange(thresh_probability) %>% 
+    mutate(
+      mean_age_effect = ifelse(
+        !is.na(thresh_probability), 
+        deveffects %>% filter(tractID == "Callosum_Anterior_Frontal" & node_position == "end1") %>% pull(mean_ageeffect), NA)
+      ) %>% 
+     mutate(
+      end = ifelse(
+        !is.na(thresh_probability), 
+        "end1", NA)
+    ) %>%
+    relocate(mean_age_effect)
+  
+  CSupFrL_deveffect <- lh_maps$LeftCallosumSuperiorFrontal %>% mutate(
+    thresh_probability = ifelse(probability < threshold, NA, probability)
+    ) %>% 
+    select(thresh_probability, regionName, region, cortex) %>%
+    arrange(thresh_probability) %>% 
+    mutate(
+      mean_age_effect = ifelse(
+        !is.na(thresh_probability), 
+        deveffects %>% filter(tractID == "Callosum_Superior_Frontal" & node_position == "end2") %>% pull(mean_ageeffect), NA)
+      ) %>% 
+     mutate(
+      end = ifelse(
+        !is.na(thresh_probability), 
+        "end2", NA)
+    ) %>%
+    relocate(mean_age_effect)
+  
+  CSupFrR_deveffect <- rh_maps$RightCallosumSuperiorFrontal %>% mutate(
+    thresh_probability = ifelse(probability < threshold, NA, probability)
+    ) %>% 
+    select(thresh_probability, regionName, region, cortex) %>%
+    arrange(thresh_probability) %>% 
+    mutate(
+      mean_age_effect = ifelse(
+        !is.na(thresh_probability), 
+        deveffects %>% filter(tractID == "Callosum_Superior_Frontal" & node_position == "end1") %>% pull(mean_ageeffect), NA)
+      ) %>% 
+     mutate(
+      end = ifelse(
+        !is.na(thresh_probability), 
+        "end1", NA)
+    ) %>%
+    relocate(mean_age_effect)
+  
+  CMotL_deveffect <- lh_maps$LeftCallosumMotor %>% mutate(
+    thresh_probability = ifelse(probability < threshold, NA, probability)
+    ) %>% 
+    select(thresh_probability, regionName, region, cortex) %>%
+    arrange(thresh_probability) %>% 
+    mutate(
+      mean_age_effect = ifelse(
+        !is.na(thresh_probability), 
+        deveffects %>% filter(tractID == "Callosum_Motor" & node_position == "end2") %>% pull(mean_ageeffect), NA)
+      ) %>% 
+     mutate(
+      end = ifelse(
+        !is.na(thresh_probability), 
+        "end2", NA)
+    ) %>%
+    relocate(mean_age_effect)
+  
+  CMotR_deveffect <- rh_maps$RightCallosumMotor %>% mutate(
+    thresh_probability = ifelse(probability < threshold, NA, probability)
+    ) %>% 
+    select(thresh_probability, regionName, region, cortex) %>%
+    arrange(thresh_probability) %>% 
+    mutate(
+      mean_age_effect = ifelse(
+        !is.na(thresh_probability), 
+        deveffects %>% filter(tractID == "Callosum_Motor" & node_position == "end1") %>% pull(mean_ageeffect), NA)
+      ) %>% 
+     mutate(
+      end = ifelse(
+        !is.na(thresh_probability), 
+        "end1", NA)
+    ) %>%
+    relocate(mean_age_effect)
+  
+  CSupParL_deveffect <- lh_maps$LeftCallosumSuperiorParietal %>% mutate(
+    thresh_probability = ifelse(probability < threshold, NA, probability)
+    ) %>% 
+    select(thresh_probability, regionName, region, cortex) %>%
+    arrange(thresh_probability) %>% 
+    mutate(
+      mean_age_effect = ifelse(
+        !is.na(thresh_probability), 
+        deveffects %>% filter(tractID == "Callosum_Superior_Parietal" & node_position == "end2") %>% pull(mean_ageeffect), NA)
+      ) %>% 
+     mutate(
+      end = ifelse(
+        !is.na(thresh_probability), 
+        "end2", NA)
+    ) %>%
+    relocate(mean_age_effect)
+  
+  CSupParR_deveffect <- rh_maps$RightCallosumSuperiorParietal %>% mutate(
+    thresh_probability = ifelse(probability < threshold, NA, probability)
+    ) %>% 
+    select(thresh_probability, regionName, region, cortex) %>%
+    arrange(thresh_probability) %>% 
+    mutate(
+      mean_age_effect = ifelse(
+        !is.na(thresh_probability), 
+        deveffects %>% filter(tractID == "Callosum_Superior_Parietal" & node_position == "end1") %>% pull(mean_ageeffect), NA)
+      ) %>% 
+     mutate(
+      end = ifelse(
+        !is.na(thresh_probability), 
+        "end1", NA)
+    ) %>%
+    relocate(mean_age_effect)
+  
+  CPostParL_deveffect <- lh_maps$LeftCallosumPosteriorParietal %>% mutate(
+    thresh_probability = ifelse(probability < threshold, NA, probability)
+    ) %>% 
+    select(thresh_probability, regionName, region, cortex) %>%
+    arrange(thresh_probability) %>% 
+    mutate(
+      mean_age_effect = ifelse(
+        !is.na(thresh_probability), 
+        deveffects %>% filter(tractID == "Callosum_Posterior_Parietal" & node_position == "end2") %>% pull(mean_ageeffect), NA)
+      ) %>% 
+     mutate(
+      end = ifelse(
+        !is.na(thresh_probability), 
+        "end2", NA)
+    ) %>%
+    relocate(mean_age_effect)
+  
+  CPostParR_deveffect <- rh_maps$RightCallosumPosteriorParietal %>% mutate(
+    thresh_probability = ifelse(probability < threshold, NA, probability)
+    ) %>% 
+    select(thresh_probability, regionName, region, cortex) %>%
+    arrange(thresh_probability) %>% 
+    mutate(
+      mean_age_effect = ifelse(
+        !is.na(thresh_probability), 
+        deveffects %>% filter(tractID == "Callosum_Posterior_Parietal" & node_position == "end1") %>% pull(mean_ageeffect), NA)
+      ) %>% 
+     mutate(
+      end = ifelse(
+        !is.na(thresh_probability), 
+        "end1", NA)
+    ) %>%
+    relocate(mean_age_effect)
+  
+  CTempL_deveffect <- lh_maps$LeftCallosumTemporal %>% mutate(
+    thresh_probability = ifelse(probability < threshold, NA, probability)
+    ) %>% 
+    select(thresh_probability, regionName, region, cortex) %>%
+    arrange(thresh_probability) %>% 
+    mutate(
+      mean_age_effect = ifelse(
+        !is.na(thresh_probability), 
+        deveffects %>% filter(tractID == "Callosum_Temporal" & node_position == "end2") %>% pull(mean_ageeffect), NA)
+      ) %>% 
+     mutate(
+      end = ifelse(
+        !is.na(thresh_probability), 
+        "end2", NA)
+    ) %>%
+    relocate(mean_age_effect)
+  
+  CTempR_deveffect <- rh_maps$RightCallosumTemporal %>% mutate(
+    thresh_probability = ifelse(probability < threshold, NA, probability)
+    ) %>% 
+    select(thresh_probability, regionName, region, cortex) %>%
+    arrange(thresh_probability) %>% 
+    mutate(
+      mean_age_effect = ifelse(
+        !is.na(thresh_probability), 
+        deveffects %>% filter(tractID == "Callosum_Temporal" & node_position == "end1") %>% pull(mean_ageeffect), NA)
+      ) %>% 
+     mutate(
+      end = ifelse(
+        !is.na(thresh_probability), 
+        "end1", NA)
+    ) %>%
+    relocate(mean_age_effect)
+  
+  COccL_deveffect <- lh_maps$LeftCallosumOccipital %>% mutate(
+    thresh_probability = ifelse(probability < threshold, NA, probability)
+    ) %>% 
+    select(thresh_probability, regionName, region, cortex) %>%
+    arrange(thresh_probability) %>% 
+    mutate(
+      mean_age_effect = ifelse(
+        !is.na(thresh_probability), 
+        deveffects %>% filter(tractID == "Callosum_Occipital" & node_position == "end2") %>% pull(mean_ageeffect), NA)
+      ) %>% 
+     mutate(
+      end = ifelse(
+        !is.na(thresh_probability), 
+        "end2", NA)
+    ) %>%
+    relocate(mean_age_effect)
+  
+  COccR_deveffect <- rh_maps$RightCallosumOccipital %>% mutate(
+    thresh_probability = ifelse(probability < threshold, NA, probability)
+    ) %>% 
+    select(thresh_probability, regionName, region, cortex) %>%
+    arrange(thresh_probability) %>% 
+    mutate(
+      mean_age_effect = ifelse(
+        !is.na(thresh_probability), 
+        deveffects %>% filter(tractID == "Callosum_Occipital" & node_position == "end1") %>% pull(mean_ageeffect), NA)
+      ) %>% 
+     mutate(
+      end = ifelse(
+        !is.na(thresh_probability), 
+        "end1", NA)
+    ) %>%
+    relocate(mean_age_effect)
+  
+  assign(paste0("CSTL_deveffect_", dataset), CSTL_deveffect, envir = .GlobalEnv)
+  assign(paste0("CSTR_deveffect_", dataset), CSTR_deveffect, envir = .GlobalEnv)
+  
+  assign(paste0("ARCL_deveffect_", dataset), ARCL_deveffect, envir = .GlobalEnv)
+  assign(paste0("ARCR_deveffect_", dataset), ARCR_deveffect, envir = .GlobalEnv)
+  
+  assign(paste0("IFOL_deveffect_", dataset), IFOL_deveffect, envir = .GlobalEnv)
+  assign(paste0("IFOR_deveffect_", dataset), IFOR_deveffect, envir = .GlobalEnv)
+  
+  assign(paste0("ILFL_deveffect_", dataset), ILFL_deveffect, envir = .GlobalEnv)
+  assign(paste0("ILFR_deveffect_", dataset), ILFR_deveffect, envir = .GlobalEnv)
+  
+  assign(paste0("pARCL_deveffect_", dataset), pARCL_deveffect, envir = .GlobalEnv)
+  assign(paste0("pARCR_deveffect_", dataset), pARCR_deveffect, envir = .GlobalEnv)
+  
+  assign(paste0("SLFL_deveffect_", dataset), SLFL_deveffect, envir = .GlobalEnv)
+  assign(paste0("SLFR_deveffect_", dataset), SLFR_deveffect, envir = .GlobalEnv)
+  
+  assign(paste0("VOFL_deveffect_", dataset), VOFL_deveffect, envir = .GlobalEnv)
+  assign(paste0("VOFR_deveffect_", dataset), VOFR_deveffect, envir = .GlobalEnv)
+  
+  assign(paste0("COrbL_deveffect_", dataset), COrbL_deveffect, envir = .GlobalEnv)
+  assign(paste0("COrbR_deveffect_", dataset), COrbR_deveffect, envir = .GlobalEnv)
+  
+  assign(paste0("CAntFrL_deveffect_", dataset), CAntFrL_deveffect, envir = .GlobalEnv)
+  assign(paste0("CAntFrR_deveffect_", dataset), CAntFrR_deveffect, envir = .GlobalEnv)
+  
+  assign(paste0("CSupFrL_deveffect_", dataset), CSupFrL_deveffect, envir = .GlobalEnv)
+  assign(paste0("CSupFrR_deveffect_", dataset), CSupFrR_deveffect, envir = .GlobalEnv)
+  
+  assign(paste0("CMotL_deveffect_", dataset), CMotL_deveffect, envir = .GlobalEnv)
+  assign(paste0("CMotR_deveffect_", dataset), CMotR_deveffect, envir = .GlobalEnv)
+  
+  assign(paste0("CSupParL_deveffect_", dataset), CSupParL_deveffect, envir = .GlobalEnv)
+  assign(paste0("CSupParR_deveffect_", dataset), CSupParR_deveffect, envir = .GlobalEnv)
+  
+  assign(paste0("CPostParL_deveffect_", dataset), CPostParL_deveffect, envir = .GlobalEnv)
+  assign(paste0("CPostParR_deveffect_", dataset), CPostParR_deveffect, envir = .GlobalEnv)
+  
+  assign(paste0("CTempL_deveffect_", dataset), CTempL_deveffect, envir = .GlobalEnv)
+  assign(paste0("CTempR_deveffect_", dataset), CTempR_deveffect, envir = .GlobalEnv)
+  
+  
+  assign(paste0("COccL_deveffect_", dataset), COccL_deveffect, envir = .GlobalEnv)
+  assign(paste0("COccR_deveffect_", dataset), COccR_deveffect, envir = .GlobalEnv)
+}
+
+ 
+``` 
+ 
+ 
+```{r set tract names}
+lh_assoc_names <- c("ARCL", "CSTL" ,"ILFL", "IFOL", "SLFL", "pARCL", "VOFL")
+rh_assoc_names <- c("ARCR", "CSTR", "ILFR", "IFOR", "SLFR", "pARCR", "VOFR")
+lh_callosum_names <- c("COrbL", "CAntFrL" ,"CSupFrL", "CMotL", "CSupParL", "CPostParL", "CTempL", "COccL")
+rh_callosum_names <- c("COrbR", "CAntFrR" ,"CSupFrR", "CMotR", "CSupParR", "CPostParR", "CTempR", "COccR")
+```
+
+not using bin 10
+```{r make age of mat maps bin 10}
+
+HCPD_deveffects_10_agemat <- ageeffect.fdr_dfs$HCPD_ageeffects %>% filter((nodeID < 16 & nodeID > 4) | (nodeID < 95 & nodeID > 85)) %>% mutate(node_position = case_when((nodeID < 16 & nodeID > 4) ~ "end1", (nodeID < 95 & nodeID > 85) ~ "end2")) %>%
+  select(tract_label, tractID, nodeID, node_position, hemi, smooth.peak.change, smooth.decrease.offset, smooth.last.change, smooth.slowing.onset) %>%
+  group_by(tractID, node_position, hemi) %>% summarise(mean_peak_change = mean(smooth.peak.change, na.rm = T),
+                              mean_ageeffect = mean(smooth.decrease.offset, na.rm = T), # mean_ageeffect = mean_age_mat
+                              mean_last_change = mean(smooth.last.change, na.rm = T),
+                              mean_dev_slowing = mean(smooth.slowing.onset, na.rm = T))
+
+HBN_deveffects_10_agemat <- ageeffect.fdr_dfs$HBN_ageeffects %>% filter((nodeID < 16 & nodeID > 4) | (nodeID < 95 & nodeID > 85)) %>% mutate(node_position = case_when((nodeID < 16 & nodeID > 4) ~ "end1", (nodeID < 95 & nodeID > 85) ~ "end2")) %>%
+  select(tract_label, tractID, nodeID, node_position, hemi, smooth.peak.change, smooth.decrease.offset, smooth.last.change, smooth.slowing.onset) %>%
+  group_by(tractID, node_position, hemi) %>% summarise(mean_peak_change = mean(smooth.peak.change, na.rm = T),
+                              mean_ageeffect = mean(smooth.decrease.offset, na.rm = T),
+                              mean_last_change = mean(smooth.last.change, na.rm = T),
+                              mean_dev_slowing = mean(smooth.slowing.onset, na.rm = T))
+       
+ 
+PNC_deveffects_10_agemat <- ageeffect.fdr_dfs$PNC_ageeffects %>% filter((nodeID < 16 & nodeID > 4) | (nodeID < 95 & nodeID > 85)) %>% mutate(node_position = case_when((nodeID < 16 & nodeID > 4) ~ "end1", (nodeID < 95 & nodeID > 85) ~ "end2")) %>%
+  select(tract_label, tractID, nodeID, node_position, hemi, smooth.peak.change, smooth.decrease.offset, smooth.last.change, smooth.slowing.onset) %>%
+  group_by(tractID, node_position, hemi) %>% summarise(mean_peak_change = mean(smooth.peak.change, na.rm = T),
+                              mean_ageeffect = mean(smooth.decrease.offset, na.rm = T),
+                              mean_last_change = mean(smooth.last.change, na.rm = T),
+                              mean_dev_slowing = mean(smooth.slowing.onset, na.rm = T))
+  
+ 
+make_maps("HCPD", "10_agemat")
+make_maps("HBN", "10_agemat")
+make_maps("PNC", "10_agemat")
+
+```
+
+
+```{r make age of mat maps bin 5}
+
+HCPD_deveffects_5_agemat <- ageeffect.fdr_dfs$HCPD_ageeffects %>% filter((nodeID < 11 & nodeID > 4) | (nodeID < 95 & nodeID > 89)) %>% mutate(node_position = case_when((nodeID < 11 & nodeID > 4) ~ "end1", (nodeID < 95 & nodeID > 89) ~ "end2")) %>%
+  select(tract_label, tractID, nodeID, node_position, hemi, smooth.peak.change, smooth.decrease.offset, smooth.last.change, smooth.slowing.onset) %>%
+  group_by(tractID, node_position, hemi) %>% summarise(mean_peak_change = mean(smooth.peak.change, na.rm = T),
+                              mean_ageeffect = mean(smooth.decrease.offset, na.rm = T), # mean_ageeffect = mean_age_mat
+                              mean_last_change = mean(smooth.last.change, na.rm = T),
+                              mean_dev_slowing = mean(smooth.slowing.onset, na.rm = T))
+
+HBN_deveffects_5_agemat <- ageeffect.fdr_dfs$HBN_ageeffects %>% filter((nodeID < 11 & nodeID > 4) | (nodeID < 95 & nodeID > 89)) %>% mutate(node_position = case_when((nodeID < 11 & nodeID > 4) ~ "end1", (nodeID < 95 & nodeID > 89) ~ "end2")) %>%
+  select(tract_label, tractID, nodeID, node_position, hemi, smooth.peak.change, smooth.decrease.offset, smooth.last.change, smooth.slowing.onset) %>%
+  group_by(tractID, node_position, hemi) %>% summarise(mean_peak_change = mean(smooth.peak.change, na.rm = T),
+                              mean_ageeffect = mean(smooth.decrease.offset, na.rm = T),
+                              mean_last_change = mean(smooth.last.change, na.rm = T),
+                              mean_dev_slowing = mean(smooth.slowing.onset, na.rm = T))
+       
+ 
+PNC_deveffects_5_agemat <- ageeffect.fdr_dfs$PNC_ageeffects %>% filter((nodeID < 11 & nodeID > 4) | (nodeID < 95 & nodeID > 89)) %>% mutate(node_position = case_when((nodeID < 11 & nodeID > 4) ~ "end1", (nodeID < 95 & nodeID > 89) ~ "end2")) %>%
+  select(tract_label, tractID, nodeID, node_position, hemi, smooth.peak.change, smooth.decrease.offset, smooth.last.change, smooth.slowing.onset) %>%
+  group_by(tractID, node_position, hemi) %>% summarise(mean_peak_change = mean(smooth.peak.change, na.rm = T),
+                              mean_ageeffect = mean(smooth.decrease.offset, na.rm = T),
+                              mean_last_change = mean(smooth.last.change, na.rm = T),
+                              mean_dev_slowing = mean(smooth.slowing.onset, na.rm = T))
+  
+ 
+make_maps("HCPD", "5_agemat") # makes [bundle_name]_deveffect_[dataset] for each dataset and bundle. e.g. IFOL_deveffect_HCPD
+make_maps("HBN", "5_agemat")
+make_maps("PNC", "5_agemat")
+
+```
+
+ 
+# aggregate age maps
+```{r aggregate age maps} 
+# create dataframe that combines the age of maturation for all cortical endpoints across tracts (separate for hemisphere). This is done for each dataset.
+aggregate_age_maps <- function(dataset) {
+  # left hemi
+  lh_base_names <- c("COrbL_deveffect_", "CAntFrL_deveffect_", "CSupFrL_deveffect_", 
+                "CMotL_deveffect_", "CSupParL_deveffect_", "CPostParL_deveffect_", 
+                "CTempL_deveffect_", "COccL_deveffect_", "ARCL_deveffect_", 
+                "IFOL_deveffect_", "SLFL_deveffect_", "CSTL_deveffect_", 
+                "ILFL_deveffect_", "pARCL_deveffect_", "VOFL_deveffect_")
+  lh_dfs <- lapply(lh_base_names, function(name) get(paste0(name, dataset))) # tract_deveffect_dataset (age of maturation maps for each tract from make_maps)
+  lh_by_region_all <- do.call(rbind, lh_dfs) %>% group_by(region) %>% 
+    summarise(regional_mean_ageeffect = mean(mean_age_effect, na.rm=T))
+  lh_by_region_all <- lh_by_region_all %>% mutate(coverage = ifelse(is.na(regional_mean_ageeffect), "no", "yes"))
+
+  # right hemi
+  rh_base_names <- c("COrbR_deveffect_", "CAntFrR_deveffect_", "CSupFrR_deveffect_", 
+                "CMotR_deveffect_", "CSupParR_deveffect_", "CPostParR_deveffect_", 
+                "CTempR_deveffect_", "COccR_deveffect_", "ARCR_deveffect_", 
+                "IFOR_deveffect_", "SLFR_deveffect_", "CSTR_deveffect_", 
+                "ILFR_deveffect_", "pARCR_deveffect_", "VOFR_deveffect_")
+
+  rh_dfs <- lapply(rh_base_names, function(name) get(paste0(name, dataset)))
+  rh_by_region_all <- do.call(rbind, rh_dfs) %>% group_by(region) %>% 
+    summarise(regional_mean_ageeffect = mean(mean_age_effect, na.rm=T))
+    rh_by_region_all <- rh_by_region_all %>% mutate(coverage = ifelse(is.na(regional_mean_ageeffect), "no", "yes"))
+
+ 
+  write.csv(lh_by_region_all, sprintf("/cbica/projects/luo_wm_dev/output/%1$s/tract_profiles/tract_to_cortex/lh_agg_age_mat.csv", dataset), row.names=F)
+  write.csv(rh_by_region_all, sprintf("/cbica/projects/luo_wm_dev/output/%1$s/tract_profiles/tract_to_cortex/rh_agg_age_mat.csv", dataset), row.names=F)
+   
+  return(list(lh_by_region_all, rh_by_region_all))
+}
+
+region_all_HCPD <- aggregate_age_maps("HCPD")  
+lh_by_region_HCPD <- region_all_HCPD[[1]]
+rh_by_region_HCPD <- region_all_HCPD[[2]]
+
+region_all_HBN <- aggregate_age_maps("HBN")  
+lh_by_region_HBN <- region_all_HBN[[1]]
+rh_by_region_HBN <- region_all_HBN[[2]]
+
+region_all_PNC <- aggregate_age_maps("PNC")  
+lh_by_region_PNC <- region_all_PNC[[1]]
+rh_by_region_PNC <- region_all_PNC[[2]]
+
+
+
+# range(lh_by_region_HCPD$regional_mean_ageeffect, na.rm = T)
+ 
+# range(lh_by_region_HCPD$regional_mean_ageeffect, na.rm = T)
+# range(rh_by_region_HCPD$regional_mean_ageeffect, na.rm = T)
+# range(lh_by_region_HBN$regional_mean_ageeffect, na.rm = T)
+# range(rh_by_region_HBN$regional_mean_ageeffect, na.rm = T)
+# range(lh_by_region_PNC$regional_mean_ageeffect, na.rm = T)
+# range(rh_by_region_PNC$regional_mean_ageeffect, na.rm = T)
+# overall range is 15 to 23 or so
+```
+
+
+```{r plot aggregated map, fig.height = 10, fig.width = 10}
+
+
+plot_aggregated_maps <- function(lh_by_region_df, rh_by_region_df, ylim1, ylim2, dataset) {
+  hemi = "left"
+  cortical_pos <- c("left lateral", "left medial")
+  lh_agg <- ggplot() + 
+      geom_brain(data = lh_by_region_df, atlas = glasser, 
+                 mapping=aes(fill = regional_mean_ageeffect, colour = coverage, size = I(0.4)), 
+                 show.legend=FALSE, 
+                 hemi = hemi,
+                 position = position_brain(cortical_pos)) + 
+    
+      paletteer::scale_fill_paletteer_c("grDevices::RdYlBu", na.value = "grey100", limits = c(ylim1, ylim2), oob=squish, direction = -1) +  
+      scale_colour_manual(values = c(yes = "gray30", no = "grey84")) + # limits = c(0.16, 0.4)
+      theme_void() +
+      theme(legend.position = "none",
+            legend.key.height = unit(1, 'cm'),
+            legend.key.width = unit(2.3, 'cm'),
+            legend.margin=margin(0,0,0,0),
+            legend.text = element_text(size=24),
+            legend.title = element_blank(),
+            plot.margin = unit(c(0.1, 0.1, 0.1, 0.1), "cm"),
+            plot.title = element_text(size=20, hjust = 0.5)) + guides(
+    colour = "none",  # Remove legend for color
+    size = "none"     # Remove legend for size if not needed
+  )
+
+
+  hemi = "right"
+  cortical_pos <- c("right lateral", "right medial")
+  rh_agg <- ggplot() + 
+        geom_brain(data = rh_by_region_df, atlas = glasser, 
+                   mapping=aes(fill = regional_mean_ageeffect, colour = coverage, size = I(0.4)), 
+                   show.legend=FALSE, 
+                   hemi = hemi,
+                   position = position_brain(cortical_pos)) + 
+      
+        paletteer::scale_fill_paletteer_c("grDevices::RdYlBu", na.value = "grey100", limits = c(ylim1, ylim2), oob=squish, direction = -1) +  
+        scale_colour_manual(values = c(yes = "gray30", no = "grey84")) + 
+        theme_void() +
+        theme(legend.position = "none",
+              legend.key.height = unit(1, 'cm'),
+              legend.key.width = unit(2.3, 'cm'),
+              legend.margin=margin(0,0,0,0),
+              legend.text = element_text(size=24),
+              legend.title = element_blank(),
+              plot.margin = unit(c(0.1, 0.1, 0.1, 0.1), "cm"),
+              plot.title = element_text(size=20, hjust = 0.5))  + guides(
+      colour = "none",  # Remove legend for color
+      size = "none"     # Remove legend for size if not needed
+    )
+  
+  
+  agg_plots <- ggarrange(lh_agg, rh_agg, ncol=1, nrow = 2)
+  agg_final <- annotate_figure(agg_plots, top = text_grob(dataset, 
+                 color = "black", size = 20, vjust = -0.75)) + theme(plot.margin = unit(c(1, 0, 0, 0), "cm")) 
+
+  return(agg_final)
+  
+}
+```
+
+
+```{r plot aggregated maps, fig.height = 8, fig.width = 15}
+
+agg_plot_HCPD <- plot_aggregated_maps(lh_by_region_HCPD, rh_by_region_HCPD, ylim1 = 15, ylim2 = 23, dataset = "HCP-D")
+#ggsave(paste0(png_dir, "/", "HCPD", "/","dev_aggregated_age_mat.png"), agg_plot_HCPD , height = 10, width = 10, units = "in")
+
+agg_plot_HBN <- plot_aggregated_maps(lh_by_region_HBN, rh_by_region_HBN, ylim1 = 15, ylim2 = 23, dataset = "HBN")
+#ggsave(paste0(png_dir, "/", "HBN", "/","dev_aggregated_age_mat.png"), agg_plot_HBN , height = 10, width = 10, units = "in")
+ 
+agg_plot_PNC <- plot_aggregated_maps(lh_by_region_PNC, rh_by_region_PNC, ylim1 = 15, ylim2 = 23, dataset = "PNC")
+#ggsave(paste0(png_dir, "/", "PNC", "/","dev_aggregated_age_mat.png"), agg_plot_PNC , height = 10, width = 10, units = "in")
+
+agg_plots <- ggarrange(agg_plot_HCPD, agg_plot_HBN, agg_plot_PNC, ncol = 3)
+
+
+hemi = "left"
+cortical_pos <- c("left lateral", "left medial")
+lh_agg <- ggplot() + 
+      geom_brain(data = lh_by_region_HCPD, atlas = glasser, 
+                 mapping=aes(fill = regional_mean_ageeffect, colour = coverage, size = I(0.4)), 
+                 show.legend=TRUE, 
+                 hemi = hemi,
+                 position = position_brain(cortical_pos)) + 
+      paletteer::scale_fill_paletteer_c("grDevices::RdYlBu", na.value = "grey100", limits = c(15, 23), oob=squish, direction = -1) +  
+      scale_colour_manual(values = c(yes = "gray30", no = "grey84")) + # limits = c(0.16, 0.4)
+      theme_void() +
+      theme(legend.position = "bottom",
+            legend.key.height = unit(1, 'cm'),
+            legend.key.width = unit(2.3, 'cm'),
+            legend.margin=margin(0,0,0,0),
+            legend.text = element_text(size=24),
+            legend.title = element_blank(),
+            plot.margin = unit(c(0.1, 0.1, 0.1, 0.1), "cm"),
+            plot.title = element_text(size=20, hjust = 0.5)) + guides(
+    colour = "none",  # Remove legend for color
+    size = "none"     # Remove legend for size if not needed
+  )
+
+
+legend <- get_legend(lh_agg + theme(legend.position = "bottom",
+                                              legend.key.height = unit(1, 'cm'),
+                                              legend.key.width = unit(2, 'cm'),
+                                              legend.margin=margin(-50,0,0,0),
+                                              legend.text = element_text(size=20),
+                                              legend.title = element_blank()))
+
+legend_title <- textGrob(expression(paste("Age of Maturation")), 
+                   gp=gpar(col="black", fontsize=20), hjust = 0.5, vjust = -5) 
+legend_with_title <- arrangeGrob(legend, legend_title, ncol = 1, nrow = 2)
+
+agg_plots_with_legend <- ggarrange(agg_plots, legend_with_title, ncol = 1, nrow = 2)
+    
+agg_final <- annotate_figure(agg_plots_with_legend, top = text_grob("Aggregated Age of Maturation Map Across Tracts", 
+                 color = "black", face = "bold", size = 20, vjust = -0.75)) + theme(plot.margin = unit(c(1, 0, 0, 0), "cm")) 
+  
+agg_final
+
+#ggsave(paste0(png_dir, "/", "all_datasets", "/","dev_aggregated_age_mat.png"), agg_final , height = 8, width = 15, units = "in")
+
+
+bilat_by_region_HCPD <- rbind(lh_by_region_HCPD, rh_by_region_HCPD)
+bilat_by_region_HBN <- rbind(lh_by_region_HBN, rh_by_region_HBN)
+bilat_by_region_PNC <- rbind(lh_by_region_PNC, rh_by_region_PNC)
+
+cor.test(bilat_by_region_HCPD$regional_mean_ageeffect, bilat_by_region_HBN$regional_mean_ageeffect) # HCPD-HBN: r = 0.37, pspin = 
+cor.test(bilat_by_region_HCPD$regional_mean_ageeffect, bilat_by_region_PNC$regional_mean_ageeffect) # HCPD-PNC: r = 0.80, pspin = 
+cor.test(bilat_by_region_HBN$regional_mean_ageeffect, bilat_by_region_PNC$regional_mean_ageeffect) # HBN-PNC: r = 0.44, pspin = 
+
+```
+average age of maturation map across datasets
+```{r avg age of mat across all dataset, fig.height = 5, fig.width = 8}
+
+lh_HCPD_merge <- lh_by_region_HCPD %>% rename(HCPD_mean_ageeffect = regional_mean_ageeffect)
+lh_HBN_merge <- lh_by_region_HBN %>% rename(HBN_mean_ageeffect = regional_mean_ageeffect)
+lh_PNC_merge <- lh_by_region_PNC %>% rename(PNC_mean_ageeffect = regional_mean_ageeffect)
+
+merge_temp <- merge(lh_HCPD_merge, lh_HBN_merge, by = "region")
+lh_all_datasets_ageMat <- merge(merge_temp, lh_PNC_merge, by = "region")
+lh_all_datasets_ageMat <- lh_all_datasets_ageMat %>%
+  mutate(regional_mean_ageeffect = rowMeans(select(., HCPD_mean_ageeffect, HBN_mean_ageeffect, PNC_mean_ageeffect), na.rm = TRUE))
+
+
+rh_HCPD_merge <- rh_by_region_HCPD %>% rename(HCPD_mean_ageeffect = regional_mean_ageeffect)
+rh_HBN_merge <- rh_by_region_HBN %>% rename(HBN_mean_ageeffect = regional_mean_ageeffect)
+rh_PNC_merge <- rh_by_region_PNC %>% rename(PNC_mean_ageeffect = regional_mean_ageeffect)
+
+merge_temp <- merge(rh_HCPD_merge, rh_HBN_merge, by = "region")
+rh_all_datasets_ageMat <- merge(merge_temp, rh_PNC_merge, by = "region")
+rh_all_datasets_ageMat <- rh_all_datasets_ageMat %>%
+  mutate(regional_mean_ageeffect = rowMeans(select(., HCPD_mean_ageeffect, HBN_mean_ageeffect, PNC_mean_ageeffect), na.rm = TRUE))
+
+plot_aggregated_maps(lh_all_datasets_ageMat, rh_all_datasets_ageMat, ylim1 = 15, ylim2 = 23, dataset = "All Datasets")
+
+
+```
+
+binarized age of maturation map for each dataset
+```{r plot aggregated binary maps, fig.height = 5, fig.width = 15}
+
+lh_by_region_HCPD_binary <- lh_by_region_HCPD %>%
+  mutate(regional_mean_ageeffect = case_when(
+    regional_mean_ageeffect == max(regional_mean_ageeffect, na.rm = TRUE) ~ 0,
+    regional_mean_ageeffect < max(regional_mean_ageeffect, na.rm = TRUE) ~ 1,
+    TRUE ~ NA_real_
+  )) 
+
+lh_by_region_PNC_binary <- lh_by_region_PNC %>%
+  mutate(regional_mean_ageeffect = case_when(
+    regional_mean_ageeffect == max(regional_mean_ageeffect, na.rm = TRUE) ~ 0,
+    regional_mean_ageeffect < max(regional_mean_ageeffect, na.rm = TRUE) ~ 1,
+    TRUE ~ NA_real_
+  )) 
+
+lh_by_region_HBN_binary <- lh_by_region_HBN %>%
+  mutate(regional_mean_ageeffect = case_when(
+    regional_mean_ageeffect == max(regional_mean_ageeffect, na.rm = TRUE) ~ 0,
+    regional_mean_ageeffect < max(regional_mean_ageeffect, na.rm = TRUE) ~ 1,
+    TRUE ~ NA_real_
+  )) 
+
+
+rh_by_region_HCPD_binary <- rh_by_region_HCPD %>%
+  mutate(regional_mean_ageeffect = case_when(
+    regional_mean_ageeffect == max(regional_mean_ageeffect, na.rm = TRUE) ~ 0,
+    regional_mean_ageeffect < max(regional_mean_ageeffect, na.rm = TRUE) ~ 1,
+    TRUE ~ NA_real_
+  )) 
+
+rh_by_region_PNC_binary <- rh_by_region_PNC %>%
+  mutate(regional_mean_ageeffect = case_when(
+    regional_mean_ageeffect == max(regional_mean_ageeffect, na.rm = TRUE) ~ 0,
+    regional_mean_ageeffect < max(regional_mean_ageeffect, na.rm = TRUE) ~ 1,
+    TRUE ~ NA_real_
+  )) 
+
+rh_by_region_HBN_binary <- rh_by_region_HBN %>%
+  mutate(regional_mean_ageeffect = case_when(
+    regional_mean_ageeffect == max(regional_mean_ageeffect, na.rm = TRUE) ~ 0,
+    regional_mean_ageeffect < max(regional_mean_ageeffect, na.rm = TRUE) ~ 1,
+    TRUE ~ NA_real_
+  )) 
+
+ 
+color1 = "#C73000FF"
+color2 = "#009DA8FF"
+
+plot_aggregated_binary_maps <- function(lh_by_region_df, rh_by_region_df, ylim1, ylim2, dataset) {
+  hemi = "left"
+  cortical_pos <- c("left lateral", "left medial")
+  lh_agg <- ggplot() + 
+      geom_brain(data = lh_by_region_df, atlas = glasser, 
+                 mapping=aes(fill = regional_mean_ageeffect, colour = coverage, size = I(0.4)), 
+                 show.legend=FALSE, 
+                 hemi = hemi,
+                 position = position_brain(cortical_pos)) + 
+    
+      scale_fill_manual(values = setNames(c(color1, color2), c("0", "1")), na.value = "white") +   
+      scale_colour_manual(values = c(yes = "gray30", no = "grey84")) + # limits = c(0.16, 0.4)
+      theme_void() +
+      theme(legend.position = "none",
+            legend.key.height = unit(1, 'cm'),
+            legend.key.width = unit(2.3, 'cm'),
+            legend.margin=margin(0,0,0,0),
+            legend.text = element_text(size=24),
+            legend.title = element_blank(),
+            plot.margin = unit(c(0.1, 0.1, 0.1, 0.1), "cm"),
+            plot.title = element_text(size=20, hjust = 0.5)) + guides(
+    colour = "none",  # Remove legend for color
+    size = "none"     # Remove legend for size if not needed
+  )
+
+
+  hemi = "right"
+  cortical_pos <- c("right lateral", "right medial")
+  rh_agg <- ggplot() + 
+        geom_brain(data = rh_by_region_df, atlas = glasser, 
+                   mapping=aes(fill = regional_mean_ageeffect, colour = coverage, size = I(0.4)), 
+                   show.legend=FALSE, 
+                   hemi = hemi,
+                   position = position_brain(cortical_pos)) + 
+      
+       scale_fill_manual(values = setNames(c(color1, color2), c("0", "1")), na.value = "white") +   
+        scale_colour_manual(values = c(yes = "gray30", no = "grey84")) + 
+        theme_void() +
+        theme(legend.position = "bottom",
+              legend.key.height = unit(1, 'cm'),
+              legend.key.width = unit(2.3, 'cm'),
+              legend.margin=margin(0,0,0,0),
+              legend.text = element_text(size=24),
+              legend.title = element_blank(),
+              plot.margin = unit(c(0.1, 0.1, 0.1, 0.1), "cm"),
+              plot.title = element_text(size=20, hjust = 0.5))  + guides(
+      colour = "none",  # Remove legend for color
+      size = "none"     # Remove legend for size if not needed
+    )
+  
+  
+  agg_plots <- ggarrange(lh_agg, rh_agg, ncol=1, nrow = 2)
+  agg_final <- annotate_figure(agg_plots, top = text_grob(dataset, 
+                 color = "black", size = 20, vjust = -0.75)) + theme(plot.margin = unit(c(1, 0, 0, 0), "cm")) 
+
+  return(agg_final)
+  
+}
+
+  
+lh_by_region_HCPD_binary$regional_mean_ageeffect <- as.character(lh_by_region_HCPD_binary$regional_mean_ageeffect)
+rh_by_region_HCPD_binary$regional_mean_ageeffect <- as.character(rh_by_region_HCPD_binary$regional_mean_ageeffect)
+
+lh_by_region_PNC_binary$regional_mean_ageeffect <- as.character(lh_by_region_PNC_binary$regional_mean_ageeffect)
+rh_by_region_PNC_binary$regional_mean_ageeffect <- as.character(rh_by_region_PNC_binary$regional_mean_ageeffect)
+
+
+lh_by_region_HBN_binary$regional_mean_ageeffect <- as.character(lh_by_region_HBN_binary$regional_mean_ageeffect)
+rh_by_region_HBN_binary$regional_mean_ageeffect <- as.character(rh_by_region_HBN_binary$regional_mean_ageeffect)
+
+agg_binary_plot_HCPD <- plot_aggregated_binary_maps(lh_by_region_HCPD_binary, rh_by_region_HCPD_binary, ylim1 = 15, ylim2 = 23, dataset = "HCP-D")
+#ggsave(paste0(png_dir, "/", "HCPD", "/","dev_agg_binaryregated_age_mat.png"), agg_binary_plot_HCPD , height = 10, width = 10, units = "in")
+
+agg_binary_plot_HBN <- plot_aggregated_binary_maps(lh_by_region_HBN_binary, rh_by_region_HBN_binary, ylim1 = 15, ylim2 = 23, dataset = "HBN")
+#ggsave(paste0(png_dir, "/", "HBN", "/","dev_agg_binaryregated_age_mat.png"), agg_binary_plot_HBN , height = 10, width = 10, units = "in")
+ 
+agg_binary_plot_PNC <- plot_aggregated_binary_maps(lh_by_region_PNC_binary, rh_by_region_PNC_binary, ylim1 = 15, ylim2 = 23, dataset = "PNC")
+#ggsave(paste0(png_dir, "/", "PNC", "/","dev_agg_binaryregated_age_mat.png"), agg_binary_plot_PNC , height = 10, width = 10, units = "in")
+
+agg_binary_plots <- ggarrange(agg_binary_plot_HCPD, agg_binary_plot_HBN, agg_binary_plot_PNC, ncol = 3)
+agg_binary_plots
+
+# red = not matured
+# blue = matured
+
+cor.test(as.numeric(lh_by_region_HCPD_binary$regional_mean_ageeffect), as.numeric(lh_by_region_HBN_binary$regional_mean_ageeffect))
+cor.test(as.numeric(lh_by_region_HCPD_binary$regional_mean_ageeffect), as.numeric(lh_by_region_PNC_binary$regional_mean_ageeffect))
+cor.test(as.numeric(lh_by_region_HBN_binary$regional_mean_ageeffect), as.numeric(lh_by_region_PNC_binary$regional_mean_ageeffect))
+
+
+cor.test(as.numeric(rh_by_region_HCPD_binary$regional_mean_ageeffect), as.numeric(rh_by_region_HBN_binary$regional_mean_ageeffect))
+cor.test(as.numeric(rh_by_region_HCPD_binary$regional_mean_ageeffect), as.numeric(rh_by_region_PNC_binary$regional_mean_ageeffect))
+cor.test(as.numeric(rh_by_region_HBN_binary$regional_mean_ageeffect), as.numeric(rh_by_region_PNC_binary$regional_mean_ageeffect))
+```
+
+
+
+# Avg difference in S-A axis rank between tract ends vs. Difference in age effect between tract ends (delta-delta)
+```{r load SA axis}
+# i'm bringing SA back (yeah)
+glasser_SAaxis <- read.csv("/cbica/projects/luo_wm_dev/SAaxis/glasser_SAaxis.csv")
+glasser_SAaxis <- glasser_SAaxis %>% select(SA.axis_rank, label)
+glasser_SAaxis$regionName <- gsub("_ROI", "", glasser_SAaxis$label)
+glasser_SAaxis$regionName <- gsub("^(.)_(.*)$", "\\2_\\1", glasser_SAaxis$region)
+```
+
+
+```{r functions for computing SA rank}
+
+# for each tract's endpoint, compute the mean S-A axis rank
+merge_SAaxis <- function(bundle_name, df_to_return = "endpoints_only", dataset, perm_SAaxis = NULL) {
+  df <- get(paste0(bundle_name, "_deveffect_", dataset))
+  if(is.null(perm_SAaxis)) {
+      merged_df <- merge(df, glasser_SAaxis,  by = "regionName")
+  } else if (!is.null(perm_SAaxis)) {
+     merged_df <- cbind(df, perm_SAaxis)
+  }
+  merged_df <- merged_df %>% arrange(thresh_probability)
+  
+  mean_df <- merged_df %>% group_by(end) %>% summarise(mean_SA = mean(SA.axis_rank, na.rm = T),
+                                                       median_SA = median(SA.axis_rank, na.rm = T),
+                                                      # sd_SA = sd(SA.axis_rank, na.rm = T),
+                                                       age_effect = mean(mean_age_effect)) %>% mutate(bundle_name = bundle_name)
+  
+  if(df_to_return == "all_regions") {
+    return(merged_df)
+  } else {
+    return(mean_df)
+  }
+}
+
+
+compute_endpoint_diffs <- function(bundle_name, lh_all_endpoints, rh_all_endpoints) {
+ 
+  callosum <- c("COrb", "CAntFr", "CSupFr", "CMot", "CSupPar", "CPostPar", "CTemp", "COcc")
+
+  if (any(sapply(callosum, function(x) grepl(x, bundle_name)))) {
+    bundle_type = "callosum"
+  } else {
+    bundle_type = "assoc"
+  }
+  
+  # for assocation bundles, get the difference in age of maturation and diff in mean SA
+  if(bundle_type == "assoc") {
+    bundle_name_string <- paste0(bundle_name) # ugh R idiosyncracies. 
+    if(grepl("L$", bundle_name)) {
+      SAranks_endpoints <- lh_all_endpoints %>% filter(bundle_name == bundle_name_string) # can't have bundle_name == bundle_name bc it confuses dplyr
+    } else{
+      SAranks_endpoints <- rh_all_endpoints  %>% filter(bundle_name == bundle_name_string)
+    }
+    
+    endpoints_diffs <- SAranks_endpoints %>% filter(if_all(everything(), ~ !is.na(.))) %>%
+        reframe(mean_SA_diff = mean_SA[end == "end1"] - mean_SA[end == "end2"],
+          age_effect_diff = age_effect[end == "end1"] - age_effect[end == "end2"]) %>% 
+      mutate(bundle_name = bundle_name)
+    
+    # for callosum bundles, get the difference in age of maturation and diff in mean SA
+  } else if (bundle_type == "callosum") {
+    bundle_name_lh =  paste0(substr(bundle_name, 1, nchar(bundle_name) - 1), "L")
+    bundle_name_rh =  paste0(substr(bundle_name, 1, nchar(bundle_name) - 1), "R")
+    
+    SAranks_endpoints1 <- lh_all_endpoints %>% filter(bundle_name == bundle_name_lh)  
+    SAranks_endpoints2 <- rh_all_endpoints %>% filter(bundle_name == bundle_name_rh) 
+    SAranks_endpoints <- rbind(SAranks_endpoints1, SAranks_endpoints2)
+    
+    endpoints_diffs <- SAranks_endpoints %>% filter(if_all(everything(), ~ !is.na(.))) %>%
+        reframe(mean_SA_diff = mean_SA[end == "end1"] - mean_SA[end == "end2"],
+          age_effect_diff = age_effect[end == "end1"] - age_effect[end == "end2"]) %>% 
+      mutate(bundle_name = bundle_name)
+  }
+  
+ return(endpoints_diffs)
+}
+
+# compute mean SA rank for each cortical endpoint
+compute_mean_SA <- function(dataset, SAaxis.perm = NULL) {
+  lh_names <- c("ARCL", "CSTL" ,"ILFL", "IFOL", "SLFL", "pARCL", "VOFL", 
+                "COrbL", "CAntFrL" ,"CSupFrL", "CMotL", "CSupParL", "CPostParL", "CTempL", "COccL")
+  if (is.null(SAaxis.perm)) {
+    lh_SAranks <- lapply(lh_names, merge_SAaxis, "all_regions", dataset=dataset)
+    lh_SAranks_endpoints <- lapply(lh_names, merge_SAaxis, "endpoints_only", dataset=dataset)
+  } else if (!is.null(SAaxis.perm)) {
+    lh_SAranks <- lapply(lh_names, merge_SAaxis, perm_SAaxis = data.frame(SAaxis.perm) %>% setNames("SA.axis_rank"), 
+                       df_to_return = "all_regions", dataset = dataset)
+    lh_SAranks_endpoints <- lapply(lh_names, merge_SAaxis, perm_SAaxis = data.frame(SAaxis.perm) %>% setNames("SA.axis_rank"), 
+                                 df_to_return = "endpoints_only", dataset=dataset) 
+  }
+  lh_SAranks_endpoints <- lapply(lh_SAranks_endpoints, function(df) na.omit(df))
+   
+  rh_names <- c("ARCR", "CSTR" ,"ILFR", "IFOR", "SLFR", "pARCR", "VOFR", 
+                "COrbR", "CAntFrR" ,"CSupFrR", "CMotR", "CSupParR", "CPostParR", "CTempR", "COccR")
+  if (is.null(SAaxis.perm)) {
+    rh_SAranks <- lapply(rh_names, merge_SAaxis, "all_regions", dataset=dataset)
+    rh_SAranks_endpoints <- lapply(rh_names, merge_SAaxis, "endpoints_only", dataset=dataset)
+  } else if (!is.null(SAaxis.perm)) {
+    rh_SAranks <- lapply(rh_names, merge_SAaxis, perm_SAaxis = data.frame(SAaxis.perm) %>% setNames("SA.axis_rank"), 
+                       df_to_return = "all_regions", dataset = dataset)
+    rh_SAranks_endpoints <- lapply(rh_names, merge_SAaxis, perm_SAaxis = data.frame(SAaxis.perm) %>% setNames("SA.axis_rank"), 
+                                 df_to_return = "endpoints_only", dataset=dataset) 
+  }
+  rh_SAranks_endpoints <- lapply(rh_SAranks_endpoints, function(df) na.omit(df))
+  
+  names(lh_SAranks) <- lh_names
+  names(rh_SAranks) <- rh_names
+  
+  names(lh_SAranks_endpoints) <- lh_names
+  names(rh_SAranks_endpoints) <- rh_names
+   
+  lh_all_endpoints <- bind_rows(lh_SAranks_endpoints) %>% filter(!is.na(end))
+  rh_all_endpoints <- bind_rows(rh_SAranks_endpoints) %>% filter(!is.na(end))
+  
+  all_endpoints <- rbind(lh_all_endpoints, rh_all_endpoints) %>% arrange(bundle_name)
+  
+  return(list(lh_all_endpoints, rh_all_endpoints, all_endpoints))
+  
+}
+
+
+
+plot_meanSA_by_age_mat <- function(dataset, annot_text) {
+  all_endpoints <- get(paste0("all_endpoints_", dataset))
+  title = gsub("PD", "P-D", dataset) # for HCPD
+  SA_plot <- ggplot(all_endpoints, aes(x = mean_SA, y = age_effect, label = bundle_name)) +
+  geom_point(aes(fill = mean_SA, color = mean_SA, shape = end), size = 4) + 
+    paletteer::scale_fill_paletteer_c("grDevices::RdYlBu", direction = -1, 
+                                      limits = c(min(all_endpoints$mean_SA), max(all_endpoints$mean_SA)), oob = squish) + 
+    paletteer::scale_color_paletteer_c("grDevices::RdYlBu", direction = -1,
+                                       limits = c(min(all_endpoints$mean_SA), max(all_endpoints$mean_SA)), oob = squish) +
+    scale_shape_manual(values = c(19,1)) + 
+  geom_smooth(data = all_endpoints, method='lm', se=TRUE, fill=alpha(c("gray70"),.9), col="black") + 
+  #stat_cor(method = "pearson", label.x = 25, label.y = 26, size = 6) + 
+  #ggrepel::geom_text_repel(position = position_jitter(seed = 3)) + # Add labels
+    ggrepel::geom_text_repel(
+    position = position_jitter(seed = 3), 
+    box.padding = 0.5,  # Increase space around labels
+    point.padding = 0.5,  # Increase space around points
+    segment.color = "gray",  # Line color connecting point to label
+    segment.size = 0.5,  # Line thickness
+    max.overlaps = Inf 
+  )  + 
+  annotate(geom="text", x=100, y=26, label=annot_text, color="black", size=5) + 
+  labs(title = title) + theme_classic() +
+  theme(legend.position = "none",
+    plot.title = element_text(hjust = 0.5, size = 20),
+    axis.title = element_blank(),
+    axis.text.x = element_text(size = 20),
+    axis.text.y = element_text(size = 20)) + xlim(15, 340) + ylim(14, 26) + guides(shape = guide_legend("Endpoint"), color = FALSE, fill = FALSE) 
+  return(SA_plot)
+}
+```
+
+THE MONEY IS WITH AGE OF MATURATION YALLLLLL
+```{r compute SA rank}
+
+all_endpoints_HCPD <- compute_mean_SA("HCPD")  
+lh_all_endpoints_HCPD <- all_endpoints_HCPD[[1]]
+rh_all_endpoints_HCPD <- all_endpoints_HCPD[[2]]
+all_endpoints_HCPD <- all_endpoints_HCPD[[3]]
+
+all_endpoints_HBN <- compute_mean_SA("HBN")  
+lh_all_endpoints_HBN <- all_endpoints_HBN[[1]]
+rh_all_endpoints_HBN <- all_endpoints_HBN[[2]]
+all_endpoints_HBN <- all_endpoints_HBN[[3]]
+
+all_endpoints_PNC <- compute_mean_SA("PNC")  
+lh_all_endpoints_PNC <- all_endpoints_PNC[[1]]
+rh_all_endpoints_PNC <- all_endpoints_PNC[[2]]
+all_endpoints_PNC <- all_endpoints_PNC[[3]]
+ 
+  
+```
+
+
+```{r spin test permute SA axis recompute difference}
+
+source("/cbica/projects/luo_wm_dev/software/spin_test/perm.sphere.p.R")
+perm.id.full <- readRDS("/cbica/projects/luo_wm_dev/software/spin_test/rotate_parcellation/glasser.coords_sphericalrotations_N10k.rds")
+
+# spin test: spin the S-A axis then recompute average S-A rank for each end. 
+# spun p-value for t-test
+# @param SAaxis, vector of S-A axis ranks
+perm.sphere.SAaxis <- function(SAaxis, perm.id, dataset, spun_ttest = FALSE, alternative = "greater", var.equal = FALSE) {
+
+  nroi = dim(perm.id)[1]  # number of regions
+  nperm = dim(perm.id)[2] # number of permutations
+  
+  # spin SA axis: permutation of measures
+  SAaxis.perm = array(NA,dim=c(nroi,nperm))
+  for (r in 1:nperm) {
+    for (i in 1:nroi) {
+      SAaxis.perm[i,r] = SAaxis[perm.id[i,r]]
+    }
+  }
+
+  # if just want to compute spun p-value for age of maturation vs mean S-A rank for all cortical endpoints: 
+  if (spun_ttest == FALSE) { 
+    # empirical correlation
+    all_endpoints <- get(paste0("all_endpoints_", dataset))
+    rho.emp = cor(all_endpoints$mean_SA, all_endpoints$age_effect, method = "pearson", use="complete.obs")  
+    
+    # correlation between permuted S-A axis and age of maturation
+    rho.null.SAaxis = vector(length=nperm)
+    for (r in 1:nperm) {
+      print(r)
+      # merging of permuted S-A axis to age of maturation df
+      perm_mean_SAaxis <- compute_mean_SA(dataset, SAaxis.perm[,r]) # merge permuted S-A rank with age of maturation AND compute mean permuted S-A ranks
+      perm_mean_SAaxis <- perm_mean_SAaxis[[3]] # get all_endpoints df
+      rho.null.SAaxis[r] = cor(perm_mean_SAaxis$mean_SA, perm_mean_SAaxis$age_effect, method="pearson", use="complete.obs")
+    }
+     # p-value definition depends on the sign of the empirical correlation
+    if (rho.emp>0) {
+      p.perm = sum(rho.null.SAaxis>rho.emp)/nperm
+    } else { 
+      p.perm = sum(rho.null.SAaxis<rho.emp)/nperm
+    } 
+    return(list(p.perm = p.perm, rho.emp = rho.emp))
+    # return p-value for the correlation between age of maturation vs. mean S-A rank for cortical endpoint
+    
+  } else if(spun_ttest == TRUE) {
+   
+    all_endpoints <- get(paste0("all_endpoints_", dataset))
+    all_endpoints_binary <- all_endpoints
+    max_value <- max(all_endpoints_binary$age_effect, na.rm = TRUE)
+    all_endpoints_binary$age_effect[all_endpoints_binary$age_effect == max_value] <- NA
+    all_endpoints_binary <- all_endpoints_binary %>% mutate(maturation_status = ifelse(is.na(age_effect), 0, 1)) # 0 = not matured, 1 = matured
+    
+    # empirical correlation
+    rho.emp = cor(all_endpoints_binary$mean_SA, all_endpoints_binary$age_effect, method = "spearman", use="complete.obs")  
+    
+    # correlation between permuted S-A axis and age of maturation
+    rho.null.SAaxis = vector(length=nperm)
+    for (r in 1:nperm) {
+      print(r)
+      # merging of permuted S-A axis to age of maturation df
+      perm_mean_SAaxis <- compute_mean_SA(dataset, SAaxis.perm[,r]) # merge permuted S-A rank with age of maturation AND compute mean permuted S-A ranks
+      perm_mean_SAaxis <- perm_mean_SAaxis[[3]] # get all_endpoints df
+      max_value_perm <- max(perm_mean_SAaxis$age_effect, na.rm = TRUE)
+      perm_mean_SAaxis$age_effect[perm_mean_SAaxis$age_effect == max_value_perm] <- NA
+      rho.null.SAaxis[r] = cor(perm_mean_SAaxis$mean_SA, perm_mean_SAaxis$age_effect, method="spearman", use="complete.obs")
+    }
+     # p-value definition depends on the sign of the empirical correlation
+    if (rho.emp>0) {
+      p.perm.cor = sum(rho.null.SAaxis>rho.emp)/nperm
+    } else { np
+      p.perm.cor = sum(rho.null.SAaxis<rho.emp)/nperm
+    } 
+    
+    # empirical t value
+    t.emp <- t.test(all_endpoints_binary$mean_SA[which(all_endpoints_binary$maturation_status == 0)], # compare differences in sa rank
+                  all_endpoints_binary$mean_SA[which(all_endpoints_binary$maturation_status == 1)], 
+                  alternative = alternative, var.equal = var.equal)$statistic # hypothesis is non-matured tract ends have greater S-A rank
+    
+    
+    # t-test between permuted S-A axis differences and age of maturation differences between endpoints
+    t.null.SAaxis = vector(length=nperm)
+    for (r in 1:nperm) {
+      print(paste0(r, " t-test"))
+      # merging of permuted S-A axis to age of maturation df
+      perm_mean_SAaxis <- compute_mean_SA(dataset, SAaxis.perm[,r]) # merge permuted S-A rank with age of maturation AND compute mean permuted S-A ranks
+      perm_mean_SAaxis <- perm_mean_SAaxis[[3]] # get all_endpoints df
+      max_value_perm <- max(perm_mean_SAaxis$age_effect, na.rm = TRUE)
+      perm_mean_SAaxis$age_effect[perm_mean_SAaxis$age_effect == max_value_perm] <- NA
+      perm_mean_SAaxis <- perm_mean_SAaxis %>% mutate(maturation_status = ifelse(is.na(age_effect), 0, 1)) # 0 = not matured, 1 = matured
+       
+      # calculate t-test and permuted t-test: do tract ends that have NOT matured between endpoints actually have greater s-a ranks than tract ends that have matured?? 
+      t.null.SAaxis[r] <- t.test(perm_mean_SAaxis$mean_SA[which(all_endpoints_binary$maturation_status == 0)], 
+                                 perm_mean_SAaxis$mean_SA[which(all_endpoints_binary$maturation_status == 1)], 
+                                 alternative = alternative, var.equal = var.equal)$statistic
+    }
+    
+    # p-value definition  
+    if (t.emp>0) {
+      p.perm.t = sum(t.null.SAaxis>t.emp)/nperm
+    } else { 
+      p.perm.t= sum(t.null.SAaxis<t.emp)/nperm
+    } 
+  
+    return(list(rho.emp = rho.emp, p.perm.cor = p.perm.cor, t.emp = t.emp, p.perm.t = p.perm.t))
+  }
+}
+ 
+
+# spin test for delta-delta: spin the S-A axis then recompute average S-A rank for each end. Then calculate difference in rank for delta-delta analysis. Then compute t.test.
+# spun p-value for t-test
+# @param SAaxis, vector of S-A axis ranks
+perm.sphere.SAaxis_delta <- function(SAaxis, perm.id, dataset, alternative = "less", var.equal = FALSE) {
+
+  nroi = dim(perm.id)[1]  # number of regions
+  nperm = dim(perm.id)[2] # number of permutations
+  
+  # spin SA axis: permutation of measures
+  SAaxis.perm = array(NA,dim=c(nroi,nperm))
+  for (r in 1:nperm) {
+    for (i in 1:nroi) {
+      SAaxis.perm[i,r] = SAaxis[perm.id[i,r]]
+    }
+  }
+
+  # if want to compute spun p-value for the delta-delta plot: 
+  
+  # empirical t value
+  diffs_emp <- get(paste0("diffs_", dataset))
+  diffs_emp <- diffs_emp %>% mutate(group = case_when(age_effect_diff < 3 ~ "Small Differences in Age of Maturation",
+                                         age_effect_diff > 3 ~ "Large Differences Age of Maturation",
+                                         TRUE ~ NA_character_))
+  t.emp <- t.test(diffs_emp$mean_SA_diff[which(diffs_emp$group == "Small Differences in Age of Maturation")], # compare differences in sa rank
+                  diffs_emp$mean_SA_diff[which(diffs_emp$group == "Large Differences Age of Maturation")], 
+                  alternative = alternative, var.equal = var.equal)$statistic 
+  
+  # t-test between permuted S-A axis differences and age of maturation differences between endpoints
+  t.null.SAaxis = vector(length=nperm)
+  for (r in 1:nperm) {
+    print(r)
+    # merging of permuted S-A axis to age of maturation df
+    perm_mean_SAaxis <- compute_mean_SA(dataset, SAaxis.perm[,r]) # merge permuted S-A rank with age of maturation AND compute mean permuted S-A ranks
+    lh_perm_mean_SAaxis <- perm_mean_SAaxis[[1]]
+    rh_perm_mean_SAaxis <- perm_mean_SAaxis[[2]]
+    
+    # calculate difference in rank
+    perm_diffs <- compute_diffs_wrapper(dataset, lh_perm_mean_SAaxis, rh_perm_mean_SAaxis)
+    perm_diffs <- perm_diffs %>% mutate(group = case_when(age_effect_diff < 3 ~ "Small Differences in Age of Maturation",
+                                         age_effect_diff > 3 ~ "Large Differences Age of Maturation",
+                                         TRUE ~ NA_character_))
+    
+    # calculate t-test and permuted t-test: do tracts with very diff ages of maturation between endpoints actually have different s-a ranks?? 
+    t.null.SAaxis[r] <- t.test(perm_diffs$mean_SA_diff[which(perm_diffs$group == "Small Differences in Age of Maturation")], 
+                               perm_diffs$mean_SA_diff[which(perm_diffs$group == "Large Differences Age of Maturation")], 
+                               alternative = alternative, var.equal = var.equal )$statistic
+  }
+  
+
+  # p-value definition  
+  if (t.emp>0) {
+    p.perm = sum(t.null.SAaxis>t.emp)/nperm
+  } else { 
+    p.perm = sum(t.null.SAaxis<t.emp)/nperm
+  } 
+
+  return(list(p.perm = p.perm, t.emp = t.emp))
+  # return p-value for the t-test to see if tracts with very diff ages of maturation between endpoints actually have different s-a rank
+  
+}
+ 
+  
+```
+ 
+
+```{r plot meanSA by age of mat, fig.height = 5, fig.width = 15}
+
+perm.sphere.SAaxis(glasser_SAaxis$SA.axis_rank, perm.id.full, "HCPD") # pspin = 0, r = 0.87 
+perm.sphere.SAaxis(glasser_SAaxis$SA.axis_rank, perm.id.full, "HBN") # pspin = NS, r - 0.17
+perm.sphere.SAaxis(glasser_SAaxis$SA.axis_rank, perm.id.full, "PNC") # pspin = 0, r = 0.8141278
+
+
+SA_age_mat_HCPD <- plot_meanSA_by_age_mat("HCPD", expression(paste(italic("r"), " = 0.87, ",  , italic(p[spin]), "< 0.0001")))
+SA_age_mat_HBN <- plot_meanSA_by_age_mat("HBN", expression(paste(italic("r"), " = 0.17, ",  , italic(p[spin]), "= N.S.")))
+SA_age_mat_PNC <- plot_meanSA_by_age_mat("PNC", expression(paste(italic("r"), " = 0.81, ",  , italic(p[spin]), "< 0.0001")))
+
+SA_age_mat_plot_final <- ggarrange(SA_age_mat_HCPD, SA_age_mat_HBN, SA_age_mat_PNC, ncol = 3, common.legend = T, legend = "bottom")
+
+x.grob <- textGrob("Mean S-A Axis Rank of Cortical Endpoint", 
+                   gp=gpar(col="black", fontsize=20))
+
+y.grob <- textGrob("Age of Maturation (Years)", 
+                   gp=gpar(col="black", fontsize=20), rot=90)
+
+grid.arrange(arrangeGrob(SA_age_mat_plot_final, left = y.grob, bottom = x.grob))
+
+#ggsave(paste0(png_dir, "/", "all_datasets", "/","SA_age_mat_plot.png"), 
+      # grid.arrange(arrangeGrob(SA_age_mat_plot_final, left = y.grob, bottom = x.grob)), height = 5, width = 15, units = "in")
+
+
+
+```
+
+
+```{r plot meanSA by mat status ttest and spearman, fig.height = 5, fig.width = 15}
+ 
+perm.sphere.SAaxis(glasser_SAaxis$SA.axis_rank, spun_ttest = TRUE, perm.id.full, "HCPD") # spearman r = 0.5872033, pspin = 0.0273; t = 9.566846 , pspin = 0
+perm.sphere.SAaxis(glasser_SAaxis$SA.axis_rank, spun_ttest = TRUE, perm.id.full, "HBN")  # spearman r = 0.5371881, pspin = 0.0026; t = -0.4384347, pspin = 0.3002
+perm.sphere.SAaxis(glasser_SAaxis$SA.axis_rank, spun_ttest = TRUE, perm.id.full, "PNC")  # spearman r = 0.6561538, pspin = 0; t = 5.61031, pspin = 0
+
+
+ 
+#ggsave(paste0(png_dir, "/", "all_datasets", "/","SA_age_mat_plot.png"), 
+      # grid.arrange(arrangeGrob(SA_age_mat_plot_final, left = y.grob, bottom = x.grob)), height = 5, width = 15, units = "in")
+
+
+
+```
+
+???
+```{r SA by age of maturation parcel level}
+
+merge_SA_parcel <- function(dataset) {
+  lh_by_region <- get(paste0("lh_by_region_", dataset))
+  rh_by_region <- get(paste0("rh_by_region_", dataset))
+  
+  lh_by_region$region <- paste0(lh_by_region$region, "_L")
+  rh_by_region$region <- paste0(rh_by_region$region, "_R")
+  
+  aggregated_df <- rbind(lh_by_region, rh_by_region) %>% mutate(regionName = region)
+  aggregated_axis <- merge(glasser_SAaxis, aggregated_df, by = "regionName")
+  
+  return(aggregated_axis)
+}
+
+aggregated_axis_HCPD <- merge_SA_parcel("HCPD") # 360 glasser parcels with mean age maturation and SA rank)
+aggregated_axis_HBN <- merge_SA_parcel("HBN")   
+aggregated_axis_PNC <- merge_SA_parcel("PNC")   
+
+
+
+source("/cbica/projects/luo_wm_dev/software/spin_test/perm.sphere.p.R")
+perm.id.full <- readRDS("/cbica/projects/luo_wm_dev/software/spin_test/rotate_parcellation/glasser.coords_sphericalrotations_N10k.rds")
+
+cor.test(aggregated_axis_HCPD$SA.axis_rank, aggregated_axis_HCPD$regional_mean_ageeffect) # r = 0.76, pspin = 0
+cor.test(aggregated_axis_HBN$SA.axis_rank, aggregated_axis_HBN$regional_mean_ageeffect) # r = 0.18, pspin = 0.0338
+cor.test(aggregated_axis_PNC$SA.axis_rank, aggregated_axis_PNC$regional_mean_ageeffect) # r = 0.72, pspin = 0
+ 
+ 
+perm.sphere.p(x = aggregated_axis_HCPD$SA.axis_rank, y = aggregated_axis_HCPD$regional_mean_ageeffect, perm.id = perm.id.full, corr.type = "pearson") 
+perm.sphere.p(x = aggregated_axis_HBN$SA.axis_rank, y = aggregated_axis_HBN$regional_mean_ageeffect, perm.id = perm.id.full, corr.type = "pearson") 
+perm.sphere.p(x = aggregated_axis_PNC$SA.axis_rank, y = aggregated_axis_PNC$regional_mean_ageeffect, perm.id = perm.id.full, corr.type = "pearson") 
+
+
+
+# Remove parcels where age of maturation is the max age (meaning that node/parcel never reached maturation in our age window)
+aggregated_axis_HCPD_binary <- aggregated_axis_HCPD
+max_value <- max(aggregated_axis_HCPD_binary$regional_mean_ageeffect, na.rm = TRUE)
+aggregated_axis_HCPD_binary$regional_mean_ageeffect[aggregated_axis_HCPD_binary$regional_mean_ageeffect == max_value] <- NA
+
+
+aggregated_axis_HBN_binary <-aggregated_axis_HBN
+max_value <- max(aggregated_axis_HBN_binary$regional_mean_ageeffect, na.rm = TRUE)
+aggregated_axis_HBN_binary$regional_mean_ageeffect[aggregated_axis_HBN_binary$regional_mean_ageeffect == max_value] <- NA
+
+
+aggregated_axis_PNC_binary <-aggregated_axis_PNC
+max_value <- max(aggregated_axis_PNC_binary$regional_mean_ageeffect, na.rm = TRUE)
+aggregated_axis_PNC_binary$regional_mean_ageeffect[aggregated_axis_PNC_binary$regional_mean_ageeffect == max_value] <- NA
+
+
+perm.sphere.p(x = aggregated_axis_HCPD_binary$SA.axis_rank, y = aggregated_axis_HCPD_binary$regional_mean_ageeffect, perm.id = perm.id.full, corr.type = "pearson") 
+perm.sphere.p(x = aggregated_axis_HBN_binary$SA.axis_rank, y = aggregated_axis_HBN_binary$regional_mean_ageeffect, perm.id = perm.id.full, corr.type = "pearson") 
+perm.sphere.p(x = aggregated_axis_PNC_binary$SA.axis_rank, y = aggregated_axis_PNC_binary$regional_mean_ageeffect, perm.id = perm.id.full, corr.type = "pearson") 
+
+
+cor.test(aggregated_axis_HCPD_binary$SA.axis_rank, aggregated_axis_HCPD_binary$regional_mean_ageeffect) # r = 0.57, pspin = 0
+cor.test(aggregated_axis_HBN_binary$SA.axis_rank, aggregated_axis_HBN_binary$regional_mean_ageeffect) # r = 0.46, pspin = 0.0001
+cor.test(aggregated_axis_PNC_binary$SA.axis_rank, aggregated_axis_PNC_binary$regional_mean_ageeffect) # r = 0.68, pspin = 0.0001
+
+```
+
+
+```{r SA by age of mat parcel plot, fig.height = 5, fig.width = 15}
+
+annot_text_HCPD <- expression(paste(italic("r"), " = 0.76, ",  , italic(p[spin]), "< 0.0001"))
+annot_text_HBN <- expression(paste(italic("r"), " = 0.18, ",  , italic(p[spin]), "= 0.0338"))
+annot_text_PNC <- expression(paste(italic("r"), " = 0.72, ",  , italic(p[spin]), "< 0.0001"))
+
+annot_text_HCPD <- expression(paste(italic("r"), " = 0.60, ",  , italic(p[spin]), "= 0.0001"))
+annot_text_HBN <- expression(paste(italic("r"), " = 0.40, ",  , italic(p[spin]), "< 0.0001"))
+annot_text_PNC <- expression(paste(italic("r"), " = 0.73, ",  , italic(p[spin]), "< 0.0001"))
+
+plot_agg_SA_parcel <- function(dataset, annot_text) {
+  aggregated_axis <- get(paste0("aggregated_axis_", dataset, "_binary"))
+  #aggregated_axis <- get(paste0("aggregated_axis_", dataset))
+  title = gsub("PD", "P-D", dataset) # for HCPD
+  SA_plot <- ggplot(aggregated_axis, aes(x = SA.axis_rank, y = regional_mean_ageeffect, fill = SA.axis_rank)) +
+  geom_point(color = "gray", shape = 21, size=3.5) + 
+    paletteer::scale_fill_paletteer_c("grDevices::RdYlBu", direction = -1, 
+                                      limits = c(min(aggregated_axis$SA.axis_rank), max(aggregated_axis$SA.axis_rank)), oob = squish) +
+  geom_smooth(data = aggregated_axis, method='lm', se=TRUE, fill=alpha(c("gray70"),.9), col="black") + 
+  labs(title = title) + theme_classic() +
+  theme(legend.position = "none",
+    plot.title = element_text(hjust = 0.5, size = 20),
+    axis.title = element_blank(),
+    axis.text.x = element_text(size = 20),
+    axis.text.y = element_text(size = 20)) + 
+    annotate(geom="text", x=150, y=25, label=annot_text, color="black", size=7) +
+    xlim(15, 340) + ylim(14, 26)
+  return(SA_plot)
+}
+
+ 
+agg_SA_parcel_HCPD <- plot_agg_SA_parcel("HCPD", annot_text_HCPD)
+agg_SA_parcel_HBN <- plot_agg_SA_parcel("HBN", annot_text_HBN)
+agg_SA_parcel_PNC <- plot_agg_SA_parcel("PNC", annot_text_PNC)
+
+agg_SA_parcel_plot_final <- ggarrange(agg_SA_parcel_HCPD, agg_SA_parcel_HBN, agg_SA_parcel_PNC, ncol = 3)
+
+x.grob <- textGrob("S-A Axis Rank", 
+                   gp=gpar(col="black", fontsize=20))
+
+y.grob <- textGrob("Age of Maturation (Years)", 
+                   gp=gpar(col="black", fontsize=20), rot=90)
+
+grid.arrange(arrangeGrob(agg_SA_parcel_plot_final, left = y.grob, bottom = x.grob))
+
+ggsave(paste0(png_dir, "/", "all_datasets", "/","SA_age_mat_plot_parcel_max.png"), 
+       grid.arrange(arrangeGrob(SA_age_mat_plot_final, left = y.grob, bottom = x.grob)), height = 5, width = 15, units = "in")
+# i don’t think i can do a spin test on this very easily though - this is just the mean SA rank of each endpoint correlated with the age of maturation at that endpoint
+```
+
+```{r, compute mean diffs, fig.height = 5, fig.width = 15}
+# compute mean difference in S-A rank between the 2 cortical endpoints by the difference in age effect
+# regular difference
+
+lh_names <- c("ARCL", "CSTL" ,"ILFL", "IFOL", "SLFL", "pARCL", "VOFL", "COrbL", "CAntFrL" ,"CSupFrL", "CMotL", "CSupParL", "CPostParL", "CTempL", "COccL")
+rh_names <- c("ARCR", "CSTR" ,"ILFR", "IFOR", "SLFR", "pARCR", "VOFR", "COrbR", "CAntFrR" ,"CSupFrR", "CMotR", "CSupParR", "CPostParR", "CTempR", "COccR")
+
+compute_diffs_wrapper <- function(dataset, lh_all_endpoints, rh_all_endpoints) {
+  # difference in age of maturation
+  lh_diffs <- lapply(lh_names, compute_endpoint_diffs, lh_all_endpoints, rh_all_endpoints)
+  rh_diffs <- lapply(rh_names, compute_endpoint_diffs, lh_all_endpoints, rh_all_endpoints)
+  names(lh_diffs) <- lh_names
+  names(rh_diffs) <- rh_names
+   
+ 
+  lh_diffs_all <- bind_rows(lh_diffs) %>%
+    filter(if_all(everything(), ~ !is.na(.)))
+  rh_diffs_all <- bind_rows(rh_diffs) %>%
+    filter(if_all(everything(), ~ !is.na(.)))
+  diffs_all <- rbind(lh_diffs_all, rh_diffs_all)
+  diffs_all <- diffs_all %>% filter(!grepl("^C.*R$", bundle_name)) # remove redundant callosum bundles (keep just left hemi callosum bundles to show difference between rh and lh endpoints)
+  diffs_all$bundle_name <- gsub("^(C.*)L$", "\\1", diffs_all$bundle_name) # rename callosum bundles to NOT have hemisphere
+  # make a column to label IFO and ILF, and label Callosum Bundles and Association Bundles - for plotting
+  diffs_all <- diffs_all %>% mutate(ifo_ilf_label = case_when(bundle_name == "IFOL" ~ "Left Inf. Fronto-occ.",
+                                                              bundle_name == "IFOR" ~ "Right Inf. Fronto-occ.",
+                                                              bundle_name == "ILFL" ~ "Left Inf. Long.",
+                                                              bundle_name == "ILFR" ~ "Right Inf. Long.",
+                                                              TRUE ~ NA_character_)) %>%
+                            mutate(label = case_when(str_detect(bundle_name, "^C") ~ "Callosum", TRUE ~ "Association"))
+  
+  return(diffs_all)
+
+}
+
+diffs_HCPD <- compute_diffs_wrapper("HCPD", lh_all_endpoints_HCPD, rh_all_endpoints_HCPD)  
+diffs_HBN <- compute_diffs_wrapper("HBN", lh_all_endpoints_HBN, rh_all_endpoints_HBN)   
+diffs_PNC <- compute_diffs_wrapper("PNC", lh_all_endpoints_PNC, rh_all_endpoints_PNC)  
+
+color1 = "#0A595E"
+color2 = "#24CEB9"
+
+plot_diffs <- function(dataset, color1, color2) {
+  
+  diffs_all <- get(paste0("diffs_", dataset))
+  title = gsub("PD", "P-D", dataset) # for HCPD
+  
+  diffs_plot <- ggplot(diffs_all, aes(x = mean_SA_diff, y = age_effect_diff, label = ifo_ilf_label)) +
+  geom_point(size = 5, aes(fill = label, color = label), shape = 21, alpha = 0.9) +  # Plot points
+  scale_fill_manual(values = c("Callosum" = color1, "Association" = color2)) +
+    scale_color_manual(values = c("Callosum" = color1, "Association" = color2)) +
+  ggrepel::geom_text_repel(position = position_jitter(seed = 3), 
+    box.padding = 0.8,  # Increase space around labels
+    point.padding = 0.8,  # Increase space around points
+    segment.color = "gray",  # Line color connecting point to label
+    segment.size = 0.5,
+    size = 6) +  
+  geom_smooth(data = diffs_all, method='lm', se=TRUE, fill=alpha(c("gray70"),.7), col="black") + 
+  stat_cor(method = "pearson", label.x = -50, label.y = 10, size = 6) + 
+  labs(title = title) + theme_classic() +
+  theme(legend.position = "none",
+        legend.title = element_blank(),
+        legend.text = element_text(size = 20),
+        plot.title = element_text(hjust = 0.5, size = 20),
+        axis.title = element_blank(),
+        axis.text.x = element_text(size = 20),
+        axis.text.y = element_text(size = 20)) + ylim(-5, 10) + xlim(-65, 255)
+ 
+  return(diffs_plot)
+}
+
+ 
+ 
+perm.sphere.SAaxis(glasser_SAaxis$SA.axis_rank, perm.id.full[,c(1:1000)], "HCPD", compute_diffs = TRUE, corr.type = "pearson") # pspin =  0
+perm.sphere.SAaxis(glasser_SAaxis$SA.axis_rank, perm.id.full[,c(1:1000)], "HBN", compute_diffs = TRUE, corr.type = "pearson") # pspin =  NS
+perm.sphere.SAaxis(glasser_SAaxis$SA.axis_rank, perm.id.full[,c(1:1000)], "PNC", compute_diffs = TRUE, corr.type = "pearson") # pspin =  0.001
+
+
+diffs_plot_HCPD <- plot_diffs("HCPD", color1, color2)
+diffs_plot_HBN <- plot_diffs("HBN", color1, color2)
+diffs_plot_PNC <- plot_diffs("PNC", color1, color2)
+
+diffs_plot_final <- ggarrange(diffs_plot_HCPD, diffs_plot_HBN, diffs_plot_PNC, ncol = 3, common.legend = T, legend = "top")
+
+x.grob <- textGrob("Difference in Mean S-A Rank between Endpoints", 
+                   gp=gpar(col="black", fontsize=20))
+
+y.grob <- textGrob("Difference in Age of Maturation (Years) \n between Endpoints", 
+                   gp=gpar(col="black", fontsize=20), rot=90)
+
+grid.arrange(arrangeGrob(diffs_plot_final, left = y.grob, bottom = x.grob))
+
+#ggsave(paste0(png_dir, "/","all_datasets", "/","delta_delta_diff.png"), 
+ #      grid.arrange(arrangeGrob(diffs_plot_final, left = y.grob, bottom = x.grob)), height = 6, width = 15, units = "in")
+ 
+ 
+cor.test(diffs_HCPD$mean_SA_diff, diffs_HCPD$age_effect_diff) # r = 0.90, p = 0 
+cor.test(diffs_HBN$mean_SA_diff, diffs_HBN$age_effect_diff) # r = 0.015, p = N.S
+cor.test(diffs_PNC$mean_SA_diff, diffs_PNC$age_effect_diff) # r = 0.85, p = 0
+ 
+
+
+```
+
+
+```{r ttest scrap}
+
+diffs_HCPD <- diffs_HCPD %>% mutate(SA_group = case_when(mean_SA_diff < 100 ~ "Small Difference in S-A Rank",
+                                           mean_SA_diff > 100 ~ "Large Difference in S-A Rank",
+                                           TRUE ~ NA_character_))
+
+t.test(diffs_HCPD$age_effect_diff[which(diffs_HCPD$SA_group == "Small Difference in S-A Rank")], diffs_HCPD$age_effect_diff[which(diffs_HCPD$SA_group == "Large Difference in S-A Rank")], )
+ 
+
+
+diffs_HBN <- diffs_HBN %>% mutate(SA_group = case_when(mean_SA_diff < 100 ~ "Small Difference in S-A Rank",
+                                           mean_SA_diff > 100 ~ "Large Difference in S-A Rank",
+                                           TRUE ~ NA_character_))
+
+t.test(diffs_HBN$age_effect_diff[which(diffs_HBN$SA_group == "Small Difference in S-A Rank")], diffs_HBN$age_effect_diff[which(diffs_HBN$SA_group == "Large Difference in S-A Rank")], )
+ 
+
+
+diffs_PNC <- diffs_PNC %>% mutate(SA_group = case_when(mean_SA_diff < 100 ~ "Small Difference in S-A Rank",
+                                           mean_SA_diff > 100 ~ "Large Difference in S-A Rank",
+                                           TRUE ~ NA_character_))
+
+t.test(diffs_PNC$age_effect_diff[which(diffs_PNC$SA_group == "Small Difference in S-A Rank")], diffs_PNC$age_effect_diff[which(diffs_PNC$SA_group == "Large Difference in S-A Rank")])$statistic
+ 
+
+
+# spun p-value for t-test
+perm.sphere.p.ttest = function(x,y,perm.id, alternative = "less", var.equal = FALSE) {
+  
+  nroi = dim(perm.id)[1]  # number of regions
+  nperm = dim(perm.id)[2] # number of permutations
+  
+  t.emp = t.test(x,y, alternative = alternative, var.equal = var.equal)$statistic  # empirical t value
+  
+  # permutation of measures
+  x.perm = y.perm = array(NA,dim=c(nroi,nperm))
+  for (r in 1:nperm) {
+    for (i in 1:nroi) {
+      x.perm[i,r] = x[perm.id[i,r]]
+      y.perm[i,r] = y[perm.id[i,r]]
+    }
+  }
+  # correlation to unpermuted measures
+  t.null.xy = t.null.yx = vector(length=nperm)
+  for (r in 1:nperm) {
+    t.null.xy[r] = t.test(x.perm[,r],y, alternative = alternative, var.equal = var.equal)$statistic
+    t.null.yx[r] = t.test(y.perm[,r],x, alternative = alternative, var.equal = var.equal)$statistic
+  }
+  
+  # p-value definition depends on the sign of the empirical correlation
+  if (t.emp>0) {
+    p.perm.xy = sum(t.null.xy>t.emp)/nperm
+    p.perm.yx = sum(t.null.yx>t.emp)/nperm
+  } else { 
+    p.perm.xy = sum(t.null.xy<t.emp)/nperm
+    p.perm.yx = sum(t.null.yx<t.emp)/nperm
+  } 
+  
+  # return average p-value
+  return((p.perm.xy+p.perm.yx)/2)
+  
+}
+ 
+ 
+
+perm.sphere.p.ttest(x = diffs_HCPD$age_effect_diff[which(diffs_HCPD$SA_group == "Small Difference in S-A Rank")], 
+                    y = diffs_HCPD$age_effect_diff[which(diffs_HCPD$SA_group == "Large Difference in S-A Rank")], perm.id = perm.id.full, alternative = "two.sided") # p = 0
+
+
+
+perm.sphere.p.ttest(x = diffs_HBN$age_effect_diff[which(diffs_HBN$SA_group == "Small Difference in S-A Rank")], 
+                    y = diffs_HBN$age_effect_diff[which(diffs_HBN$SA_group == "Large Difference in S-A Rank")], perm.id = perm.id.full, alternative = "two.sided") # 
+
+perm.sphere.p.ttest(x = diffs_PNC$age_effect_diff[which(diffs_PNC$SA_group == "Small Difference in S-A Rank")], 
+                    y = diffs_PNC$age_effect_diff[which(diffs_PNC$SA_group == "Large Difference in S-A Rank")], perm.id = perm.id.full) # p = 0
+```
+
+
+t1/t2 downloaded from https://balsa.wustl.edu/study/P2DmK
+alff maps downloaded from https://github.com/PennLINC/spatiotemp_dev_plasticity/tree/main/cortical_maps 
+
+```{r compare aggregated map with other maps}
+# t1/t2 and alff
+t1t2_ageeffect_HCPD <- read_cifti("/cbica/projects/luo_wm_dev/input/cortical_data/t1t2_hcpd/Figure3_T1wT2w_sAge_partial_bayes_r2.pscalar.nii")
+t1t2_mean_HCPD <- read_cifti("/cbica/projects/luo_wm_dev/input/cortical_data/t1t2_hcpd/Figure1_group_mean_T1wT2w_myelin.pscalar.nii")
+t1t2_roc_HCPD <- read_cifti("/cbica/projects/luo_wm_dev/input/cortical_data/t1t2_hcpd/Figure4_mean_posterior_annualized_roc_T1wT2w.pscalar.nii")
+t1t2_maxslopeage_HCPD <- read_cifti("/cbica/projects/luo_wm_dev/input/cortical_data/t1t2_hcpd/Figure6_median_posterior_age_of_max_slope_T1wT2w.pscalar.nii")
+
+alff_pnc <- read_cifti("/cbica/projects/luo_wm_dev/input/cortical_data/alff_pnc/AgeEffect_PartialR2.pscalar.nii")
+alff_decline_pnc <- read_cifti("/cbica/projects/luo_wm_dev/input/cortical_data/alff_pnc/AgeofDeclineOnset_FirstNegDeriv.pscalar.nii")
+```
+ 
+ 
+```{r agg glasser label}
+# add glasser labels to aggregated age effect maps
+combine_glasser <- function(dataset) {
+  tolerance <- 1e-6 
+  lh_by_region <- get(paste0("lh_by_region_", dataset))
+  #lh_max_value <- max(lh_by_region$regional_mean_ageeffect, na.rm = TRUE) # remove max age of maturation -- means node never matured
+  #lh_by_region$regional_mean_ageeffect[abs(lh_by_region$regional_mean_ageeffect - lh_max_value) < tolerance] <- NA
+
+  rh_by_region <- get(paste0("rh_by_region_", dataset))
+  #rh_max_value <- max(rh_by_region$regional_mean_ageeffect, na.rm = TRUE)
+  #rh_by_region$regional_mean_ageeffect[abs(rh_by_region$regional_mean_ageeffect - rh_max_value) < tolerance] <- NA
+ 
+  lh_glasser_labels <- glasser_labels[which(glasser_labels$LR == "L"),]
+  lh_by_region$region <- gsub("_[LR]+", "",lh_by_region$region)
+  lh_agg_final <- merge(lh_by_region, lh_glasser_labels, by = "region")
+  lh_agg_final <- lh_agg_final %>% mutate(label = gsub("(.*)(_L)$", "L_\\1", regionName))  
+  lh_agg_final$label <- paste0(lh_agg_final$label, "_ROI")
+   
+  rh_glasser_labels <- glasser_labels[which(glasser_labels$LR == "R"),]
+  rh_by_region$region <- gsub("_[LR]+", "",rh_by_region$region)
+  rh_agg_final <- merge(rh_by_region, rh_glasser_labels, by = "region")
+  rh_agg_final <- rh_agg_final %>% mutate(label = gsub("(.*)(_R)$", "R_\\1", regionName))  
+  rh_agg_final$label <- paste0(rh_agg_final$label, "_ROI")
+  
+  agg <- rbind(rh_agg_final, lh_agg_final)
+  
+  agg_ageeffects <- agg %>%
+    mutate(label = factor(label, levels = names(t1t2_ageeffect_HCPD$Parcel))) %>%
+    arrange(label) %>% mutate(dataset = dataset) 
+  
+  assign(paste0("agg_ageeffects_", dataset), agg_ageeffects, envir = .GlobalEnv)
+  
+  #write.csv(agg_ageeffects, sprintf("/cbica/projects/luo_wm_dev/output/%1$s/tract_profiles/tract_to_cortex/%1$s_agg_ageeffects_ordered_all.csv", dataset), row.names = F)
+
+}
+
+combine_glasser("HCPD") # makes agg_ageeffects_HCPD
+combine_glasser("HBN")  # makes agg_ageeffects_HBN
+combine_glasser("PNC")  # makes agg_ageeffects_PNC
+```
+ 
+ 
+```{r agg glasser label binary}
+# add glasser labels to aggregated age effect maps
+combine_glasser_binary <- function(dataset) {
+  tolerance <- 1e-6 
+  lh_by_region <- get(paste0("lh_by_region_", dataset))
+  lh_max_value <- max(lh_by_region$regional_mean_ageeffect, na.rm = TRUE) # remove max age of maturation -- means node never matured
+  lh_by_region$regional_mean_ageeffect[abs(lh_by_region$regional_mean_ageeffect - lh_max_value) < tolerance] <- NA
+
+  rh_by_region <- get(paste0("rh_by_region_", dataset))
+  rh_max_value <- max(rh_by_region$regional_mean_ageeffect, na.rm = TRUE)
+  rh_by_region$regional_mean_ageeffect[abs(rh_by_region$regional_mean_ageeffect - rh_max_value) < tolerance] <- NA
+ 
+  lh_glasser_labels <- glasser_labels[which(glasser_labels$LR == "L"),]
+  lh_by_region$region <- gsub("_[LR]+", "",lh_by_region$region)
+  lh_agg_final <- merge(lh_by_region, lh_glasser_labels, by = "region")
+  lh_agg_final <- lh_agg_final %>% mutate(label = gsub("(.*)(_L)$", "L_\\1", regionName))  
+  lh_agg_final$label <- paste0(lh_agg_final$label, "_ROI")
+   
+  rh_glasser_labels <- glasser_labels[which(glasser_labels$LR == "R"),]
+  rh_by_region$region <- gsub("_[LR]+", "",rh_by_region$region)
+  rh_agg_final <- merge(rh_by_region, rh_glasser_labels, by = "region")
+  rh_agg_final <- rh_agg_final %>% mutate(label = gsub("(.*)(_R)$", "R_\\1", regionName))  
+  rh_agg_final$label <- paste0(rh_agg_final$label, "_ROI")
+  
+  agg <- rbind(rh_agg_final, lh_agg_final)
+  
+  agg_ageeffects <- agg %>%
+    mutate(label = factor(label, levels = names(t1t2_ageeffect_HCPD$Parcel))) %>%
+    arrange(label) %>% mutate(dataset = dataset) 
+  
+  assign(paste0("agg_ageeffects_", dataset, "_binary"), agg_ageeffects, envir = .GlobalEnv)
+  
+  #write.csv(agg_ageeffects, sprintf("/cbica/projects/luo_wm_dev/output/%1$s/tract_profiles/tract_to_cortex/%1$s_agg_ageeffects_ordered_all.csv", dataset), row.names = F)
+
+}
+
+combine_glasser_binary("HCPD") # makes agg_ageeffects_HCPD_binary
+combine_glasser_binary("HBN")  # makes agg_ageeffects_HBN_binary
+combine_glasser_binary("PNC")  # makes agg_ageeffects_PNC_binary
+```
+ 
+```{r spin test}
+
+source("/cbica/projects/luo_wm_dev/software/spin_test/perm.sphere.p.R")
+
+perm.id.full <- readRDS("/cbica/projects/luo_wm_dev/software/spin_test/rotate_parcellation/glasser.coords_sphericalrotations_N10k.rds")
+perm.id.1000 <- perm.id.full[,c(1: 1000)]
+ 
+perm.sphere.p(x = agg_ageeffects_HCPD$regional_mean_ageeffect, y = t1t2_ageeffect_HCPD$data, perm.id = perm.id.full, corr.type = "pearson") # 0.0033 
+perm.sphere.p(x = agg_ageeffects_HCPD$regional_mean_ageeffect, y = t1t2_mean_HCPD$data, perm.id = perm.id.full, corr.type = "pearson") # 0.00035   
+perm.sphere.p(x = agg_ageeffects_HCPD$regional_mean_ageeffect, y = t1t2_roc_HCPD$data, perm.id = perm.id.full, corr.type = "pearson")  # 0.00015
+perm.sphere.p(x = agg_ageeffects_HCPD$regional_mean_ageeffect, y = t1t2_maxslopeage_HCPD$data, perm.id = perm.id.full, corr.type = "pearson") # 0.0452
+perm.sphere.p(x = agg_ageeffects_HCPD$regional_mean_ageeffect, y = alff_pnc$data, perm.id = perm.id.full, corr.type = "pearson")  # 0.12225 
+perm.sphere.p(x = agg_ageeffects_HCPD$regional_mean_ageeffect, y = alff_decline_pnc$data, perm.id = perm.id.full, corr.type = "pearson")  # 0.1367
+ 
+perm.sphere.p(x = agg_ageeffects_HBN$regional_mean_ageeffect, y = t1t2_ageeffect_HCPD$data, perm.id = perm.id.full, corr.type = "pearson") # 0.3652   
+perm.sphere.p(x = agg_ageeffects_HBN$regional_mean_ageeffect, y = t1t2_mean_HCPD$data, perm.id = perm.id.full, corr.type = "pearson")  # 0.47365
+perm.sphere.p(x = agg_ageeffects_HBN$regional_mean_ageeffect, y = t1t2_roc_HCPD$data, perm.id = perm.id.full, corr.type = "pearson") #  0.3955
+perm.sphere.p(x = agg_ageeffects_HBN$regional_mean_ageeffect, y = t1t2_maxslopeage_HCPD$data, perm.id = perm.id.full, corr.type = "pearson")  # 0.07095
+perm.sphere.p(x = agg_ageeffects_HBN$regional_mean_ageeffect, y = alff_pnc$data, perm.id = perm.id.full, corr.type = "pearson")  # 0.3258
+perm.sphere.p(x = agg_ageeffects_HBN$regional_mean_ageeffect, y = alff_decline_pnc$data, perm.id = perm.id.full, corr.type = "pearson") # 0.0436
+
+perm.sphere.p(x = agg_ageeffects_PNC$regional_mean_ageeffect, y = t1t2_ageeffect_HCPD$data, perm.id = perm.id.full, corr.type = "pearson")  # 0.0068  
+perm.sphere.p(x = agg_ageeffects_PNC$regional_mean_ageeffect, y = t1t2_mean_HCPD$data, perm.id = perm.id.full, corr.type = "pearson")  # 0.01445
+perm.sphere.p(x = agg_ageeffects_PNC$regional_mean_ageeffect, y = t1t2_roc_HCPD$data, perm.id = perm.id.full, corr.type = "pearson")   # 1e-04
+perm.sphere.p(x = agg_ageeffects_PNC$regional_mean_ageeffect, y = t1t2_maxslopeage_HCPD$data, perm.id = perm.id.full, corr.type = "pearson")  # 0.0011
+perm.sphere.p(x = agg_ageeffects_PNC$regional_mean_ageeffect, y = alff_pnc$data, perm.id = perm.id.full, corr.type = "pearson")   # 0.00895
+perm.sphere.p(x = agg_ageeffects_PNC$regional_mean_ageeffect, y = alff_decline_pnc$data, perm.id = perm.id.full, corr.type = "pearson")   # 0.0053
+ 
+
+
+# pvalues are pre-fdr correction
+cor.test(t1t2_ageeffect_HCPD$data, agg_ageeffects_HCPD$regional_mean_ageeffect, method = 'pearson')  ##
+cor.test(t1t2_ageeffect_HCPD$data, agg_ageeffects_HBN$regional_mean_ageeffect, method = 'pearson')
+cor.test(t1t2_ageeffect_HCPD$data, agg_ageeffects_PNC$regional_mean_ageeffect, method = 'pearson')
+# age of maturation vs. t1/t2 partial rsq
+# hcpd: r = -0.63, pspin = 0.0033 
+# hbn: r = -0.16, N.S.
+# pnc: r = -0.61, pspin = 0.0068  
+
+
+#cor.test(t1t2_mean_HCPD$data, agg_ageeffects$regional_mean_ageeffect, method = 'pearson')   ## 
+cor.test(t1t2_mean_HCPD$data, agg_ageeffects_HCPD$regional_mean_ageeffect, method = 'pearson')  
+cor.test(t1t2_mean_HCPD$data, agg_ageeffects_HBN$regional_mean_ageeffect, method = 'pearson')  
+cor.test(t1t2_mean_HCPD$data, agg_ageeffects_PNC$regional_mean_ageeffect, method = 'pearson')  
+# age of maturation vs. t1/t2 group mean
+# hcpd: r = -0.61, pspin = 0.00035  
+# hbn: r = 0.03, N.S.
+# pnc: r = -0.49, pspin = 0.01445
+
+#cor.test(t1t2_roc_HCPD$data, agg_ageeffects$regional_mean_ageeffect, method = 'pearson') ##
+cor.test(t1t2_roc_HCPD$data, agg_ageeffects_HCPD$regional_mean_ageeffect, method = 'pearson') 
+cor.test(t1t2_roc_HCPD$data, agg_ageeffects_HBN$regional_mean_ageeffect, method = 'pearson') 
+cor.test(t1t2_roc_HCPD$data, agg_ageeffects_PNC$regional_mean_ageeffect, method = 'pearson') 
+# age of maturation vs. t1/t2 mean posterior annualized rate of change
+# hcpd: r = -0.60, pspin = 0.00015
+# hbn: r = -0.09, N.S.
+# pnc: r = -0.59, pspin = 1e-04
+
+#cor.test(t1t2_maxslopeage_HCPD$data, agg_ageeffects$regional_mean_ageeffect, method = 'pearson') ##
+cor.test(t1t2_maxslopeage_HCPD$data, agg_ageeffects_HCPD$regional_mean_ageeffect, method = 'pearson')
+cor.test(t1t2_maxslopeage_HCPD$data, agg_ageeffects_HBN$regional_mean_ageeffect, method = 'pearson')
+cor.test(t1t2_maxslopeage_HCPD$data, agg_ageeffects_PNC$regional_mean_ageeffect, method = 'pearson')
+# age of maturation vs t1/t2 age of max slope
+# hcpd: r = 0.54, pspin = 0.0452
+# hbn: r = 0.47, pspin = 0.07095
+# pnc: r = 0.63, pspin = 0.0011
+
+#cor.test(alff_pnc$data, agg_ageeffects$regional_mean_ageeffect, method = 'pearson')  ##
+cor.test(alff_pnc$data, agg_ageeffects_HCPD$regional_mean_ageeffect, method = 'pearson') 
+cor.test(alff_pnc$data, agg_ageeffects_HBN$regional_mean_ageeffect, method = 'pearson') 
+cor.test(alff_pnc$data, agg_ageeffects_PNC$regional_mean_ageeffect, method = 'pearson') 
+# age of maturation vs. alff age effect
+# hcpd: r = 0.38, pspin = N.S
+# hbn: r = 0.17, N.S.
+# pnc: r = 0.52, pspin = 0.00895
+
+#cor.test(alff_decline_pnc$data, agg_ageeffects$regional_mean_ageeffect, method = 'pearson')  
+cor.test(alff_decline_pnc$data, agg_ageeffects_HCPD$regional_mean_ageeffect, method = 'pearson') 
+cor.test(alff_decline_pnc$data, agg_ageeffects_HBN$regional_mean_ageeffect, method = 'pearson') 
+cor.test(alff_decline_pnc$data, agg_ageeffects_PNC$regional_mean_ageeffect, method = 'pearson') 
+# age of maturation vs. alff age of decline
+# hcpd: r = 0.43, pspin = N.S.
+# hbn: r = 0.49, pspin = 0.0436
+# pnc: r = 0.59, pspin = 0.0053
+
+```
+
+
+
+```{r to delete t1t2 and alff, fig.width = 15, fig.height = 5}
+
+color1 = "#3FB8AFFF"
+color2 = "#FF9E9DFF"
+color3 = "#cc0468"
+
+plot_annot_maps <- function(dataset, map, annot_text, annot_x, annot_y, ylim1, ylim2) {
+  map <- get(map)$data # i.e. t1t2_ageeffect_HCPD
+  map <- data.frame(map) %>% setNames("map_measure")
+  agg_ageeffects <- get(paste0("agg_ageeffects_", dataset))
+  agg_map <- cbind(agg_ageeffects, map)
+  
+  title = gsub("PD", "P-D", dataset) # for HCPD
+  
+  if(dataset == "HCPD") {
+    color = color1
+  } else if (dataset=="HBN") {
+    color = color2
+  } else {
+    color = color3
+  }
+  
+  agg_plot <- ggplot(agg_map, aes(x = regional_mean_ageeffect, y = map_measure)) +
+  geom_point(size = 5, fill = color, color = color, shape = 21, alpha = 0.6) +  
+  geom_smooth(data = agg_map, method='lm', se=TRUE, fill=alpha(c("gray70"),.7), col="black") + 
+  #stat_cor(method = "spearman", size = 6) + 
+  labs(title = title) + theme_classic() +
+  theme(legend.position = "none",
+        legend.title = element_blank(),
+        legend.text = element_text(size = 20),
+        plot.title = element_text(hjust = 0.5, size = 20),
+        axis.title = element_blank(),
+        axis.text.x = element_text(size = 20),
+        axis.text.y = element_text(size = 20)) +
+  annotate(geom="text", x=annot_x, y=annot_y, label=annot_text, color="black", size=7) + xlim(15, 23) + ylim(ylim1, ylim2)
+ 
+  return(agg_plot)
+}
+
+ 
+HCPD_t1t2_ageeffect <- plot_annot_maps("HCPD", "t1t2_ageeffect_HCPD", 
+                                       expression(paste(italic("r"), " = -0.71, ",  , italic(p[spin]), "= 0.00045")),
+                                       annot_x = 18, annot_y = 0.35, ylim1 = 0, ylim2 = 0.35) 
+HCPD_t1t2_mean <- plot_annot_maps("HCPD", "t1t2_mean_HCPD", 
+                                       expression(paste(italic("r"), " = -0.67, ",  , italic(p[spin]), "= 0.0003")),
+                                       annot_x = 18, annot_y = 2, ylim1 = 1.3, ylim2 = 2) 
+HCPD_t1t2_roc <- plot_annot_maps("HCPD", "t1t2_roc_HCPD", 
+                                       expression(paste(italic("r"), " = -0.72, ",  , italic(p[spin]), "= 0.0001")),
+                                       annot_x = 18, annot_y = 0.023, ylim1 = -0.0018, ylim2 = 0.025) 
+HCPD_t1t2_maxslopeage <- plot_annot_maps("HCPD", "t1t2_maxslopeage_HCPD", 
+                                       expression(paste(italic("r"), " = 0.57, ",  , italic(p[spin]), "= 0.05915")),
+                                       annot_x = 18, annot_y = 17.6, ylim1 = 8.5, ylim2 = 19) 
+HCPD_alff_ageeffect <- plot_annot_maps("HCPD", "alff_pnc", 
+                                       expression(paste(italic("r"), " = 0.51, ",  , italic(p[spin]), "= 0.03815")),
+                                       annot_x = 18, annot_y = 0.05, ylim1 = -0.15, ylim2 = 0.06) 
+
+HCPD_alff_agedecline <- plot_annot_maps("HCPD", "alff_decline_pnc", 
+                                       expression(paste(italic("r"), " = 0.48, ",  , italic(p[spin]), "= 0.117")),
+                                       annot_x = 18, annot_y = 20, ylim1 = 8, ylim2 = 23) 
+
+ 
+  
+HBN_t1t2_ageeffect <- plot_annot_maps("HBN", "t1t2_ageeffect_HCPD",
+                                      expression(paste(italic("r"), " = -0.1, ",  , italic(p[spin]), "= N.S")),
+                                      annot_x = 18, annot_y = 0.35, ylim1 = 0, ylim2 = 0.35) 
+HBN_t1t2_mean <- plot_annot_maps("HBN", "t1t2_mean_HCPD", 
+                                       expression(paste(italic("r"), " = 0.05, ",  , italic(p[spin]), "= N.S")),
+                                       annot_x = 18, annot_y = 2, ylim1 = 1.3, ylim2 = 2) 
+HBN_t1t2_roc <- plot_annot_maps("HBN", "t1t2_roc_HCPD", 
+                                       expression(paste(italic("r"), " = -0.09, ",  , italic(p[spin]), "= N.S")),
+                                       annot_x = 18, annot_y = 0.023, ylim1 =  -0.0018, ylim2 = 0.025) 
+HBN_t1t2_maxslopeage <- plot_annot_maps("HBN", "t1t2_maxslopeage_HCPD", 
+                                       expression(paste(italic("r"), " = 0.51, ",  , italic(p[spin]), "= 0.05")),
+                                       annot_x = 18, annot_y = 17.6, ylim1 = 8.5, ylim2 = 19) 
+HBN_alff_ageeffect <- plot_annot_maps("HBN", "alff_pnc", 
+                                       expression(paste(italic("r"), " = 0.15, ",  , italic(p[spin]), "= N.S.")),
+                                       annot_x = 18, annot_y = 0.05, ylim1 = -0.15, ylim2 = 0.06) 
+HBN_alff_agedecline <- plot_annot_maps("HBN", "alff_decline_pnc", 
+                                       expression(paste(italic("r"), " = 0.51, ",  , italic(p[spin]), "= 0.03815")),
+                                       annot_x = 18, annot_y = 0.05, ylim1 = -0.15, ylim2 = 0.06) 
+
+PNC_t1t2_ageeffect <- plot_annot_maps("PNC", "t1t2_ageeffect_HCPD",
+                                      expression(paste(italic("r"), " = -0.64, ",  , italic(p[spin]), "= 0.0047")),
+                                      annot_x = 18, annot_y = 0.35, ylim1 = 0, ylim2 = 0.35) 
+PNC_t1t2_mean <- plot_annot_maps("PNC", "t1t2_mean_HCPD", 
+                                       expression(paste(italic("r"), " = -0.49, ",  , italic(p[spin]), "= 0.0428")),
+                                       annot_x = 18, annot_y = 2, ylim1 = 1.3, ylim2 = 2) 
+PNC_t1t2_roc <- plot_annot_maps("PNC", "t1t2_roc_HCPD", 
+                                       expression(paste(italic("r"), " = -0.68, ",  , italic(p[spin]), "= 0.00015")),
+                                       annot_x = 18, annot_y = 0.023, ylim1 = -0.0018, ylim2 = 0.025) 
+PNC_t1t2_maxslopeage <- plot_annot_maps("PNC", "t1t2_maxslopeage_HCPD", 
+                                       expression(paste(italic("r"), " = 0.66, ",  , italic(p[spin]), "= 0.00275")),
+                                       annot_x = 18, annot_y = 17.6, ylim1 = 8.5, ylim2 = 19) 
+PNC_alff_ageeffect <- plot_annot_maps("PNC", "alff_pnc", 
+                                       expression(paste(italic("r"), " = 0.58, ",  , italic(p[spin]), "= 0.0031")),
+                                       annot_x = 18, annot_y = 0.05, ylim1 = -0.15, ylim2 = 0.06) 
+
+PNC_alff_agedecline <- plot_annot_maps("PNC", "alff_decline_pnc", 
+                                       expression(paste(italic("r"), " = 0.51, ",  , italic(p[spin]), "= 0.03815")),
+                                       annot_x = 18, annot_y = 0.05, ylim1 = -0.15, ylim2 = 0.06) 
+
+x.grob <- textGrob("WM Cortical Endpoint Age of Maturation (Years)", 
+                   gp=gpar(col="black", fontsize=20))
+
+y.grob <- textGrob("T1w/T2w Partial R-squared (Age Effect)", 
+                   gp=gpar(col="black", fontsize=20), rot=90)
+title.grob <- textGrob("T1w/T2w Age Effect", 
+                   gp=gpar(col="black", fontsize=20, fontface="bold"))
+t1t2_ageeffect_plots <- ggarrange(HCPD_t1t2_ageeffect, HBN_t1t2_ageeffect, PNC_t1t2_ageeffect, ncol = 3)
+grid.arrange(arrangeGrob(t1t2_ageeffect_plots, left = y.grob, bottom = x.grob, top = title.grob))
+#ggsave(paste0(png_dir, "/", "all_datasets", "/","t1t2_ageeffect_plots.png"), grid.arrange(arrangeGrob(t1t2_ageeffect_plots, left = y.grob, bottom = x.grob, top = title.grob)) , height = 5, width = 15, units = "in")
+
+y.grob <- textGrob("Mean T1w/T2w", 
+                   gp=gpar(col="black", fontsize=20), rot=90)
+title.grob <- textGrob("Group T1w/T2w Map", 
+                   gp=gpar(col="black", fontsize=20, fontface="bold"))
+t1t2_mean_plots <- ggarrange(HCPD_t1t2_mean, HBN_t1t2_mean, PNC_t1t2_mean, ncol = 3)
+grid.arrange(arrangeGrob(t1t2_mean_plots, left = y.grob, bottom = x.grob, top = title.grob))
+#ggsave(paste0(png_dir, "/", "all_datasets", "/","t1t2_mean_plots.png"), grid.arrange(arrangeGrob(t1t2_mean_plots, left = y.grob, bottom = x.grob, top = title.grob)) , height = 5, width = 15, units = "in")
+
+y.grob <- textGrob("T1w/T2w Annualized Rate of Change", 
+                   gp=gpar(col="black", fontsize=20), rot=90)
+title.grob <- textGrob("T1w/T2w Growth Rate", 
+                   gp=gpar(col="black", fontsize=20, fontface="bold"))
+t1t2_roc_plots <- ggarrange(HCPD_t1t2_roc, HBN_t1t2_roc, PNC_t1t2_roc, ncol = 3)
+grid.arrange(arrangeGrob(t1t2_roc_plots, left = y.grob, bottom = x.grob, top = title.grob))
+#ggsave(paste0(png_dir, "/", "all_datasets", "/","t1t2_roc_plots.png"), grid.arrange(arrangeGrob(t1t2_roc_plots, left = y.grob, bottom = x.grob, top = title.grob)) , height = 5, width = 15, units = "in")
+
+y.grob <- textGrob("T1w/T2w Age of \nMaximum Growth Rate", 
+                   gp=gpar(col="black", fontsize=20), rot=90)
+title.grob <- textGrob("T1w/T2w Age of Peak Growth", 
+                   gp=gpar(col="black", fontsize=20, fontface="bold"))
+t1t2_maxslopeage_plots <- ggarrange(HCPD_t1t2_maxslopeage, HBN_t1t2_maxslopeage, PNC_t1t2_maxslopeage, ncol = 3)
+grid.arrange(arrangeGrob(t1t2_maxslopeage_plots, left = y.grob, bottom = x.grob, top = title.grob))
+#ggsave(paste0(png_dir, "/", "all_datasets", "/","t1t2_maxslopeage_plots.png"), grid.arrange(arrangeGrob(t1t2_maxslopeage_plots, left = y.grob, bottom = x.grob, top = title.grob)) , height = 5, width = 15, units = "in")
+
+y.grob <- textGrob("ALFF Partial R-squared (Age Effect)", 
+                   gp=gpar(col="black", fontsize=20), rot=90)
+title.grob <- textGrob("ALFF Age Effect", 
+                   gp=gpar(col="black", fontsize=20, fontface="bold"))
+alff_ageeffect_plots <- ggarrange(HCPD_alff_ageeffect, HBN_alff_ageeffect, PNC_alff_ageeffect, ncol = 3)
+grid.arrange(arrangeGrob(alff_ageeffect_plots, left = y.grob, bottom = x.grob, top = title.grob))
+#ggsave(paste0(png_dir, "/", "all_datasets", "/","alff_ageeffect.png"), grid.arrange(arrangeGrob(alff_ageeffect_plots, left = y.grob, bottom = x.grob, top = title.grob)) , height = 5, width = 15, units = "in")
+
+```
+
+
+```{r correct plot_annot_maps, fig.height = 5, fig.width = 17}
+
+color1 = "#3FB8AFFF"
+color2 = "#FF9E9DFF"
+color3 = "#cc0468"
+
+plot_annot_maps <- function(dataset, map, annot_text, annot_x, annot_y, xlim1, xlim2) {
+  map <- get(map)$data # i.e. t1t2_ageeffect_HCPD
+  map <- data.frame(map) %>% setNames("map_measure")
+  agg_ageeffects <- get(paste0("agg_ageeffects_", dataset))
+  agg_map <- cbind(agg_ageeffects, map)
+  
+  title = gsub("PD", "P-D", dataset) # for HCPD
+  
+  if(dataset == "HCPD") {
+    color = color1
+  } else if (dataset=="HBN") {
+    color = color2
+  } else {
+    color = color3
+  }
+  
+  agg_plot <- ggplot(agg_map, aes(x = map_measure, y = regional_mean_ageeffect)) +
+  geom_point(size = 5, fill = color, color = color, shape = 21, alpha = 0.6) +  
+  geom_smooth(data = agg_map, method='lm', se=TRUE, fill=alpha(c("gray70"),.7), col="black") + 
+  #stat_cor(method = "spearman", size = 6) + 
+  labs(title = title) + theme_classic() +
+  theme(legend.position = "none",
+        legend.title = element_blank(),
+        legend.text = element_text(size = 20),
+        plot.title = element_text(hjust = 0.5, size = 20),
+        axis.title = element_blank(),
+        axis.text.x = element_text(size = 20),
+        axis.text.y = element_text(size = 20)) +
+  annotate(geom="text", x=annot_x, y=annot_y, label=annot_text, color="black", size=7) + ylim(15, 24) + xlim(xlim1, xlim2)
+ 
+  return(agg_plot)
+}
+
+ 
+HCPD_t1t2_ageeffect <- plot_annot_maps("HCPD", "t1t2_ageeffect_HCPD", 
+                                       expression(paste(italic("r"), " = -0.63, ",  , italic(p[spin]), "= 0.0033")),
+                                       annot_y =  23.5, annot_x = 0.15, xlim1 = 0, xlim2 = 0.35) 
+HCPD_t1t2_mean <- plot_annot_maps("HCPD", "t1t2_mean_HCPD", 
+                                       expression(paste(italic("r"), " = -0.61, ",  , italic(p[spin]), "= 0.00035")),
+                                       annot_y =  23.5, annot_x = 1.6, xlim1 = 1.3, xlim2 = 2) 
+HCPD_t1t2_roc <- plot_annot_maps("HCPD", "t1t2_roc_HCPD", 
+                                       expression(paste(italic("r"), " = -0.60, ",  , italic(p[spin]), "= 0.00015")),
+                                       annot_y =  23.5, annot_x = 0.01, xlim1 = 0, xlim2 = 0.025) 
+HCPD_t1t2_maxslopeage <- plot_annot_maps("HCPD", "t1t2_maxslopeage_HCPD", 
+                                       expression(paste(italic("r"), " = 0.54, ",  , italic(p[spin]), "= 0.0452")),
+                                       annot_y =  23.5, annot_x = 12.5, xlim1 = 8.5, xlim2 = 19) 
+HCPD_alff_ageeffect <- plot_annot_maps("HCPD", "alff_pnc", 
+                                       expression(paste(italic("r"), " = 0.38, ",  , italic(p[spin]), "= N.S")),
+                                       annot_y =  23.5, annot_x = -0.05, xlim1 = -0.15, xlim2 = 0.06) 
+HCPD_alff_agedecline <- plot_annot_maps("HCPD", "alff_decline_pnc", 
+                                       expression(paste(italic("r"), " = 0.43, ",  , italic(p[spin]), "= N.S")),
+                                       annot_x = 12, annot_y = 23.5, xlim1 = 8, xlim2 = 16) 
+
+ 
+HBN_t1t2_ageeffect <- plot_annot_maps("HBN", "t1t2_ageeffect_HCPD",
+                                      expression(paste(italic("r"), " = -0.16, ",  , italic(p[spin]), "= N.S")),
+                                      annot_y =  23.5, annot_x = 0.15, xlim1 = 0, xlim2 = 0.35) 
+HBN_t1t2_mean <- plot_annot_maps("HBN", "t1t2_mean_HCPD", 
+                                       expression(paste(italic("r"), " = 0.03, ",  , italic(p[spin]), "= N.S")),
+                                         annot_y =  23.5, annot_x = 1.6, xlim1 = 1.3, xlim2 = 2) 
+HBN_t1t2_roc <- plot_annot_maps("HBN", "t1t2_roc_HCPD", 
+                                       expression(paste(italic("r"), " = -0.09, ",  , italic(p[spin]), "= N.S")),
+                                       annot_y =  23.5, annot_x = 0.01, xlim1 = 0, xlim2 = 0.025) 
+HBN_t1t2_maxslopeage <- plot_annot_maps("HBN", "t1t2_maxslopeage_HCPD", 
+                                       expression(paste(italic("r"), " = 0.47, ",  , italic(p[spin]), "= 0.0709")),
+                                       annot_y =  23.5, annot_x = 12.5, xlim1 = 8.5, xlim2 = 19) 
+HBN_alff_ageeffect <- plot_annot_maps("HBN", "alff_pnc", 
+                                       expression(paste(italic("r"), " = 0.17, ",  , italic(p[spin]), "= N.S.")),
+                                       annot_y =  23.5, annot_x = -0.05, xlim1 = -0.15, xlim2 = 0.06) 
+HBN_alff_agedecline <- plot_annot_maps("HBN", "alff_decline_pnc", 
+                                       expression(paste(italic("r"), " = 0.49, ",  , italic(p[spin]), "= 0.0436")),
+                                       annot_x = 12, annot_y = 23.5, xlim1 = 8, xlim2 = 16) 
+
+ 
+
+PNC_t1t2_ageeffect <- plot_annot_maps("PNC", "t1t2_ageeffect_HCPD",
+                                      expression(paste(italic("r"), " = -0.61, ",  , italic(p[spin]), "= 0.0068")),
+                                      annot_y =  23.5, annot_x = 0.15, xlim1 = 0, xlim2 = 0.35) 
+PNC_t1t2_mean <- plot_annot_maps("PNC", "t1t2_mean_HCPD", 
+                                       expression(paste(italic("r"), " = -0.49, ",  , italic(p[spin]), "= 0.01445")),
+                                       annot_y =  23.5, annot_x = 1.6, xlim1 = 1.3, xlim2 = 2) 
+PNC_t1t2_roc <- plot_annot_maps("PNC", "t1t2_roc_HCPD", 
+                                       expression(paste(italic("r"), " = -0.59, ",  , italic(p[spin]), "< 0.0001")),
+                                       annot_y =  23.5, annot_x = 0.01, xlim1 = 0, xlim2 = 0.025) 
+PNC_t1t2_maxslopeage <- plot_annot_maps("PNC", "t1t2_maxslopeage_HCPD", 
+                                       expression(paste(italic("r"), " = 0.63, ",  , italic(p[spin]), "= 0.0011")),
+                                       annot_y =  23.5, annot_x = 12.5, xlim1 = 8.5, xlim2 = 19) 
+PNC_alff_ageeffect <- plot_annot_maps("PNC", "alff_pnc", 
+                                       expression(paste(italic("r"), " = 0.52, ",  , italic(p[spin]), "= 0.00895")),
+                                       annot_y =  23.5, annot_x = -0.05, xlim1 = -0.15, xlim2 = 0.06) 
+
+PNC_alff_agedecline <- plot_annot_maps("PNC", "alff_decline_pnc", 
+                                       expression(paste(italic("r"), " = 0.59, ",  , italic(p[spin]), "= 0.0053")),
+                                       annot_x = 12, annot_y = 23.5, xlim1 = 8, xlim2 = 16) 
+ 
+
+
+y.grob <- textGrob("WM Cortical Endpoint \nAge of Maturation (Years)", 
+                   gp=gpar(col="black", fontsize=20), rot=90)
+
+x.grob <- textGrob("T1w/T2w Partial R-squared (Age Effect)", 
+                   gp=gpar(col="black", fontsize=20))
+title.grob <- textGrob("T1w/T2w Age Effect", 
+                   gp=gpar(col="black", fontsize=20, fontface="bold"))
+t1t2_ageeffect_plots <- ggarrange(HCPD_t1t2_ageeffect, HBN_t1t2_ageeffect, PNC_t1t2_ageeffect, ncol = 3)
+grid.arrange(arrangeGrob(t1t2_ageeffect_plots, left = y.grob, bottom = x.grob, top = title.grob))
+#ggsave(paste0(png_dir, "/", "all_datasets", "/","t1t2_ageeffect_plots.png"), grid.arrange(arrangeGrob(t1t2_ageeffect_plots, left = y.grob, bottom = x.grob, top = title.grob)) , height = 5, width = 16, units = "in")
+
+x.grob <- textGrob("Mean T1w/T2w", 
+                   gp=gpar(col="black", fontsize=20))
+title.grob <- textGrob("Group T1w/T2w Map", 
+                   gp=gpar(col="black", fontsize=20, fontface="bold"))
+t1t2_mean_plots <- ggarrange(HCPD_t1t2_mean, HBN_t1t2_mean, PNC_t1t2_mean, ncol = 3)
+grid.arrange(arrangeGrob(t1t2_mean_plots, left = y.grob, bottom = x.grob, top = title.grob))
+#ggsave(paste0(png_dir, "/", "all_datasets", "/","t1t2_mean_plots.png"), grid.arrange(arrangeGrob(t1t2_mean_plots, left = y.grob, bottom = x.grob, top = title.grob)) , height = 5, width = 16, units = "in")
+
+x.grob <- textGrob("T1w/T2w Annualized Rate of Change", 
+                   gp=gpar(col="black", fontsize=20))
+title.grob <- textGrob("T1w/T2w Growth Rate", 
+                   gp=gpar(col="black", fontsize=20, fontface="bold"))
+t1t2_roc_plots <- ggarrange(HCPD_t1t2_roc, HBN_t1t2_roc, PNC_t1t2_roc, ncol = 3)
+grid.arrange(arrangeGrob(t1t2_roc_plots, left = y.grob, bottom = x.grob, top = title.grob))
+#ggsave(paste0(png_dir, "/", "all_datasets", "/","t1t2_roc_plots.png"), grid.arrange(arrangeGrob(t1t2_roc_plots, left = y.grob, bottom = x.grob, top = title.grob)) , height = 5, width = 16, units = "in")
+
+x.grob <- textGrob("T1w/T2w Age of Maximum Growth Rate", 
+                   gp=gpar(col="black", fontsize=20))
+title.grob <- textGrob("T1w/T2w Age of Peak Growth", 
+                   gp=gpar(col="black", fontsize=20, fontface="bold"))
+t1t2_maxslopeage_plots <- ggarrange(HCPD_t1t2_maxslopeage, HBN_t1t2_maxslopeage, PNC_t1t2_maxslopeage, ncol = 3)
+grid.arrange(arrangeGrob(t1t2_maxslopeage_plots, left = y.grob, bottom = x.grob, top = title.grob))
+#ggsave(paste0(png_dir, "/", "all_datasets", "/","t1t2_maxslopeage_plots.png"), grid.arrange(arrangeGrob(t1t2_maxslopeage_plots, left = y.grob, bottom = x.grob, top = title.grob)) , height = 5, width = 16, units = "in")
+
+x.grob <- textGrob("ALFF Partial R-squared (Age Effect)", 
+                   gp=gpar(col="black", fontsize=20))
+title.grob <- textGrob("ALFF Age Effect", 
+                   gp=gpar(col="black", fontsize=20, fontface="bold"))
+alff_ageeffect_plots <- ggarrange(HCPD_alff_ageeffect, HBN_alff_ageeffect, PNC_alff_ageeffect, ncol = 3)
+grid.arrange(arrangeGrob(alff_ageeffect_plots, left = y.grob, bottom = x.grob, top = title.grob))
+#ggsave(paste0(png_dir, "/", "all_datasets", "/","alff_ageeffect.png"), grid.arrange(arrangeGrob(alff_ageeffect_plots, left = y.grob, bottom = x.grob, top = title.grob)) , height = 5, width = 16, units = "in")
+
+
+
+x.grob <- textGrob("ALFF Age of Decline", 
+                   gp=gpar(col="black", fontsize=20))
+title.grob <- textGrob("ALFF Age of Decline", 
+                   gp=gpar(col="black", fontsize=20, fontface="bold"))
+alff_agedecline_plots <- ggarrange(HCPD_alff_agedecline, HBN_alff_agedecline, PNC_alff_agedecline, ncol = 3)
+grid.arrange(arrangeGrob(alff_agedecline_plots, left = y.grob, bottom = x.grob, top = title.grob))
+
+```
+
+
+```{r agg_ageeffects binary plot, fig.height = 5, fig.width = 17}
+
+perm.sphere.p(x = agg_ageeffects_HCPD_binary$regional_mean_ageeffect, y = t1t2_ageeffect_HCPD$data, perm.id = perm.id.full, corr.type = "spearman") # N.S   
+perm.sphere.p(x = agg_ageeffects_HCPD_binary$regional_mean_ageeffect, y = t1t2_mean_HCPD$data, perm.id = perm.id.full, corr.type = "spearman")  # N.S   
+perm.sphere.p(x = agg_ageeffects_HCPD_binary$regional_mean_ageeffect, y = t1t2_roc_HCPD$data, perm.id = perm.id.full, corr.type = "spearman")   
+perm.sphere.p(x = agg_ageeffects_HCPD_binary$regional_mean_ageeffect, y = t1t2_maxslopeage_HCPD$data, perm.id = perm.id.full, corr.type = "spearman")   
+perm.sphere.p(x = agg_ageeffects_HCPD_binary$regional_mean_ageeffect, y = alff_pnc$data, perm.id = perm.id.full, corr.type = "spearman")   
+perm.sphere.p(x = agg_ageeffects_HCPD_binary$regional_mean_ageeffect, y = alff_decline_pnc$data, perm.id = perm.id.full, corr.type = "spearman")   
+ 
+perm.sphere.p(x = agg_ageeffects_HBN_binary$regional_mean_ageeffect, y = t1t2_ageeffect_HCPD$data, perm.id = perm.id.full, corr.type = "spearman")    
+perm.sphere.p(x = agg_ageeffects_HBN_binary$regional_mean_ageeffect, y = t1t2_mean_HCPD$data, perm.id = perm.id.full, corr.type = "spearman")  
+perm.sphere.p(x = agg_ageeffects_HBN_binary$regional_mean_ageeffect, y = t1t2_roc_HCPD$data, perm.id = perm.id.full, corr.type = "spearman")   
+perm.sphere.p(x = agg_ageeffects_HBN_binary$regional_mean_ageeffect, y = t1t2_maxslopeage_HCPD$data, perm.id = perm.id.full, corr.type = "spearman")   
+perm.sphere.p(x = agg_ageeffects_HBN_binary$regional_mean_ageeffect, y = alff_pnc$data, perm.id = perm.id.full, corr.type = "spearman")   
+perm.sphere.p(x = agg_ageeffects_HBN_binary$regional_mean_ageeffect, y = alff_decline_pnc$data, perm.id = perm.id.full, corr.type = "spearman")   
+
+perm.sphere.p(x = agg_ageeffects_PNC_binary$regional_mean_ageeffect, y = t1t2_ageeffect_HCPD$data, perm.id = perm.id.full, corr.type = "spearman")    
+perm.sphere.p(x = agg_ageeffects_PNC_binary$regional_mean_ageeffect, y = t1t2_mean_HCPD$data, perm.id = perm.id.full, corr.type = "spearman")  
+perm.sphere.p(x = agg_ageeffects_PNC_binary$regional_mean_ageeffect, y = t1t2_roc_HCPD$data, perm.id = perm.id.full, corr.type = "spearman")   
+perm.sphere.p(x = agg_ageeffects_PNC_binary$regional_mean_ageeffect, y = t1t2_maxslopeage_HCPD$data, perm.id = perm.id.full, corr.type = "spearman")   
+perm.sphere.p(x = agg_ageeffects_PNC_binary$regional_mean_ageeffect, y = alff_pnc$data, perm.id = perm.id.full, corr.type = "spearman")   
+perm.sphere.p(x = agg_ageeffects_PNC_binary$regional_mean_ageeffect, y = alff_decline_pnc$data, perm.id = perm.id.full, corr.type = "spearman")   
+ 
+ 
+# pvalues are pre-fdr correction
+cor.test(t1t2_ageeffect_HCPD$data, agg_ageeffects_HCPD_binary$regional_mean_ageeffect, method = 'spearman')  
+cor.test(t1t2_ageeffect_HCPD$data, agg_ageeffects_HBN_binary$regional_mean_ageeffect, method = 'spearman')
+cor.test(t1t2_ageeffect_HCPD$data, agg_ageeffects_PNC_binary$regional_mean_ageeffect, method = 'spearman') 
+# age of maturation vs. t1/t2 partial rsq
+# hcpd: r = 0.088, pspin = N.S
+# hbn: r = -0.34, N.S
+# pnc: r = -0.33, pspin = N.S.
+
+#cor.test(t1t2_mean_HCPD$data, agg_ageeffects$regional_mean_ageeffect, method = 'spearman')   ## 
+cor.test(t1t2_mean_HCPD$data, agg_ageeffects_HCPD_binary$regional_mean_ageeffect, method = 'spearman')  
+cor.test(t1t2_mean_HCPD$data, agg_ageeffects_HBN_binary$regional_mean_ageeffect, method = 'spearman')  
+cor.test(t1t2_mean_HCPD$data, agg_ageeffects_PNC_binary$regional_mean_ageeffect, method = 'spearman')  
+# age of maturation vs. t1/t2 group mean
+# hcpd: r = -0.23, pspin = N.S
+# hbn: r = -0.36, 0.07955
+# pnc: r = -0.48, pspin = 0.02155
+
+
+#cor.test(t1t2_roc_HCPD$data, agg_ageeffects$regional_mean_ageeffect, method = 'spearman') ##
+cor.test(t1t2_roc_HCPD$data, agg_ageeffects_HCPD_binary$regional_mean_ageeffect, method = 'spearman') 
+cor.test(t1t2_roc_HCPD$data, agg_ageeffects_HBN_binary$regional_mean_ageeffect, method = 'spearman') 
+cor.test(t1t2_roc_HCPD$data, agg_ageeffects_PNC_binary$regional_mean_ageeffect, method = 'spearman') 
+# age of maturation vs. t1/t2 mean posterior annualized rate of change
+# hcpd: r = -0.13, pspin = N.S
+# hbn: r = -0.39,  0.05775
+# pnc: r = -0.47, pspin = 0.01925
+
+
+#cor.test(t1t2_maxslopeage_HCPD$data, agg_ageeffects$regional_mean_ageeffect, method = 'spearman') ##
+cor.test(t1t2_maxslopeage_HCPD$data, agg_ageeffects_HCPD_binary$regional_mean_ageeffect, method = 'spearman')
+cor.test(t1t2_maxslopeage_HCPD$data, agg_ageeffects_HBN_binary$regional_mean_ageeffect, method = 'spearman')
+cor.test(t1t2_maxslopeage_HCPD$data, agg_ageeffects_PNC_binary$regional_mean_ageeffect, method = 'spearman')
+# age of maturation vs t1/t2 age of max slope
+# hcpd: r = 0.46, pspin = 0.09215
+# hbn: r = 0.59, pspin =  0.00085  
+# pnc: r = 0.65, pspin = 0.00085
+
+
+#cor.test(alff_pnc$data, agg_ageeffects$regional_mean_ageeffect, method = 'spearman')  ##
+cor.test(alff_pnc$data, agg_ageeffects_HCPD_binary$regional_mean_ageeffect, method = 'spearman') 
+cor.test(alff_pnc$data, agg_ageeffects_HBN_binary$regional_mean_ageeffect, method = 'spearman') 
+cor.test(alff_pnc$data, agg_ageeffects_PNC_binary$regional_mean_ageeffect, method = 'spearman') 
+# age of maturation vs. alff age effect
+# hcpd: r = -0.09, pspin = N.S
+# hbn: r = 0.26, N.S.
+# pnc: r = 0.42, pspin = 0.03975
+
+
+#cor.test(alff_decline_pnc$data, agg_ageeffects$regional_mean_ageeffect, method = 'spearman')  
+cor.test(alff_decline_pnc$data, agg_ageeffects_HCPD_binary$regional_mean_ageeffect, method = 'spearman') 
+cor.test(alff_decline_pnc$data, agg_ageeffects_HBN_binary$regional_mean_ageeffect, method = 'spearman') 
+cor.test(alff_decline_pnc$data, agg_ageeffects_PNC_binary$regional_mean_ageeffect, method = 'spearman') 
+# age of maturation vs. alff age of decline
+# hcpd: r = 0.24, pspin = N.S.
+# hbn: r = 0.39, pspin = 0.08015
+# pnc: r = 0.54, pspin = 0.02025
+
+
+
+color1 = "#3FB8AFFF"
+color2 = "#FF9E9DFF"
+color3 = "#cc0468"
+
+plot_annot_maps <- function(dataset, map, annot_text, annot_x, annot_y, xlim1, xlim2) {
+  map <- get(map)$data # i.e. t1t2_ageeffect_HCPD
+  map <- data.frame(map) %>% setNames("map_measure")
+  agg_ageeffects <- get(paste0("agg_ageeffects_", dataset, "_binary"))
+  agg_map <- cbind(agg_ageeffects, map)
+  
+  title = gsub("PD", "P-D", dataset) # for HCPD
+  
+  if(dataset == "HCPD") {
+    color = color1
+  } else if (dataset=="HBN") {
+    color = color2
+  } else {
+    color = color3
+  }
+  
+  agg_plot <- ggplot(agg_map, aes(x = map_measure, y = regional_mean_ageeffect)) +
+  geom_point(size = 5, fill = color, color = color, shape = 21, alpha = 0.6) +  
+  geom_smooth(data = agg_map, method='lm', se=TRUE, fill=alpha(c("gray70"),.7), col="black") + 
+  #stat_cor(method = "spearman", size = 6) + 
+  labs(title = title) + theme_classic() +
+  theme(legend.position = "none",
+        legend.title = element_blank(),
+        legend.text = element_text(size = 20),
+        plot.title = element_text(hjust = 0.5, size = 20),
+        axis.title = element_blank(),
+        axis.text.x = element_text(size = 20),
+        axis.text.y = element_text(size = 20)) +
+  annotate(geom="text", x=annot_x, y=annot_y, label=annot_text, color="black", size=7) + ylim(15, 24) + xlim(xlim1, xlim2)
+ 
+  return(agg_plot)
+}
+
+ 
+HCPD_t1t2_ageeffect <- plot_annot_maps("HCPD", "t1t2_ageeffect_HCPD", 
+                                       expression(paste(italic("r"), " = 0.09, ",  , italic(p[spin]), "= N.S")),
+                                       annot_y =  23.5, annot_x = 0.15, xlim1 = 0, xlim2 = 0.35) 
+HCPD_t1t2_mean <- plot_annot_maps("HCPD", "t1t2_mean_HCPD", 
+                                       expression(paste(italic("r"), " = -0.23, ",  , italic(p[spin]), "= N.S")),
+                                       annot_y =  23.5, annot_x = 1.6, xlim1 = 1.3, xlim2 = 2) 
+HCPD_t1t2_roc <- plot_annot_maps("HCPD", "t1t2_roc_HCPD", 
+                                       expression(paste(italic("r"), " = -0.13, ",  , italic(p[spin]), "= N.S")),
+                                       annot_y =  23.5, annot_x = 0.01, xlim1 = 0, xlim2 = 0.025) 
+HCPD_t1t2_maxslopeage <- plot_annot_maps("HCPD", "t1t2_maxslopeage_HCPD", 
+                                       expression(paste(italic("r"), " = 0.46, ",  , italic(p[spin]), "= 0.09215")),
+                                       annot_y =  23.5, annot_x = 12.5, xlim1 = 8.5, xlim2 = 19) 
+HCPD_alff_ageeffect <- plot_annot_maps("HCPD", "alff_pnc", 
+                                       expression(paste(italic("r"), " = -0.09, ",  , italic(p[spin]), "= N.S")),
+                                       annot_y =  23.5, annot_x = -0.05, xlim1 = -0.15, xlim2 = 0.06) 
+HCPD_alff_agedecline <- plot_annot_maps("HCPD", "alff_decline_pnc", 
+                                       expression(paste(italic("r"), " = 0.24, ",  , italic(p[spin]), "= N.S")),
+                                       annot_x = 12, annot_y = 23.5, xlim1 = 8, xlim2 = 16) 
+
+ 
+HBN_t1t2_ageeffect <- plot_annot_maps("HBN", "t1t2_ageeffect_HCPD",
+                                      expression(paste(italic("r"), " = -0.34, ",  , italic(p[spin]), "= N.S")),
+                                      annot_y =  23.5, annot_x = 0.15, xlim1 = 0, xlim2 = 0.35) 
+HBN_t1t2_mean <- plot_annot_maps("HBN", "t1t2_mean_HCPD", 
+                                       expression(paste(italic("r"), " = -0.36, ",  , italic(p[spin]), "= 0.07955")),
+                                         annot_y =  23.5, annot_x = 1.6, xlim1 = 1.3, xlim2 = 2) 
+HBN_t1t2_roc <- plot_annot_maps("HBN", "t1t2_roc_HCPD", 
+                                       expression(paste(italic("r"), " =  -0.39, ",  , italic(p[spin]), "= 0.05775")),
+                                       annot_y =  23.5, annot_x = 0.01, xlim1 = 0, xlim2 = 0.025) 
+HBN_t1t2_maxslopeage <- plot_annot_maps("HBN", "t1t2_maxslopeage_HCPD", 
+                                       expression(paste(italic("r"), " =  0.59, ",  , italic(p[spin]), "= 0.00085")),
+                                       annot_y =  23.5, annot_x = 12.5, xlim1 = 8.5, xlim2 = 19) 
+HBN_alff_ageeffect <- plot_annot_maps("HBN", "alff_pnc", 
+                                       expression(paste(italic("r"), " = 0.26, ",  , italic(p[spin]), "= N.S.")),
+                                       annot_y =  23.5, annot_x = -0.05, xlim1 = -0.15, xlim2 = 0.06) 
+HBN_alff_agedecline <- plot_annot_maps("HBN", "alff_decline_pnc", 
+                                       expression(paste(italic("r"), " = 0.39, ",  , italic(p[spin]), "= 0.08015")),
+                                       annot_x = 12, annot_y = 23.5, xlim1 = 8, xlim2 = 16) 
+
+ 
+
+PNC_t1t2_ageeffect <- plot_annot_maps("PNC", "t1t2_ageeffect_HCPD",
+                                      expression(paste(italic("r"), " = -0.33, ",  , italic(p[spin]), "= N.S.")),
+                                      annot_y =  23.5, annot_x = 0.15, xlim1 = 0, xlim2 = 0.35) 
+PNC_t1t2_mean <- plot_annot_maps("PNC", "t1t2_mean_HCPD", 
+                                       expression(paste(italic("r"), " = -0.48, ",  , italic(p[spin]), "= 0.02155")),
+                                       annot_y =  23.5, annot_x = 1.6, xlim1 = 1.3, xlim2 = 2) 
+PNC_t1t2_roc <- plot_annot_maps("PNC", "t1t2_roc_HCPD", 
+                                       expression(paste(italic("r"), " = -0.47, ",  , italic(p[spin]), "= 0.01925")),
+                                       annot_y =  23.5, annot_x = 0.01, xlim1 = 0, xlim2 = 0.025) 
+PNC_t1t2_maxslopeage <- plot_annot_maps("PNC", "t1t2_maxslopeage_HCPD", 
+                                       expression(paste(italic("r"), " = 0.65, ",  , italic(p[spin]), "= 0.00085")),
+                                       annot_y =  23.5, annot_x = 12.5, xlim1 = 8.5, xlim2 = 19) 
+PNC_alff_ageeffect <- plot_annot_maps("PNC", "alff_pnc", 
+                                       expression(paste(italic("r"), " = 0.42, ",  , italic(p[spin]), "= 0.03975")),
+                                       annot_y =  23.5, annot_x = -0.05, xlim1 = -0.15, xlim2 = 0.06) 
+
+PNC_alff_agedecline <- plot_annot_maps("PNC", "alff_decline_pnc", 
+                                       expression(paste(italic("r"), " = 0.54, ",  , italic(p[spin]), "= 0.02025")),
+                                       annot_x = 12, annot_y = 23.5, xlim1 = 8, xlim2 = 16) 
+ 
+
+
+y.grob <- textGrob("WM Cortical Endpoint \nAge of Maturation (Years)", 
+                   gp=gpar(col="black", fontsize=20), rot=90)
+
+x.grob <- textGrob("T1w/T2w Partial R-squared (Age Effect)", 
+                   gp=gpar(col="black", fontsize=20))
+title.grob <- textGrob("T1w/T2w Age Effect", 
+                   gp=gpar(col="black", fontsize=20, fontface="bold"))
+t1t2_ageeffect_plots <- ggarrange(HCPD_t1t2_ageeffect, HBN_t1t2_ageeffect, PNC_t1t2_ageeffect, ncol = 3)
+grid.arrange(arrangeGrob(t1t2_ageeffect_plots, left = y.grob, bottom = x.grob, top = title.grob))
+#ggsave(paste0(png_dir, "/", "all_datasets", "/","t1t2_ageeffect_plots.png"), grid.arrange(arrangeGrob(t1t2_ageeffect_plots, left = y.grob, bottom = x.grob, top = title.grob)) , height = 5, width = 16, units = "in")
+
+x.grob <- textGrob("Mean T1w/T2w", 
+                   gp=gpar(col="black", fontsize=20))
+title.grob <- textGrob("Group T1w/T2w Map", 
+                   gp=gpar(col="black", fontsize=20, fontface="bold"))
+t1t2_mean_plots <- ggarrange(HCPD_t1t2_mean, HBN_t1t2_mean, PNC_t1t2_mean, ncol = 3)
+grid.arrange(arrangeGrob(t1t2_mean_plots, left = y.grob, bottom = x.grob, top = title.grob))
+#ggsave(paste0(png_dir, "/", "all_datasets", "/","t1t2_mean_plots.png"), grid.arrange(arrangeGrob(t1t2_mean_plots, left = y.grob, bottom = x.grob, top = title.grob)) , height = 5, width = 16, units = "in")
+
+x.grob <- textGrob("T1w/T2w Annualized Rate of Change", 
+                   gp=gpar(col="black", fontsize=20))
+title.grob <- textGrob("T1w/T2w Growth Rate", 
+                   gp=gpar(col="black", fontsize=20, fontface="bold"))
+t1t2_roc_plots <- ggarrange(HCPD_t1t2_roc, HBN_t1t2_roc, PNC_t1t2_roc, ncol = 3)
+grid.arrange(arrangeGrob(t1t2_roc_plots, left = y.grob, bottom = x.grob, top = title.grob))
+#ggsave(paste0(png_dir, "/", "all_datasets", "/","t1t2_roc_plots.png"), grid.arrange(arrangeGrob(t1t2_roc_plots, left = y.grob, bottom = x.grob, top = title.grob)) , height = 5, width = 16, units = "in")
+
+x.grob <- textGrob("T1w/T2w Age of Maximum Growth Rate", 
+                   gp=gpar(col="black", fontsize=20))
+title.grob <- textGrob("T1w/T2w Age of Peak Growth", 
+                   gp=gpar(col="black", fontsize=20, fontface="bold"))
+t1t2_maxslopeage_plots <- ggarrange(HCPD_t1t2_maxslopeage, HBN_t1t2_maxslopeage, PNC_t1t2_maxslopeage, ncol = 3)
+grid.arrange(arrangeGrob(t1t2_maxslopeage_plots, left = y.grob, bottom = x.grob, top = title.grob))
+#ggsave(paste0(png_dir, "/", "all_datasets", "/","t1t2_maxslopeage_plots.png"), grid.arrange(arrangeGrob(t1t2_maxslopeage_plots, left = y.grob, bottom = x.grob, top = title.grob)) , height = 5, width = 16, units = "in")
+
+x.grob <- textGrob("ALFF Partial R-squared (Age Effect)", 
+                   gp=gpar(col="black", fontsize=20))
+title.grob <- textGrob("ALFF Age Effect", 
+                   gp=gpar(col="black", fontsize=20, fontface="bold"))
+alff_ageeffect_plots <- ggarrange(HCPD_alff_ageeffect, HBN_alff_ageeffect, PNC_alff_ageeffect, ncol = 3)
+grid.arrange(arrangeGrob(alff_ageeffect_plots, left = y.grob, bottom = x.grob, top = title.grob))
+#ggsave(paste0(png_dir, "/", "all_datasets", "/","alff_ageeffect.png"), grid.arrange(arrangeGrob(alff_ageeffect_plots, left = y.grob, bottom = x.grob, top = title.grob)) , height = 5, width = 16, units = "in")
+
+
+
+x.grob <- textGrob("ALFF Age of Decline", 
+                   gp=gpar(col="black", fontsize=20))
+title.grob <- textGrob("ALFF Age of Decline", 
+                   gp=gpar(col="black", fontsize=20, fontface="bold"))
+alff_agedecline_plots <- ggarrange(HCPD_alff_agedecline, HBN_alff_agedecline, PNC_alff_agedecline, ncol = 3)
+grid.arrange(arrangeGrob(alff_agedecline_plots, left = y.grob, bottom = x.grob, top = title.grob))
+
+
+```
+
+
+
+```{r}
+perm.id = perm.id.full
+
+aggregated_axis_HCPD_binary <- aggregated_axis_HCPD_binary %>% mutate(maturation_status = ifelse(is.na(regional_mean_ageeffect), 0, 1))
+aggregated_axis_HBN_binary <- aggregated_axis_HBN_binary %>% mutate(maturation_status = ifelse(is.na(regional_mean_ageeffect), 0, 1))
+aggregated_axis_PNC_binary <- aggregated_axis_PNC_binary %>% mutate(maturation_status = ifelse(is.na(regional_mean_ageeffect), 0, 1))
+
+# spun p-value for t-test
+perm.sphere.p.ttest = function(binary_df, map, perm.id, alternative = "two.sided", var.equal = FALSE) {
+  if (!"SA.axis_rank" %in% names(map)) {
+    map <- data.frame(map$data) %>% setNames("map_measure")
+    agg_ageeffects_merged <- cbind(binary_df, map)
+  }  else { # SA axis is already included in my binary df
+    agg_ageeffects_merged <- binary_df %>% rename(map_measure = SA.axis_rank)
+    map <- data.frame(binary_df$SA.axis_rank) %>% setNames("map_measure")
+  }
+  
+
+  nroi = dim(perm.id)[1]  # number of regions
+  nperm = dim(perm.id)[2] # number of permutations
+  
+  t.emp = t.test(agg_ageeffects_merged$map_measure[which(agg_ageeffects_merged$maturation_status == 0)], # compare differences in sa rank
+                    agg_ageeffects_merged$map_measure[which(agg_ageeffects_merged$maturation_status == 1)], 
+                    alternative = alternative, var.equal = var.equal)$statistic 
+  
+  # permutation of map
+  map.perm = array(NA,dim=c(nroi,nperm))
+  map <- map$map_measure
+  for (r in 1:nperm) {
+    for (i in 1:nroi) {
+      map.perm[i,r] = map[perm.id[i,r]]
+    }
+  }
+  # t.test using permuted map values
+  t.null.map = vector(length=nperm)
+  for (r in 1:nperm) {
+    map.perm.tobind <- data.frame(map.perm[,r]) %>% setNames("perm_map_measure")
+    agg_ageeffects_perm <- cbind(binary_df, map.perm.tobind)
+    t.null.map[r] = t.test(agg_ageeffects_perm$perm_map_measure[which(agg_ageeffects_perm$maturation_status == 0)], # compare differences in sa rank
+                    agg_ageeffects_perm$perm_map_measure[which(agg_ageeffects_perm$maturation_status == 1)], 
+                    alternative = alternative, var.equal = var.equal)$statistic 
+  }
+  
+  # p-value definition depends on the sign of the empirical correlation
+  if (t.emp>0) {
+    p.perm = sum(t.null.map>t.emp)/nperm
+   
+  } else { 
+    p.perm = sum(t.null.map<t.emp)/nperm
+   
+  } 
+  # return p-value
+  return(list(p.perm = p.perm, t.emp = t.emp))
+  
+}
+ 
+ 
+perm.sphere.p.ttest(aggregated_axis_HCPD_binary, t1t2_ageeffect_HCPD, perm.id.full, alternative = "two.sided", var.equal = FALSE) # pspin = 0.0353, t = 2.657315 
+perm.sphere.p.ttest(aggregated_axis_HCPD_binary, t1t2_mean_HCPD, perm.id.full, alternative = "two.sided", var.equal = FALSE) # pspin = NS
+perm.sphere.p.ttest(aggregated_axis_HCPD_binary, t1t2_roc_HCPD, perm.id.full, alternative = "two.sided", var.equal = FALSE) #  pspin = 0.0275, t = 2.720289 
+perm.sphere.p.ttest(aggregated_axis_HCPD_binary, t1t2_maxslopeage_HCPD, perm.id.full, alternative = "two.sided", var.equal = FALSE) # pspin = NS, t = -1.911331 
+perm.sphere.p.ttest(aggregated_axis_HCPD_binary, alff_pnc, perm.id.full, alternative = "two.sided", var.equal = FALSE) # pspin = 0.0645
+perm.sphere.p.ttest(aggregated_axis_HCPD_binary, alff_decline_pnc, perm.id.full, alternative = "two.sided", var.equal = FALSE) # pspin = 0.0988
+perm.sphere.p.ttest(aggregated_axis_HCPD_binary, glasser_SAaxis, perm.id.full, alternative = "two.sided", var.equal = FALSE) # pspin = 0, t = 16
+
+  
+
+perm.sphere.p.ttest(aggregated_axis_HBN_binary, t1t2_ageeffect_HCPD, perm.id.full, alternative = "two.sided", var.equal = FALSE) # pspin = NS
+perm.sphere.p.ttest(aggregated_axis_HBN_binary, t1t2_mean_HCPD, perm.id.full, alternative = "two.sided", var.equal = FALSE) # pspin = NS
+perm.sphere.p.ttest(aggregated_axis_HBN_binary, t1t2_roc_HCPD, perm.id.full, alternative = "two.sided", var.equal = FALSE) # pspin = NS
+perm.sphere.p.ttest(aggregated_axis_HBN_binary, t1t2_maxslopeage_HCPD, perm.id.full, alternative = "two.sided", var.equal = FALSE) # pspin = 0.0543
+perm.sphere.p.ttest(aggregated_axis_HBN_binary, alff_pnc, perm.id.full, alternative = "two.sided", var.equal = FALSE) # pspin = NS
+perm.sphere.p.ttest(aggregated_axis_HBN_binary, alff_decline_pnc, perm.id.full, alternative = "two.sided", var.equal = FALSE) # pspin = NS
+perm.sphere.p.ttest(aggregated_axis_HBN_binary, glasser_SAaxis, perm.id.full, alternative = "two.sided", var.equal = FALSE) # pspin = NS
+
+ 
+
+perm.sphere.p.ttest(aggregated_axis_PNC_binary, t1t2_ageeffect_HCPD, perm.id.full, alternative = "two.sided", var.equal = FALSE) # pspin = NS
+perm.sphere.p.ttest(aggregated_axis_PNC_binary, t1t2_mean_HCPD, perm.id.full, alternative = "two.sided", var.equal = FALSE) # pspin = NS
+perm.sphere.p.ttest(aggregated_axis_PNC_binary, t1t2_roc_HCPD, perm.id.full, alternative = "two.sided", var.equal = FALSE) # pspin = NS
+perm.sphere.p.ttest(aggregated_axis_PNC_binary, t1t2_maxslopeage_HCPD, perm.id.full, alternative = "two.sided", var.equal = FALSE) # pspin = NS
+perm.sphere.p.ttest(aggregated_axis_PNC_binary, alff_pnc, perm.id.full, alternative = "two.sided", var.equal = FALSE) # pspin = 0.0267
+perm.sphere.p.ttest(aggregated_axis_PNC_binary, alff_decline_pnc, perm.id.full, alternative = "two.sided", var.equal = FALSE) # pspin = NS
+perm.sphere.p.ttest(aggregated_axis_PNC_binary, glasser_SAaxis, perm.id.full, alternative = "two.sided", var.equal = FALSE) # pspin = 0, t= 7.87
+
+ 
+test <- cbind(aggregated_axis_HCPD_binary, glasser_SAaxis$SA.axis_rank)
+ 
+t.test(aggregated_axis_HCPD_binary$SA.axis_rank[which(aggregated_axis_HCPD_binary$maturation_status == 0)], # compare differences in sa rank
+                    aggregated_axis_HCPD_binary$SA.axis_rank[which(aggregated_axis_HCPD_binary$maturation_status == 1)], 
+                    alternative = alternative, var.equal = var.equal)
+
+t.test(test$SA.axis_rank[which(test$maturation_status == 0)], # compare differences in sa rank
+                    test$SA.axis_rank[which(test$maturation_status == 1)]) 
+ 
+  
+cbind(map$map_measure, test$SA.axis_rank)
+
+data.frame(map$SA.axis_rank)
+map$SA.axis_rank
+
+data.frame(map$SA.axis_rank) %>% setNames("map_measure")
+data.frame(glasser_SAaxis$SA.axis_rank) %>% setNames("map_measure")
+```
+
+
+```{r ttests of maps, fig.height = 5, fig.width = 15}
+
+
+color1 = "#3FB8AFFF"
+color2 = "#FF9E9DFF"
+color3 = "#cc0468"
+plot_ttest <- function(dataset, map, pvalue_expression, color) {
+  df <- get(paste0("aggregated_axis_", dataset, "_binary"))
+  
+  if (!"SA.axis_rank" %in% names(map)) {
+    map <- data.frame(map$data) %>% setNames("map_measure")
+    agg_ageeffects_merged <- cbind(df, map)
+  }  else { # SA axis is already included in my binary df
+    agg_ageeffects_merged <- df %>% rename(map_measure = SA.axis_rank)
+    map <- data.frame(df$SA.axis_rank) %>% setNames("map_measure")
+  }
+  agg_ageeffects_merged <- agg_ageeffects_merged %>% mutate(maturation_status = ifelse(maturation_status == 1, "Matured", "Not Matured"))
+  title <- gsub("PD", "P-D", dataset)
+  plot <- ggplot(agg_ageeffects_merged, aes(x = as.factor(maturation_status), y = map_measure)) +
+  geom_boxplot(alpha = 0.8, outlier.shape = NA, fill = color) +   
+  labs(
+    title = title,
+    subtitle = pvalue_expression,
+    x = "Group",
+    y = "Value"
+  ) +
+  theme_classic() +
+  theme(legend.position = "none",
+        axis.text.x = element_text(size = 20),
+        axis.text.y = element_text(size = 20),
+        plot.title = element_text(size = 20, hjust = 0.5),
+        plot.subtitle = element_text(size = 16, hjust = 0.5),
+        axis.title.x = element_blank(),
+        axis.title.y = element_blank())
+  
+  return(plot)
+}
+
+HCPD_ttest_t1t2_ageeffect <- plot_ttest("HCPD", t1t2_ageeffect_HCPD, expression(paste(italic(p[spin]), "= 0.0353")), color1)
+HCPD_ttest_t1t2_mean <- plot_ttest("HCPD", t1t2_mean_HCPD, expression(paste(italic(p[spin]), "= NS")), color1)
+HCPD_ttest_t1t2_roc <- plot_ttest("HCPD", t1t2_roc_HCPD, expression(paste(italic(p[spin]), "= 0.0275")), color1)
+HCPD_ttest_t1t2_maxslopeage <- plot_ttest("HCPD", t1t2_maxslopeage_HCPD, expression(paste(italic(p[spin]), "= NS")), color1)
+HCPD_ttest_alff_ageeffect <- plot_ttest("HCPD", alff_pnc, expression(paste(italic(p[spin]), "= 0.0645")), color1)
+HCPD_ttest_alff_decline <- plot_ttest("HCPD", alff_decline_pnc, expression(paste(italic(p[spin]), "= 0.0988")), color1)
+HCPD_ttest_SAaxis <- plot_ttest("HCPD", glasser_SAaxis, expression(paste(italic(p[spin]), "< 0.0001")), color1)
+ 
+
+
+HBN_ttest_t1t2_ageeffect <- plot_ttest("HBN", t1t2_ageeffect_HCPD, expression(paste(italic(p[spin]), "= NS")), color2)
+HBN_ttest_t1t2_mean <- plot_ttest("HBN", t1t2_mean_HCPD, expression(paste(italic(p[spin]), "= NS")), color2)
+HBN_ttest_t1t2_roc <- plot_ttest("HBN", t1t2_roc_HCPD, expression(paste(italic(p[spin]), "= NS")), color2)
+HBN_ttest_t1t2_maxslopeage <- plot_ttest("HBN", t1t2_maxslopeage_HCPD, expression(paste(italic(p[spin]), "= 0.0543")), color2)
+HBN_ttest_alff_ageeffect <- plot_ttest("HBN", alff_pnc, expression(paste(italic(p[spin]), "= NS")), color2)
+HBN_ttest_alff_decline <- plot_ttest("HBN", alff_decline_pnc, expression(paste(italic(p[spin]), "= NS")), color2)
+HBN_ttest_SAaxis <- plot_ttest("HBN", glasser_SAaxis, expression(paste(italic(p[spin]), "< NS")), color2)
+
+
+PNC_ttest_t1t2_ageeffect <- plot_ttest("PNC", t1t2_ageeffect_HCPD, expression(paste(italic(p[spin]), "= NS")), color3)
+PNC_ttest_t1t2_mean <- plot_ttest("PNC", t1t2_mean_HCPD, expression(paste(italic(p[spin]), "= NS")), color3)
+PNC_ttest_t1t2_roc <- plot_ttest("PNC", t1t2_roc_HCPD, expression(paste(italic(p[spin]), "= NS")), color3)
+PNC_ttest_t1t2_maxslopeage <- plot_ttest("PNC", t1t2_maxslopeage_HCPD, expression(paste(italic(p[spin]), "= NS")), color3)
+PNC_ttest_alff_ageeffect <- plot_ttest("PNC", alff_pnc, expression(paste(italic(p[spin]), "= 0.0267")), color3)
+PNC_ttest_alff_decline <- plot_ttest("PNC", alff_decline_pnc, expression(paste(italic(p[spin]), "= NS")), color3)
+PNC_ttest_SAaxis <- plot_ttest("PNC", glasser_SAaxis, expression(paste(italic(p[spin]), "< 0.0001")), color3)
+ 
+
+ttest_t1t2ageeffect_final <- ggarrange(HCPD_ttest_t1t2_ageeffect, HBN_ttest_t1t2_ageeffect, PNC_ttest_t1t2_ageeffect, ncol = 3)
+y.grob <- textGrob("T1w/T2w Partial R-squared (Age Effect)", 
+                   gp=gpar(col="black", fontsize=20), rot = 90)
+grid.arrange(arrangeGrob(ttest_t1t2ageeffect_final, left = y.grob))
+
+
+ttest_t1t2mean_final <- ggarrange(HCPD_ttest_t1t2_mean, HBN_ttest_t1t2_mean, PNC_ttest_t1t2_mean, ncol = 3)
+y.grob <- textGrob("Mean T1w/T2w", 
+                   gp=gpar(col="black", fontsize=20), rot = 90)
+
+grid.arrange(arrangeGrob(ttest_t1t2mean_final, left = y.grob))
+
+
+ttest_t1t2roc_final <- ggarrange(HCPD_ttest_t1t2_roc, HBN_ttest_t1t2_roc, PNC_ttest_t1t2_roc, ncol = 3)
+y.grob <- textGrob("T1w/T2w Annualized Rate of Change", 
+                   gp=gpar(col="black", fontsize=20), rot = 90)
+grid.arrange(arrangeGrob(ttest_t1t2roc_final, left = y.grob))
+
+
+
+ttest_t1t2maxslopeage_final <- ggarrange(HCPD_ttest_t1t2_maxslopeage, HBN_ttest_t1t2_maxslopeage, PNC_ttest_t1t2_maxslopeage, ncol = 3)
+y.grob <- textGrob("T1w/T2w Age of Maximum Growth Rate", 
+                   gp=gpar(col="black", fontsize=20), rot = 90)
+grid.arrange(arrangeGrob(ttest_t1t2maxslopeage_final, left = y.grob))
+
+
+
+
+ttest_alffageeffect_final <- ggarrange(HCPD_ttest_alff_ageeffect, HBN_ttest_alff_ageeffect, PNC_ttest_alff_ageeffect, ncol = 3)
+y.grob <- textGrob("ALFF Partial R-squared (Age Effect)", 
+                   gp=gpar(col="black", fontsize=20), rot = 90)
+
+grid.arrange(arrangeGrob(ttest_alffageeffect_final, left = y.grob))
+
+
+
+ttest_alff_decline_final <- ggarrange(HCPD_ttest_alff_decline, HBN_ttest_alff_decline, PNC_ttest_alff_decline, ncol = 3)
+
+y.grob <- textGrob("ALFF Age of decline", 
+                   gp=gpar(col="black", fontsize=20), rot = 90)
+
+grid.arrange(arrangeGrob(ttest_alff_decline_final, left = y.grob))
+
+
+
+ttest_SAaxis_final <- ggarrange(HCPD_ttest_SAaxis, HBN_ttest_SAaxis, PNC_ttest_SAaxis, ncol = 3)
+
+y.grob <- textGrob("S-A Axis Rank", 
+                   gp=gpar(col="black", fontsize=20), rot = 90)
+
+grid.arrange(arrangeGrob(ttest_SAaxis_final, left = y.grob))
+ 
+```
+
+
+```{r delta delta ttest, fig.height = 5, fig.width = 15}
+diffs_all <- get(paste0("diffs_", dataset))
+plot_ttest_delta_delta <- function(dataset, pvalue_expression, color) {
+  diffs_all <- get(paste0("diffs_", dataset))
+  
+   
+  diffs_all <- diffs_all %>% mutate(large_SA_diff = ifelse(is.na(ifo_ilf_label), "Small Difference\n in S-A Rank", "Large Difference\n in S-A Rank"))
+  title <- gsub("PD", "P-D", dataset)
+  plot <- ggplot(diffs_all, aes(x = as.factor(large_SA_diff), y = age_effect_diff)) +
+  geom_boxplot(alpha = 0.8, outlier.shape = NA, fill = color) +   
+  labs(
+    title = title,
+    subtitle = pvalue_expression,
+    y = "Difference in Age of Maturation"
+  ) +
+  theme_classic() +
+  theme(legend.position = "none",
+        axis.text.x = element_text(size = 16),
+        axis.text.y = element_text(size = 16),
+        plot.title = element_text(size = 16, hjust = 0.5),
+        plot.subtitle = element_text(size = 16, hjust = 0.5),
+        axis.title.x = element_blank(),
+        axis.title.y = element_blank())
+  
+  return(plot)
+}
+
+
+HCPD_delta <- plot_ttest_delta_delta("HCPD", expression(paste(italic(p[spin]), "= 0")), color1)
+
+HBN_delta <- plot_ttest_delta_delta("HBN", expression(paste(italic(p[spin]), "= NS")), color2)
+
+PNC_delta <- plot_ttest_delta_delta("PNC", expression(paste(italic(p[spin]), "= 0.001")), color3)
+
+delta_delta_ttest <- ggarrange(HCPD_delta, HBN_delta,PNC_delta, ncol = 3)
+
+y.grob <- textGrob("Difference in Age of Maturation\n between Endpoints", 
+                   gp=gpar(col="black", fontsize=20), rot = 90)
+
+grid.arrange(arrangeGrob(delta_delta_ttest, left = y.grob))
+```
+

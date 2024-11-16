@@ -445,75 +445,80 @@ run_NEST <- function(dataset, tract, bin_num_nodes) {
 
 check preliminary outputs for multiple tracts
 ```{r check outputs hcpd}
-arc <- readRDS("/cbica/projects/luo_wm_dev/output/HCPD/tract_profiles/NEST/Arcuate_bin5_clip3_2sided.RData")
-cst <- readRDS("/cbica/projects/luo_wm_dev/output/HCPD/tract_profiles/NEST/Corticospinal_bin5_clip3_2sided.RData")
-ifo <- readRDS("/cbica/projects/luo_wm_dev/output/HCPD/tract_profiles/NEST/Inferior_Fronto_occipital_bin5_clip3_2sided.RData")
-ilf <- readRDS("/cbica/projects/luo_wm_dev/output/HCPD/tract_profiles/NEST/Inferior_Longitudinal_bin5_clip3_2sided.RData")
-slf <- readRDS("/cbica/projects/luo_wm_dev/output/HCPD/tract_profiles/NEST/Superior_Longitudinal_bin5_clip3_2sided.RData")
-parc <- readRDS("/cbica/projects/luo_wm_dev/output/HCPD/tract_profiles/NEST/Posterior_Arcuate_bin5_clip3_2sided.RData")
-vof <- readRDS("/cbica/projects/luo_wm_dev/output/HCPD/tract_profiles/NEST/Vertical_Occipital_bin5_clip3_2sided.RData")
+arc <- readRDS("/cbica/projects/luo_wm_dev/output/HCPD/tract_profiles/NEST/Arcuate_bin5_clip5_2sided.RData")
+cst <- readRDS("/cbica/projects/luo_wm_dev/output/HCPD/tract_profiles/NEST/Corticospinal_bin5_clip5_2sided.RData")
+ifo <- readRDS("/cbica/projects/luo_wm_dev/output/HCPD/tract_profiles/NEST/Inferior_Fronto_occipital_bin5_clip5_2sided.RData")
+ilf <- readRDS("/cbica/projects/luo_wm_dev/output/HCPD/tract_profiles/NEST/Inferior_Longitudinal_bin5_clip5_2sided.RData")
+slf <- readRDS("/cbica/projects/luo_wm_dev/output/HCPD/tract_profiles/NEST/Superior_Longitudinal_bin5_clip5_2sided.RData")
+parc <- readRDS("/cbica/projects/luo_wm_dev/output/HCPD/tract_profiles/NEST/Posterior_Arcuate_bin5_clip5_2sided.RData")
+vof <- readRDS("/cbica/projects/luo_wm_dev/output/HCPD/tract_profiles/NEST/Vertical_Occipital_bin5_clip5_2sided.RData")
 
-cc_af <- readRDS("/cbica/projects/luo_wm_dev/output/HCPD/tract_profiles/NEST/Callosum_Anterior_Frontal_bin5_clip3_2sided.RData")
-cc_mot <- readRDS("/cbica/projects/luo_wm_dev/output/HCPD/tract_profiles/NEST/Callosum_Motor_bin5_clip3_2sided.RData")
-cc_occ <- readRDS("/cbica/projects/luo_wm_dev/output/HCPD/tract_profiles/NEST/Callosum_Occipital_bin5_clip3_2sided.RData")
-cc_orb <- readRDS("/cbica/projects/luo_wm_dev/output/HCPD/tract_profiles/NEST/Callosum_Orbital_bin5_clip3_2sided.RData")
-cc_pp <- readRDS("/cbica/projects/luo_wm_dev/output/HCPD/tract_profiles/NEST/Callosum_Posterior_Parietal_bin5_clip3_2sided.RData")
-cc_sf <- readRDS("/cbica/projects/luo_wm_dev/output/HCPD/tract_profiles/NEST/Callosum_Superior_Frontal_bin5_clip3_2sided.RData")
-cc_sp <- readRDS("/cbica/projects/luo_wm_dev/output/HCPD/tract_profiles/NEST/Callosum_Superior_Parietal_bin5_clip3_2sided.RData")
-cc_tm <- readRDS("/cbica/projects/luo_wm_dev/output/HCPD/tract_profiles/NEST/Callosum_Temporal_bin5_clip3_2sided.RData")
+cc_af <- readRDS("/cbica/projects/luo_wm_dev/output/HCPD/tract_profiles/NEST/Callosum_Anterior_Frontal_bin5_clip5_2sided.RData")
+cc_mot <- readRDS("/cbica/projects/luo_wm_dev/output/HCPD/tract_profiles/NEST/Callosum_Motor_bin5_clip5_2sided.RData")
+cc_occ <- readRDS("/cbica/projects/luo_wm_dev/output/HCPD/tract_profiles/NEST/Callosum_Occipital_bin5_clip5_2sided.RData")
+cc_orb <- readRDS("/cbica/projects/luo_wm_dev/output/HCPD/tract_profiles/NEST/Callosum_Orbital_bin5_clip5_2sided.RData")
+cc_pp <- readRDS("/cbica/projects/luo_wm_dev/output/HCPD/tract_profiles/NEST/Callosum_Posterior_Parietal_bin5_clip5_2sided.RData")
+cc_sf <- readRDS("/cbica/projects/luo_wm_dev/output/HCPD/tract_profiles/NEST/Callosum_Superior_Frontal_bin5_clip5_2sided.RData")
+cc_sp <- readRDS("/cbica/projects/luo_wm_dev/output/HCPD/tract_profiles/NEST/Callosum_Superior_Parietal_bin5_clip5_2sided.RData")
+cc_tm <- readRDS("/cbica/projects/luo_wm_dev/output/HCPD/tract_profiles/NEST/Callosum_Temporal_bin5_clip5_2sided.RData")
  
 
 # bin 5
-p.adjust(unlist(c(arc$pval, cst$pval, ifo$pval, ilf$pval, slf$pval, parc$pval, vof$pval, cc_af$pval, cc_mot$pval, cc_occ$pval, cc_orb$pval, cc_pp$pval, cc_sf$pval, cc_sp$pval, cc_tm$pval)), method=c("fdr"))
+#p.adjust(unlist(c(arc$pval, cst$pval, ifo$pval, ilf$pval, slf$pval, parc$pval, vof$pval, cc_af$pval, cc_mot$pval, cc_occ$pval, cc_orb$pval, cc_pp$pval, cc_sf$pval, cc_sp$pval, cc_tm$pval)), method=c("fdr"))
  
- 
- 
+cbind(c("arc", "cst", "ifo", "ilf", "slf", "parc", "vof", "cc_af", "cc_mot", "cc_occ", "cc_orb", "cc_pp", "cc_sf", "cc_sp",  "cc_tm"), p.adjust(unlist(c(arc$pval, cst$pval, ifo$pval, ilf$pval, slf$pval, parc$pval, vof$pval, cc_af$pval, cc_mot$pval, cc_occ$pval, cc_orb$pval, cc_pp$pval, cc_sf$pval, cc_sp$pval, cc_tm$pval)), method=c("fdr")))
+
 ```
 
 ```{r check outputs HBN}
-arc <- readRDS("/cbica/projects/luo_wm_dev/output/HBN/tract_profiles/NEST/Arcuate_bin5_clip3_2sided.RData")
-cst <- readRDS("/cbica/projects/luo_wm_dev/output/HBN/tract_profiles/NEST/Corticospinal_bin5_clip3_2sided.RData")
-ifo <- readRDS("/cbica/projects/luo_wm_dev/output/HBN/tract_profiles/NEST/Inferior_Fronto_occipital_bin5_clip3_2sided.RData")
-ilf <- readRDS("/cbica/projects/luo_wm_dev/output/HBN/tract_profiles/NEST/Inferior_Longitudinal_bin5_clip3_2sided.RData")
-slf <- readRDS("/cbica/projects/luo_wm_dev/output/HBN/tract_profiles/NEST/Superior_Longitudinal_bin5_clip3_2sided.RData")
-parc <- readRDS("/cbica/projects/luo_wm_dev/output/HBN/tract_profiles/NEST/Posterior_Arcuate_bin5_clip3_2sided.RData")
-vof <- readRDS("/cbica/projects/luo_wm_dev/output/HBN/tract_profiles/NEST/Vertical_Occipital_bin5_clip3_2sided.RData")
+arc <- readRDS("/cbica/projects/luo_wm_dev/output/HBN/tract_profiles/NEST/Arcuate_bin5_clip5_2sided.RData")
+cst <- readRDS("/cbica/projects/luo_wm_dev/output/HBN/tract_profiles/NEST/Corticospinal_bin5_clip5_2sided.RData")
+ifo <- readRDS("/cbica/projects/luo_wm_dev/output/HBN/tract_profiles/NEST/Inferior_Fronto_occipital_bin5_clip5_2sided.RData")
+ilf <- readRDS("/cbica/projects/luo_wm_dev/output/HBN/tract_profiles/NEST/Inferior_Longitudinal_bin5_clip5_2sided.RData")
+slf <- readRDS("/cbica/projects/luo_wm_dev/output/HBN/tract_profiles/NEST/Superior_Longitudinal_bin5_clip5_2sided.RData")
+parc <- readRDS("/cbica/projects/luo_wm_dev/output/HBN/tract_profiles/NEST/Posterior_Arcuate_bin5_clip5_2sided.RData")
+vof <- readRDS("/cbica/projects/luo_wm_dev/output/HBN/tract_profiles/NEST/Vertical_Occipital_bin5_clip5_2sided.RData")
 
-cc_af <- readRDS("/cbica/projects/luo_wm_dev/output/HBN/tract_profiles/NEST/Callosum_Anterior_Frontal_bin5_clip3_2sided.RData")
-cc_mot <- readRDS("/cbica/projects/luo_wm_dev/output/HBN/tract_profiles/NEST/Callosum_Motor_bin5_clip3_2sided.RData")
-cc_occ <- readRDS("/cbica/projects/luo_wm_dev/output/HBN/tract_profiles/NEST/Callosum_Occipital_bin5_clip3_2sided.RData")
-cc_orb <- readRDS("/cbica/projects/luo_wm_dev/output/HBN/tract_profiles/NEST/Callosum_Orbital_bin5_clip3_2sided.RData")
-cc_pp <- readRDS("/cbica/projects/luo_wm_dev/output/HBN/tract_profiles/NEST/Callosum_Posterior_Parietal_bin5_clip3_2sided.RData")
-cc_sf <- readRDS("/cbica/projects/luo_wm_dev/output/HBN/tract_profiles/NEST/Callosum_Superior_Frontal_bin5_clip3_2sided.RData")
-cc_sp <- readRDS("/cbica/projects/luo_wm_dev/output/HBN/tract_profiles/NEST/Callosum_Superior_Parietal_bin5_clip3_2sided.RData")
-cc_tm <- readRDS("/cbica/projects/luo_wm_dev/output/HBN/tract_profiles/NEST/Callosum_Temporal_bin5_clip3_2sided.RData")
+cc_af <- readRDS("/cbica/projects/luo_wm_dev/output/HBN/tract_profiles/NEST/Callosum_Anterior_Frontal_bin5_clip5_2sided.RData")
+cc_mot <- readRDS("/cbica/projects/luo_wm_dev/output/HBN/tract_profiles/NEST/Callosum_Motor_bin5_clip5_2sided.RData")
+cc_occ <- readRDS("/cbica/projects/luo_wm_dev/output/HBN/tract_profiles/NEST/Callosum_Occipital_bin5_clip5_2sided.RData")
+cc_orb <- readRDS("/cbica/projects/luo_wm_dev/output/HBN/tract_profiles/NEST/Callosum_Orbital_bin5_clip5_2sided.RData")
+cc_pp <- readRDS("/cbica/projects/luo_wm_dev/output/HBN/tract_profiles/NEST/Callosum_Posterior_Parietal_bin5_clip5_2sided.RData")
+cc_sf <- readRDS("/cbica/projects/luo_wm_dev/output/HBN/tract_profiles/NEST/Callosum_Superior_Frontal_bin5_clip5_2sided.RData")
+cc_sp <- readRDS("/cbica/projects/luo_wm_dev/output/HBN/tract_profiles/NEST/Callosum_Superior_Parietal_bin5_clip5_2sided.RData")
+cc_tm <- readRDS("/cbica/projects/luo_wm_dev/output/HBN/tract_profiles/NEST/Callosum_Temporal_bin5_clip5_2sided.RData")
  
 # bin 5
-p.adjust(unlist(c(arc$pval, cst$pval, ifo$pval, ilf$pval, slf$pval, parc$pval, vof$pval, cc_af$pval, cc_mot$pval, cc_occ$pval, cc_orb$pval, cc_pp$pval, cc_sf$pval, cc_sp$pval, cc_tm$pval)), method=c("fdr"))
+#p.adjust(unlist(c(arc$pval, cst$pval, ifo$pval, ilf$pval, slf$pval, parc$pval, vof$pval, cc_af$pval, cc_mot$pval, cc_occ$pval, cc_orb$pval, cc_pp$pval, cc_sf$pval, cc_sp$pval, cc_tm$pval)), method=c("fdr"))
+
+cbind(c("arc", "cst", "ifo", "ilf", "slf", "parc", "vof", "cc_af", "cc_mot", "cc_occ", "cc_orb", "cc_pp", "cc_sf", "cc_sp",  "cc_tm"), p.adjust(unlist(c(arc$pval, cst$pval, ifo$pval, ilf$pval, slf$pval, parc$pval, vof$pval, cc_af$pval, cc_mot$pval, cc_occ$pval, cc_orb$pval, cc_pp$pval, cc_sf$pval, cc_sp$pval, cc_tm$pval)), method=c("fdr")))
+ 
 ```
 
 
 
 ```{r check outputs PNC}
-arc <- readRDS("/cbica/projects/luo_wm_dev/output/PNC/tract_profiles/NEST/Arcuate_bin5_clip3_2sided.RData")
-cst <- readRDS("/cbica/projects/luo_wm_dev/output/PNC/tract_profiles/NEST/Corticospinal_bin5_clip3_2sided.RData")
-ifo <- readRDS("/cbica/projects/luo_wm_dev/output/PNC/tract_profiles/NEST/Inferior_Fronto_occipital_bin5_clip3_2sided.RData")
-ilf <- readRDS("/cbica/projects/luo_wm_dev/output/PNC/tract_profiles/NEST/Inferior_Longitudinal_bin5_clip3_2sided.RData")
-slf <- readRDS("/cbica/projects/luo_wm_dev/output/PNC/tract_profiles/NEST/Superior_Longitudinal_bin5_clip3_2sided.RData")
-parc <- readRDS("/cbica/projects/luo_wm_dev/output/PNC/tract_profiles/NEST/Posterior_Arcuate_bin5_clip3_2sided.RData")
-vof <- readRDS("/cbica/projects/luo_wm_dev/output/PNC/tract_profiles/NEST/Vertical_Occipital_bin5_clip3_2sided.RData")
+arc <- readRDS("/cbica/projects/luo_wm_dev/output/PNC/tract_profiles/NEST/Arcuate_bin5_clip5_2sided.RData")
+cst <- readRDS("/cbica/projects/luo_wm_dev/output/PNC/tract_profiles/NEST/Corticospinal_bin5_clip5_2sided.RData")
+ifo <- readRDS("/cbica/projects/luo_wm_dev/output/PNC/tract_profiles/NEST/Inferior_Fronto_occipital_bin5_clip5_2sided.RData")
+ilf <- readRDS("/cbica/projects/luo_wm_dev/output/PNC/tract_profiles/NEST/Inferior_Longitudinal_bin5_clip5_2sided.RData")
+slf <- readRDS("/cbica/projects/luo_wm_dev/output/PNC/tract_profiles/NEST/Superior_Longitudinal_bin5_clip5_2sided.RData")
+parc <- readRDS("/cbica/projects/luo_wm_dev/output/PNC/tract_profiles/NEST/Posterior_Arcuate_bin5_clip5_2sided.RData")
+vof <- readRDS("/cbica/projects/luo_wm_dev/output/PNC/tract_profiles/NEST/Vertical_Occipital_bin5_clip5_2sided.RData")
 
-cc_af <- readRDS("/cbica/projects/luo_wm_dev/output/PNC/tract_profiles/NEST/Callosum_Anterior_Frontal_bin5_clip3_2sided.RData")
-cc_mot <- readRDS("/cbica/projects/luo_wm_dev/output/PNC/tract_profiles/NEST/Callosum_Motor_bin5_clip3_2sided.RData")
-cc_occ <- readRDS("/cbica/projects/luo_wm_dev/output/PNC/tract_profiles/NEST/Callosum_Occipital_bin5_clip3_2sided.RData")
-cc_orb <- readRDS("/cbica/projects/luo_wm_dev/output/PNC/tract_profiles/NEST/Callosum_Orbital_bin5_clip3_2sided.RData")
-cc_pp <- readRDS("/cbica/projects/luo_wm_dev/output/PNC/tract_profiles/NEST/Callosum_Posterior_Parietal_bin5_clip3_2sided.RData")
-cc_sf <- readRDS("/cbica/projects/luo_wm_dev/output/PNC/tract_profiles/NEST/Callosum_Superior_Frontal_bin5_clip3_2sided.RData")
-cc_sp <- readRDS("/cbica/projects/luo_wm_dev/output/PNC/tract_profiles/NEST/Callosum_Superior_Parietal_bin5_clip3_2sided.RData")
-cc_tm <- readRDS("/cbica/projects/luo_wm_dev/output/PNC/tract_profiles/NEST/Callosum_Temporal_bin5_clip3_2sided.RData")
+cc_af <- readRDS("/cbica/projects/luo_wm_dev/output/PNC/tract_profiles/NEST/Callosum_Anterior_Frontal_bin5_clip5_2sided.RData")
+cc_mot <- readRDS("/cbica/projects/luo_wm_dev/output/PNC/tract_profiles/NEST/Callosum_Motor_bin5_clip5_2sided.RData")
+cc_occ <- readRDS("/cbica/projects/luo_wm_dev/output/PNC/tract_profiles/NEST/Callosum_Occipital_bin5_clip5_2sided.RData")
+cc_orb <- readRDS("/cbica/projects/luo_wm_dev/output/PNC/tract_profiles/NEST/Callosum_Orbital_bin5_clip5_2sided.RData")
+cc_pp <- readRDS("/cbica/projects/luo_wm_dev/output/PNC/tract_profiles/NEST/Callosum_Posterior_Parietal_bin5_clip5_2sided.RData")
+cc_sf <- readRDS("/cbica/projects/luo_wm_dev/output/PNC/tract_profiles/NEST/Callosum_Superior_Frontal_bin5_clip5_2sided.RData")
+cc_sp <- readRDS("/cbica/projects/luo_wm_dev/output/PNC/tract_profiles/NEST/Callosum_Superior_Parietal_bin5_clip5_2sided.RData")
+cc_tm <- readRDS("/cbica/projects/luo_wm_dev/output/PNC/tract_profiles/NEST/Callosum_Temporal_bin5_clip5_2sided.RData")
  
-p.adjust(unlist(c(arc$pval, cst$pval, ifo$pval, ilf$pval, slf$pval, parc$pval, vof$pval, cc_af$pval, cc_mot$pval, cc_occ$pval, cc_orb$pval, cc_pp$pval, cc_sf$pval, cc_sp$pval, cc_tm$pval)), method=c("fdr"))
+#p.adjust(unlist(c(arc$pval, cst$pval, ifo$pval, ilf$pval, slf$pval, parc$pval, vof$pval, cc_af$pval, cc_mot$pval, cc_occ$pval, cc_orb$pval, cc_pp$pval, cc_sf$pval, cc_sp$pval, cc_tm$pval)), method=c("fdr"))
 
+cbind(c("arc", "cst", "ifo", "ilf", "slf", "parc", "vof", "cc_af", "cc_mot", "cc_occ", "cc_orb", "cc_pp", "cc_sf", "cc_sp",  "cc_tm"), p.adjust(unlist(c(arc$pval, cst$pval, ifo$pval, ilf$pval, slf$pval, parc$pval, vof$pval, cc_af$pval, cc_mot$pval, cc_occ$pval, cc_orb$pval, cc_pp$pval, cc_sf$pval, cc_sp$pval, cc_tm$pval)), method=c("fdr")))
+ 
 ```
 
 

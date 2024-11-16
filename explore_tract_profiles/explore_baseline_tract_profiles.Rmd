@@ -58,6 +58,12 @@ https://yeatmanlab.github.io/pyAFQ/explanations/bundle_orientation.html#bundle-o
 HCPD <- readRDS(sprintf("%1$s/%2$s/tract_profiles/all_subjects/tract_profiles_for_viz.RData", output_root, "HCPD"))
 HBN <- readRDS(sprintf("%1$s/%2$s/tract_profiles/all_subjects/tract_profiles_for_viz.RData", output_root, "HBN"))
 PNC <- readRDS(sprintf("%1$s/%2$s/tract_profiles/all_subjects/tract_profiles_for_viz.RData", output_root, "PNC"))
+
+HCPD <- readRDS(sprintf("%1$s/%2$s/tract_profiles/all_subjects/tract_profiles_for_viz_combat_all_site.RData", output_root, "HCPD"))
+HBN <- readRDS(sprintf("%1$s/%2$s/tract_profiles/all_subjects/tract_profiles_for_viz_combat_all_site.RData", output_root, "HBN"))
+PNC <- readRDS(sprintf("%1$s/%2$s/tract_profiles/all_subjects/tract_profiles_for_viz_combat_all_site.RData", output_root, "PNC"))
+
+ 
 ```
 
 # plot baseline for each measure: dki_fa, dki_md, dti_fa, dti_md and maybe compare
@@ -105,7 +111,7 @@ plot_mean_var <- function(tract, scalar, variance_measure, color1, color2, color
     
     df_profiles <- rbind(summary_HCPD, summary_HBN, summary_PNC)
     df <- df_profiles %>% filter(tract_label == tract)
- 
+    df$Dataset <- factor(df$Dataset, levels = c("PNC", "HCPD", "HBN"))
       # plot
       if(str_detect(tract, "Callosum")) {
         plot <- ggplot(data = df, aes(x = nodeID, y = get(mean_scalar))) +
@@ -229,7 +235,8 @@ arrange_tract_plots <- function(list_figures, title) {
 
 datasets <- list(HCPD = HCPD, HBN = HBN, PNC = PNC)
 #scalars <- c("dki_md", "dti_md", "dki_fa", "dti_fa")
-scalars <- c("dti_md", "dti_fa")
+#scalars <- c("dti_md", "dti_fa")
+scalars <- c("dti_md")
 
 # create summary dfs
 for (dataset_name in names(datasets)) {
@@ -265,7 +272,7 @@ y.grob <- textGrob("Mean Diffusivity",
 
 grid.arrange(arrangeGrob(dti_md_final, left = y.grob, bottom = x.grob))
 
-ggsave(paste0(png_dir, "dti_md_baseline_tracts.png"), grid.arrange(arrangeGrob(dti_md_final, left = y.grob, bottom = x.grob)), width = 20, height = 20, units = "in")
+#ggsave(paste0(png_dir, "dti_md_baseline_tracts.png"), grid.arrange(arrangeGrob(dti_md_final, left = y.grob, bottom = x.grob)), width = 20, height = 20, units = "in")
 ```
   
 ## DTI FA
@@ -290,8 +297,11 @@ ggsave(paste0(png_dir, "dti_fa_baseline_tracts.png"), grid.arrange(arrangeGrob(d
 
 # consistency of measures across datasets
 
-
 ```{r dti md across datasets}
+summary_HCPD_dti_md <- summary_HCPD_dti_md %>% arrange(tract_label, nodeID)
+summary_HBN_dti_md <- summary_HBN_dti_md %>% arrange(tract_label, nodeID)
+summary_PNC_dti_md <- summary_PNC_dti_md %>% arrange(tract_label, nodeID)
+
 # Calculate correlations
 cor_HCPD_HBN <- cor.test(summary_HCPD_dti_md$mean_dti_md, summary_HBN_dti_md$mean_dti_md)$estimate
 cor_HCPD_PNC <- cor.test(summary_HCPD_dti_md$mean_dti_md, summary_PNC_dti_md$mean_dti_md)$estimate

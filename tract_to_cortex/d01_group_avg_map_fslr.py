@@ -20,38 +20,23 @@ from tqdm import tqdm
 This script takes the binary, subject-level tract-to-cortex maps (in fsLR 32k) for each tract, and averages them across subjects. 
 This produces a group-level tract-to-cortex map of the proportion of subjects that have a tract connecting to each cortical region.
 Saves the maps out as giftis (no threshold applied)
-You can also save out pngs (these visualize maps at different probability thresholds) - but code for figures would need to be run locally
-on a mounted project -- haven't figured out rendering issues on cubic. 
 """
 
 ###########################
 ## Set variables and dirs #
 ###########################
 dataset = sys.argv[1]
-threshold = float(sys.argv[2])
-
+depth = float(sys.argv[2])
+ 
 config_file = f"/cbica/projects/luo_wm_dev/code/tract_profiles/config/config_{dataset}.json"
 
 with open(config_file, "rb") as f:
     config = json.load(f)
 
 data_root = config['data_root']
-derivs_dir = ospj(data_root, f"derivatives/{dataset}_vol_to_surf")
+derivs_dir = ospj(data_root, f"derivatives/vol_to_surf")
 out_dir = ospj(derivs_dir, "group")
-
-if not os.path.exists(out_dir):
-        os.makedirs(out_dir)
-        print(f"Directory {out_dir} created.")
-else:
-        print(f"Directory {out_dir} already exists.")
-
-png_dir = ospj(out_dir, "figures")
-
-if not os.path.exists(png_dir):
-        os.makedirs(png_dir)
-        print(f"Directory {png_dir} created.")
-else:
-        print(f"Directory {png_dir} already exists.")
+os.makedirs(out_dir, exist_ok=True)
 
 
 ###################
@@ -67,7 +52,7 @@ def load_tract_maps(subject_dir, filename):
     else:
         raise FileNotFoundError(f'Tract file {file_path} not found.')
 
-def average_tract_maps(derivs_dir):
+def average_tract_maps(derivs_dir, depth):
     """Average tract-to-cortex maps across subjects to get population probability maps for each tract.
     Remember that each subject-level map is already binarized. 
     """
@@ -92,20 +77,19 @@ def average_tract_maps(derivs_dir):
 
     for subject_dir in tqdm(subject_dirs, desc="Processing subjects"):
         for filename in os.listdir(subject_dir):
-            if filename.endswith('.shape.gii'):
-                parts = filename.split('.')
-                if len(parts) > 2:
-                    tract_name_part = parts[1]
-                    tract = tract_name_part.split('_')[0]
-                    if tract in tract_names:
-                        try:
-                            tract_map = load_tract_maps(subject_dir, filename)
-                            if tract_sums[tract] is None:
-                                tract_sums[tract] = np.zeros_like(tract_map)
-                            tract_sums[tract] += tract_map
-                            tract_counts[tract] += 1
-                        except FileNotFoundError:
-                            continue
+            pattern = rf'sub-[^.]+\.([^.]+)_{depth}\.shape\.gii'
+            match = re.search(pattern, filename)
+            if match:
+                tract = match.group(1)
+                if tract in tract_names:
+                    try:
+                        tract_map = load_tract_maps(subject_dir, filename)
+                        if tract_sums[tract] is None:
+                            tract_sums[tract] = np.zeros_like(tract_map)
+                        tract_sums[tract] += tract_map
+                        tract_counts[tract] += 1
+                    except FileNotFoundError:
+                        continue
 
     # Average the tract maps
     print("Averaging across subjects")
@@ -113,13 +97,13 @@ def average_tract_maps(derivs_dir):
     
     return tract_averages
 
-def save_group_maps(tract_averages, output_dir):
+def save_group_maps(tract_averages, output_dir, depth):
     """Save the group-level tract-to-cortex maps."""
     os.makedirs(output_dir, exist_ok=True)
     
     for tract, avg_map in tract_averages.items():
         if avg_map is not None:
-            filename = f"group_{tract}_1.25.shape.gii"
+            filename = f"group_{tract}_{depth}.shape.gii"
             output_file = ospj(output_dir, filename)
             data = avg_map.astype(np.float32)
             gii_data = nib.gifti.gifti.GiftiDataArray(data)
@@ -128,78 +112,9 @@ def save_group_maps(tract_averages, output_dir):
             print(f"Saved GIFTI file for {tract}")
 
 
-def save_tract_figs(tract_data, threshold, png_dir, hemi):
-    """
-   Threshold maps and save out
-    Args:
-    - tract_data (dict): Dictionary with tract names as keys and data arrays as values.
-    - threshold (float): Threshold value to apply to the data arrays.
-    - png_dir (str): Directory to save the output PNG files.
-    - hemi (str): ('L' or 'R')  
-    """
-    for tract, data in tract_data.items():
-        if tract.endswith("L"):
-            thresholded_tract = np.where(data > threshold, data, 0)
-            
-            p = Plot(lh, views=['lateral', 'medial'], brightness = 0.7, zoom = 1.2)
-            p.add_layer(thresholded_tract, cmap = aquamarine, cbar = True, color_range=(threshold,1)) # colors
-            
-            kws = dict(location='bottom', draw_border=False, aspect=10,
-                    decimals=1, pad=0)
-            fig = p.build(cbar_kws=kws)
-            fig.axes[0].set_title(tract, pad= 20)
-            fig.show()
-            
-            # Save the figure as PNG
-            output_file = os.path.join(png_dir, f'{tract}_threshold{threshold}.png')
-            fig.savefig(output_file, dpi=300)
-            print(f'Saved {output_file}')
-            
-            # Close the figure to free memory
-            plt.close(fig)
-        else: 
-            thresholded_tract = np.where(data > threshold, data, 0)
-            
-            p = Plot(rh, views=['lateral', 'medial'], brightness = 0.7, zoom = 1.2)
-            p.add_layer(thresholded_tract, cmap = aquamarine, cbar = True, color_range=(threshold,1)) # colors
-            
-            kws = dict(location='bottom', draw_border=False, aspect=10,
-                    decimals=1, pad=0)
-            fig = p.build(cbar_kws=kws)
-            fig.axes[0].set_title(tract, pad= 20)
-            fig.show()
-            
-            # Save the figure as PNG
-            output_file = os.path.join(png_dir, f'{tract}_threshold{threshold}.png')
-            fig.savefig(output_file, dpi=300)
-            print(f'Saved {output_file}')
-            
-            # Close the figure to free memory
-            plt.close(fig)
-
-
 #########################################################
 # Compute population probability maps for each tract
 #########################################################
-tract_averages = average_tract_maps(derivs_dir)
-save_group_maps(tract_averages, out_dir)
+tract_averages = average_tract_maps(derivs_dir, depth)
+save_group_maps(tract_averages, out_dir, depth)
 print("Group-level tract-to-cortex maps have been saved.")
-
-
-#########################################################
-# Save out images of these maps in fslr 32k 
-#########################################################
-# load my custom colormap :)
-with open('/cbica/projects/luo_wm_dev/code/tract_profiles/colormaps/aquamarine.json', 'r') as f:
-    hex_colors = json.load(f)
-rgb_colors = [mcolors.hex2color(hex_color) for hex_color in hex_colors]
-aquamarine = LinearSegmentedColormap.from_list("loaded_cmap", rgb_colors, N=256)
-
-
-surfaces = fetch_fslr()
-lh, rh = surfaces['veryinflated']
-
-threshold = 0.3
-# if want to save out figures, you'd need to run this code locally merp.
-#save_tract_figs(tract_averages, threshold, png_dir, 'L')
-#save_tract_figs(tract_averages, threshold, png_dir, 'R')
