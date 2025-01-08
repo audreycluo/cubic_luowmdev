@@ -878,7 +878,6 @@ ggsave(paste0(png_dir, "dti_md_ageeffect_callosum.png"), grid.arrange(arrangeGro
 ```
  
 correlations between datasets
- 
 ```{r tp correlations, fig.height = 7, fig.width = 20}
 cor_HCPD_HBN <- round(cor.test(ageeffect.fdr_dfs$HCPD_ageeffects$GAM.smooth.AdjRsq, ageeffect.fdr_dfs$HBN_ageeffects$GAM.smooth.AdjRsq)$estimate, 2)
 cor_HCPD_PNC <- round(cor.test(ageeffect.fdr_dfs$HCPD_ageeffects$GAM.smooth.AdjRsq, ageeffect.fdr_dfs$PNC_ageeffects$GAM.smooth.AdjRsq)$estimate, 2)
@@ -992,17 +991,6 @@ ggsave(paste0(png_dir, "ageeffect_hexplots.png"), grid.arrange(arrangeGrob(ageef
 ```
 
 
-```{r scatterplot corr}
-
-ggplot(HCPD_HBN_ageeffects, aes(x = HCPD, y = HBN)) + 
-  geom_point()
-
-ggplot(HCPD_PNC_ageeffects, aes(x = HCPD, y = PNC)) + 
-  geom_point()
-
-ggplot(HBN_PNC_ageeffects, aes(x = HBN, y = PNC)) + 
-  geom_point()
-```
 
 
 ```{r tp correlations, fig.height = 5, fig.width = 5}

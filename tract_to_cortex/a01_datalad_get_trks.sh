@@ -6,10 +6,6 @@
 #SBATCH --output=/dev/null    # suppress default output file
 #SBATCH --error=/dev/null     # suppress default error file
  
-# note: for whatever reason, datalad get takes way longer to run when i run a job array on all participants. 
-# If i just do a small array of 3 people, the time limit can be way shorter 
-# (despite 1 job array element = 1 participant in both cases). *shrug* weird datalad/cubic quirks i guess.
-
 ######################
 # setup for job array 
 ######################
@@ -42,8 +38,9 @@ echo "Datalad getting qsiprep and pyafq for ${subject}"
 # get required files #
 ######################
 cd ${qsiprep_dir}
-if find "qsiprep/${subject}" -maxdepth 1 -type d -name "ses-*" | grep -q .; then
-    echo "qsiprep dir for subject exists"
+
+if find "qsiprep/${subject}" -type f -path "*/ses-*/dwi/${subject}*T1w_dwiref.nii.gz" | grep -q ".*"; then
+    echo "qsiprep file for subject exists"
 else
     # get the dwiref image to use as template for DIPY's load_tractogram
     if datalad get ${subject}*.zip; then
@@ -65,7 +62,7 @@ cd ${pyafq_dir}
 if [ ! -d "qsirecon-PYAFQ/${subject}" ]; then
     if datalad get ${subject}*.zip; then
         echo "PyAFQ ${subject} zip successfully gotten"
-        unzip -o ${subject}*.zip
+        unzip -o ${subject}*.zip "qsirecon-PYAFQ/${subject}/*/dwi/${subject}*/bundles/*trk" -d ${pyafq_dir} 
         if [ $? -ne 0 ]; then
             echo "Error: Failed to unzip ${subject} files"
             exit 1  
@@ -77,4 +74,3 @@ if [ ! -d "qsirecon-PYAFQ/${subject}" ]; then
         exit 1   
     fi
 fi
-

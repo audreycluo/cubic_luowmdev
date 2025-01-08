@@ -116,21 +116,24 @@ tract_list = ["Callosum_Anterior_Frontal", "Callosum_Motor", "Callosum_Occipital
                "Callosum_Superior_Parietal",  "Callosum_Temporal"]  
 
 for tract in tract_list:
-    plot_tract_profile(tract, subject=subject, study_path=study_path, tract_profiles_path=tract_profiles_path, output_folder="/Users/audluo/PennLINC/luowm_local/output/tract_profiles_testing/all_datasets/glass_brain", view = "axial")
+    plot_tract_profile(tract, subject=subject, study_path=study_path, tract_profiles_path=tract_profiles_path, output_folder="/Users/audluo/PennLINC/luowm_local/output/tract_profiles_testing/all_datasets/glass_brain/ageeffects", view = "axial")
+
+for tract in tract_list:
+    plot_tract_profile(tract, subject=subject, study_path=study_path, tract_profiles_path=tract_profiles_path, output_folder="/Users/audluo/PennLINC/luowm_local/output/tract_profiles_testing/all_datasets/glass_brain/ageeffects", view = "coronal")
 
 
 tract_list = ["Callosum_Motor"]  
 for tract in tract_list:
-    plot_tract_profile(tract, subject=subject, study_path=study_path, tract_profiles_path=tract_profiles_path, output_folder="/Users/audluo/PennLINC/luowm_local/output/tract_profiles_testing/all_datasets/glass_brain", view = "axial")
+    plot_tract_profile(tract, subject=subject, study_path=study_path, tract_profiles_path=tract_profiles_path, output_folder="/Users/audluo/PennLINC/luowm_local/output/tract_profiles_testing/all_datasets/glass_brain/ageeffects", view = "axial")
 
 
 
 # Figure 3: Association bundles - plot for sagittal view
 tract_list = ["Left_Arcuate", "Left_Inferior_Fronto.occipital",  "Left_Inferior_Longitudinal", "Left_Posterior_Arcuate",
-              "Left_Superior_Longitudinal", "Left_Vertical_Occipital", "Left_Corticospinal"]  
-
+              "Left_Superior_Longitudinal", "Left_Uncinate", "Left_Vertical_Occipital", "Left_Corticospinal"]  
+ 
 for tract in tract_list:
-    plot_tract_profile(tract, subject=subject, study_path=study_path, tract_profiles_path=tract_profiles_path, output_folder="/Users/audluo/PennLINC/luowm_local/output/tract_profiles_testing/all_datasets/glass_brain", view = "sagittal")
+    plot_tract_profile(tract, subject=subject, study_path=study_path, tract_profiles_path=tract_profiles_path, output_folder="/Users/audluo/PennLINC/luowm_local/output/tract_profiles_testing/all_datasets/glass_brain/ageeffects", view = "sagittal")
 
 
 

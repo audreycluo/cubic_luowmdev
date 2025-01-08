@@ -1,6 +1,6 @@
 #!/bin/bash
 
-datasets=("HCPD" "HBN" "PNC")    
+datasets=( "PNC" "HCPD" "HBN")    
 
 # submit this with ./a00_wrapper_make_tdi.sh
 
@@ -16,7 +16,12 @@ for dataset in "${datasets[@]}"; do
     # set dir
     data_root=$(jq -r '.data_root' ${config_file})
     qsiprep_dir="${data_root}/raw/datalad_qsiprep"
-    pyafq_dir="${data_root}/derivatives/babs_qsirecon_pyafq_act/merge_ds"
+    
+    if [ "${dataset}" = "HBN" ]; then
+        pyafq_dir="${data_root}/derivatives/babs_qsirecon_pyafq_allsubs_noACT/merge_ds"
+    else
+        pyafq_dir="${data_root}/derivatives/babs_qsirecon_pyafq_act/merge_ds"
+    fi
 
     # subjects file
     subjects_file="${data_root}/subject_list/final_sample/${dataset}_WMDev_FinalSample.txt"

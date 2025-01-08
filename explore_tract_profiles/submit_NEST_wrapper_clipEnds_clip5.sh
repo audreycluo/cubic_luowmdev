@@ -1,7 +1,8 @@
 #!/bin/bash
 
 # set variables
-datasets=("HCPD" "HBN" "PNC")
+#datasets=("HCPD" "HBN" "PNC")
+datasets=("HBN")
 r_script="/cbica/projects/luo_wm_dev/code/tract_profiles/explore_tract_profiles/NEST_wrapper_clipEnds_clip5.R"
 tract_list="/cbica/projects/luo_wm_dev/input/tract_list/tract_list.txt"
 
@@ -17,7 +18,7 @@ for dataset in "${datasets[@]}"; do
     logs_dir="/cbica/projects/luo_wm_dev/code/tract_profiles/logs/NEST/${dataset}"
     mkdir -p ${logs_dir}
 
-    sbatch --job-name=NEST_${dataset}_covbat_all \
+    sbatch --job-name=NEST_${dataset}_low_p \
            --nodes=1 \
            --ntasks=1 \
            --cpus-per-task=4 \

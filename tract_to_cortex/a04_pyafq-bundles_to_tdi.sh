@@ -49,6 +49,7 @@ echo "Converting bundles to TDI for ${subject}"
 # Check if converted .tck files exist
 if ! find "${data_root}/derivatives/tck_temp/${subject}" -name "*.tck" -print -quit | grep -q .; then
     echo "No tract (.tck) files for ${subject}"
+    exit 1 
 fi
 
 ########################################

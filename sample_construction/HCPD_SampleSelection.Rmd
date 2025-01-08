@@ -129,7 +129,8 @@ required_tracts <- unique(HCPD_all$tractID)
 # missing tract exclusion
 ##########################
 # it's okay if a participant is missing these tracts
-allowed_missing_tracts <- c("Cingulate", "Uncinate", "Anterior Thalamic")
+#allowed_missing_tracts <- c("Cingulate", "Uncinate", "Anterior Thalamic")
+allowed_missing_tracts <- c("Cingulate", "Anterior Thalamic")
 
 # summarize tracts present for each subject
 tract_summary <- missing_tracts %>%

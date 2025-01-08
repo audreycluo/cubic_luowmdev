@@ -22,7 +22,6 @@ with open(config_file, "rb") as f:
 
 dataset = config['dataset']
 data_root = config['data_root']
-pyafq_dir = ospj(data_root, "derivatives", "babs_qsirecon_pyafq_act/merge_ds")
 derivs_dir = ospj(data_root, "derivatives", f"tck_temp", subject)
 
 if not os.path.exists(derivs_dir):
@@ -60,7 +59,7 @@ ref_img = nib.load(ref_anat)
 search_pattern = ospj(pyafq_dir, "qsirecon-PYAFQ", subject, "*", "dwi", 
                       f"{subject}_*T1w_desc-preproc*/bundles/{subject}_*RASMM*_tractography.trk")
 trk_files = glob.glob(search_pattern)
-excluded_tracts = ["Uncinate", "Cingulum", "Thalamic"]
+excluded_tracts = ["Cingulum", "Thalamic"]
 trk_files = [f for f in trk_files if not any(exclude in f for exclude in excluded_tracts)]
 
 # Process each .trk file

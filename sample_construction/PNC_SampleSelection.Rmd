@@ -155,7 +155,7 @@ required_tracts <- unique(PNC_all$tractID)
 ##########################
 # it's okay if a participant is missing these tracts
 #allowed_missing_tracts <- c("Cingulate", "Uncinate", "Anterior Thalamic")
-allowed_missing_tracts <- c("Anterior Thalamic")
+allowed_missing_tracts <- c("Cingulate", "Anterior Thalamic")
 
 # summarize tracts present for each subject
 tract_summary <- missing_tracts %>%
@@ -216,9 +216,7 @@ PNC_all_with_allowed <- PNC_all_with_allowed %>%
 # remove the tracts we don't need
 PNC_all_with_allowed <- PNC_all_with_allowed %>% filter(!str_detect(tractID, paste(allowed_missing_tracts, collapse = "|")))
 
-#write.table(PNC_all_with_allowed, "/cbica/projects/luo_wm_dev/input/PNC/derivatives/tract_profiles/all_subjects/collated_tract_profiles_nocovbat.tsv", row.names = FALSE)
-
-write.table(PNC_all_with_allowed, "/cbica/projects/luo_wm_dev/input/PNC/derivatives/tract_profiles/all_subjects/collated_tract_profiles_nocovbat_unc_cc.tsv", row.names = FALSE)
+write.table(PNC_all_with_allowed, "/cbica/projects/luo_wm_dev/input/PNC/derivatives/tract_profiles/all_subjects/collated_tract_profiles_nocovbat.tsv", row.names = FALSE)
 
 ```
 

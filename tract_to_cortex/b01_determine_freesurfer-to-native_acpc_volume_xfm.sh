@@ -247,4 +247,4 @@ rm ${derivs_dir_xfm}/${subject}.freesurfer-to-native_acpc.xfm.mat
 # Clean up files
 ########################################   
 rm -rf ${freesurfer_dir}/freesurfer/${subject}
-#rm -rf ${qsiprep_dir}/qsiprep/${subject}
+#rm -rf ${qsiprep_dir}/qsiprep/${subject} # not deleting this for now to avoid having to datalad get from PMACS again if there's a bug in my code.

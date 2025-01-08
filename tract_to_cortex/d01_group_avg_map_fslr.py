@@ -36,7 +36,7 @@ with open(config_file, "rb") as f:
 data_root = config['data_root']
 derivs_dir = ospj(data_root, f"derivatives/vol_to_surf")
 out_dir = ospj(derivs_dir, "group")
-os.makedirs(out_dir, exist_ok=True)
+#os.makedirs(out_dir, exist_ok=True)
 
 
 ###################

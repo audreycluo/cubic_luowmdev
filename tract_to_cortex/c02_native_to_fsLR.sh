@@ -119,9 +119,6 @@ for tract_file in ${outputs_dir_native_acpc}/*.shape.gii; do
             ${outputs_dir_fslr_32k}/${subject}.${tract_label}_${depth}.shape.gii \
             -area-surfs ${outputs_dir_fslr_32k}/rh.midthickness.surf.gii ${outputs_dir_fslr_32k}/rh.midthickness.fslr_32k.surf.gii
     fi    
-        
-    
-       
 done
 
 # Clean up intermediary files

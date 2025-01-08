@@ -1,8 +1,8 @@
 #!/bin/bash
 
 # set variables
-datasets=("HCPD" "HBN" "PNC")
-#datasets=("HBN" "PNC")
+#datasets=("HCPD" "HBN" "PNC")
+datasets=("HBN")
 r_script="/cbica/projects/luo_wm_dev/code/tract_profiles/explore_tract_profiles/NEST_wrapper_end_compare_clip5.R"
 #tract_list=("Arcuate" "Inferior_Fronto-occipital" "Callosum_Motor")
  
@@ -14,7 +14,7 @@ for dataset in "${datasets[@]}"; do
     logs_dir="/cbica/projects/luo_wm_dev/code/tract_profiles/logs/NEST/${dataset}"
     mkdir -p ${logs_dir}
 
-    sbatch --job-name=NEST_${dataset}_end_compare \
+    sbatch --job-name=NEST_${dataset}_end_compare_low_p \
            --nodes=1 \
            --ntasks=1 \
            --cpus-per-task=8 \

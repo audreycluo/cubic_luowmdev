@@ -1,7 +1,8 @@
 #!/bin/bash
 
 # set variables
-datasets=("HCPD" "HBN")
+#datasets=("HCPD" "HBN")
+datasets=("HBN")
 
 r_script="/cbica/projects/luo_wm_dev/code/tract_profiles/covbat_harmonization/covbat_multisite_tract_profiles.R"
 
@@ -15,7 +16,7 @@ for dataset in "${datasets[@]}"; do
 
   job_name="covbat_${dataset}"
   # submit the job to SLURM using my Singularity container
-  sbatch --job-name="${job_name}" --nodes=1 --ntasks=1 --cpus-per-task=1 --mem=10G --time=01:00:00 --output="${logs_dir}/${job_name}_%j.out" --error="${logs_dir}/${job_name}_%j.err" --wrap="singularity run --cleanenv /cbica/projects/luo_wm_dev/software/docker/r-packages-for-cubic_0.0.5.sif Rscript --save ${r_script} ${dataset}"
+  sbatch --job-name="${job_name}" --nodes=1 --ntasks=1 --cpus-per-task=1 --mem=10G --time=01:00:00 --output="${logs_dir}/${job_name}_%j.out" --error="${logs_dir}/${job_name}_%j.err" --wrap="singularity run --cleanenv /cbica/projects/luo_wm_dev/software/docker/r-packages-for-cubic_0.0.7.sif Rscript --save ${r_script} ${dataset}"
 
   echo "Submitted ${dataset}"
 done

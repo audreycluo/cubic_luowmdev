@@ -77,8 +77,8 @@ gam.fit.smooth <- function(gam.data, tract_node, smooth_var, covariates, knots, 
     if(length(decreasing.range) > 0){
       last.decrease <- max(decreasing.range) #find oldest age with a significant negative derivative
       if(last.decrease == derv$data[length(derv$data)]) #if the last age of significant decrease is the oldest age in the dataset
-        # decrease.offset <- last.decrease
-        decrease.offset <- 0 # the node never matures if the latest significant decrease occurs at oldest age. Code as 0 for later logistic regression analysis
+        decrease.offset <- last.decrease
+        #decrease.offset <- 0 # the node never matures if the latest significant decrease occurs at oldest age. Not using this approach since we want to include immature nodes in sensitivity analyses.
       if(last.decrease != derv$data[length(derv$data)]){  # if age of last significant derivative is NOT the oldest age,
         decrease.offset.row <- which(derv$data == last.decrease) + 1 #use above to find the first age when the derivative is not significant
         decrease.offset <- derv$data[decrease.offset.row]}

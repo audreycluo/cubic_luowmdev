@@ -3,7 +3,5 @@
 	"data_root": "/cbica/projects/luo_wm_dev/input/HBN",
 	"outputs_root": "/cbica/projects/luo_wm_dev/output/HBN/tract_profiles",
 	"tract_profiles_root": "/cbica/projects/luo_wm_dev/input/HBN/derivatives/tract_profiles",
-	"demographics_temp": "/cbica/projects/luo_wm_dev/input/HBN/sample_selection_files/HBN_WMDev_TempSampleDemographics_N1276_age5to22.csv",
-	"qc_temp": "/cbica/projects/luo_wm_dev/input/HBN/sample_selection_files/HBN_WMDev_TempSampleQCMetrics_N1276_age5to22.csv",
 	"demo_qc": "/cbica/projects/luo_wm_dev/input/HBN/sample_selection_files/final_sample/HBN_WMDev_FinalSampleDemoQC.csv"
 }

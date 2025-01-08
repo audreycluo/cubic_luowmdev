@@ -179,7 +179,9 @@ NEST_wrapper <- function(tract, df, bin_size, nodes_to_clip) {
   saveRDS(result_twosided, paste0(NEST_outputs_dir,  gsub(" ", "_", gsub("-", "_",tract)), "_bin", bin_size, "_clip", nodes_to_clip, "_2sided_end_compare_covbat_all_site.RData"))
 }
 
-df <- readRDS(sprintf("%1$s/%2$s/tract_profiles/all_subjects/tract_profiles_for_viz_covbat_all_site.RData", outputs_root, dataset))
+#df <- readRDS(sprintf("%1$s/%2$s/tract_profiles/all_subjects/tract_profiles_for_viz_covbat_all_site.RData", outputs_root, dataset))
+df <- readRDS(sprintf("%1$s/%2$s/tract_profiles/all_subjects/tract_profiles_for_viz_low_p.RData", outputs_root, dataset))
+demographics <- read.csv("/cbica/projects/luo_wm_dev/input/HBN/sample_selection_files/HBN_low_p_SampleDemoQC.csv")
 print(paste0(dataset, " df loaded"))
 df$tract_label <- gsub(" ", "_", df$tract_label)
 
@@ -190,7 +192,7 @@ nodes_per_tract <- 100 # nodes per tract (nodeIDs from 0 to 99)
 ################### 
 # Run NEST
 ################### 
-NEST_wrapper(tract, df = df, bin_size = 5, nodes_to_clip = 3)
+#NEST_wrapper(tract, df = df, bin_size = 5, nodes_to_clip = 3)
 #NEST_wrapper(tract, df = df, bin_size = 10, nodes_to_clip = 3)
 
 NEST_wrapper(tract, df = df, bin_size = 5, nodes_to_clip = 5)

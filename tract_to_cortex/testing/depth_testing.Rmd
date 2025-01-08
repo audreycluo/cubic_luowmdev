@@ -39,7 +39,7 @@ point_size <- 2
 proj_root <- "/cbica/projects/luo_wm_dev/"
 #input_root <- "/cbica/projects/luo_wm_dev/input"
 #output_root <- "/cbica/projects/luo_wm_dev/output"
-dataset <- "PNC"
+dataset <- "HCPD"
 config_file <- sprintf("%1$s/code/tract_profiles/config/config_%2$s.json", proj_root, dataset)
 config <- fromJSON(paste(readLines(config_file), collapse=""))
 
@@ -83,10 +83,10 @@ load_maps <- function(depth) {
   assign(paste0("rh_maps_", depth), rh_maps, envir = .GlobalEnv)
 }
 
-depths = c("0.1", "0.5", "1.0", "1.25", "1.5", "2.0", "2.5")
-
+#depths = c("0.1", "0.5", "1.0", "1.25", "1.5", "2.0", "2.5")
+depths = c("1.0", "1.5")
 lapply(depths, load_maps)
- 
+
 ```
 
 
@@ -313,6 +313,18 @@ wrapper_callosum_plot_maps <- function(threshold, lh_map_list, rh_map_list, data
 }
 
 ```
+
+For IFO
+```{r}
+
+plot_maps(lh_maps_1.0$LeftUncinate, "left", 0.3) 
+plot_maps(lh_maps_1.5$LeftUncinate, "left", 0.3) 
+ 
+
+plot_maps(rh_maps_1.0$RightUncinate, "right", 0.3) 
+plot_maps(rh_maps_1.5$RightUncinate, "right", 0.3) 
+```
+
 
 depths: 0.1, 0.5, 1.0, 1.25, 1.5, 2.0, 2.5
 

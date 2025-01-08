@@ -2,7 +2,8 @@
 
 # submit this with ./c00_wrapper_vol_to_surf.sh
 
-datasets=("HCPD" "HBN" "PNC")  
+#datasets=("PNC" "HCPD" "HBN")  
+datasets=("HBN")
 
 for dataset in "${datasets[@]}"; do
     config_file="/cbica/projects/luo_wm_dev/code/tract_profiles/config/config_${dataset}.json"
@@ -15,6 +16,12 @@ for dataset in "${datasets[@]}"; do
 
     # set dir
     data_root=$(jq -r '.data_root' ${config_file})
+
+    # Create directory for vol_to_surf outputs
+    if [ ! -d "${data_root}/derivatives/vol_to_surf" ]; then
+        mkdir -p ${data_root}/derivatives/vol_to_surf
+    fi
+
     
     # subjects file
     subjects_file="${data_root}/subject_list/final_sample/${dataset}_WMDev_FinalSample.txt"
@@ -23,6 +30,8 @@ for dataset in "${datasets[@]}"; do
         subjects_array[$i]=$(echo "${subjects_array[$i]}" | tr -d '"') # remove quotes
     done
     subject_count=${#subjects_array[@]} 
+
+   
 
     jid_c01=$(sbatch --parsable \
         --array=0-$((subject_count-1)) \

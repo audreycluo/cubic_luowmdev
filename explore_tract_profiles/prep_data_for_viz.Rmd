@@ -61,14 +61,14 @@ HCPD <- readRDS(sprintf("%1$s/%2$s/derivatives/tract_profiles/all_subjects/colla
 HBN <- readRDS(sprintf("%1$s/%2$s/derivatives/tract_profiles/all_subjects/collated_tract_profiles_final.RData", input_root, "HBN"))
 PNC <- readRDS(sprintf("%1$s/%2$s/derivatives/tract_profiles/all_subjects/collated_tract_profiles_final.RData", input_root, "PNC"))
 
-all_covbat <- readRDS("/cbica/projects/luo_wm_dev/input/covbat_all_datasets/collated_tract_profiles_combat_all_datasets_site.RData")
-HBN_demographics <- read.csv("/cbica/projects/luo_wm_dev/input/HBN/sample_selection_files/final_sample/HBN_WMDev_FinalSampleDemoQC.csv")
-HCPD_demographics <- read.csv("/cbica/projects/luo_wm_dev/input/HCPD/sample_selection_files/final_sample/HCPD_WMDev_FinalSampleDemoQC.csv")
-PNC_demographics <- read.csv("/cbica/projects/luo_wm_dev/input/PNC/sample_selection_files/final_sample/PNC_WMDev_FinalSampleDemoQC.csv")
+#all_covbat <- readRDS("/cbica/projects/luo_wm_dev/input/covbat_all_datasets/collated_tract_profiles_combat_all_datasets_site.RData")
+#HBN_demographics <- read.csv("/cbica/projects/luo_wm_dev/input/HBN/sample_selection_files/final_sample/HBN_WMDev_FinalSampleDemoQC.csv")
+#HCPD_demographics <- read.csv("/cbica/projects/luo_wm_dev/input/HCPD/sample_selection_files/final_sample/HCPD_WMDev_FinalSampleDemoQC.csv")
+#PNC_demographics <- read.csv("/cbica/projects/luo_wm_dev/input/PNC/sample_selection_files/final_sample/PNC_WMDev_FinalSampleDemoQC.csv")
 
-PNC <- merge(all_covbat, PNC_demographics, by = "sub")
-HCPD <- merge(all_covbat, HCPD_demographics, by = "sub")
-HBN <- merge(all_covbat, HBN_demographics, by = "sub")
+#PNC <- merge(all_covbat, PNC_demographics, by = "sub")
+#HCPD <- merge(all_covbat, HCPD_demographics, by = "sub")
+#HBN <- merge(all_covbat, HBN_demographics, by = "sub")
 
 
 # format tract profiles df's
@@ -101,7 +101,20 @@ HCPD_tp <- format_tract_profiles(HCPD)
 HBN_tp <- format_tract_profiles(HBN)
 PNC_tp <- format_tract_profiles(PNC)
    
-saveRDS(HCPD_tp, sprintf("%1$s/%2$s/tract_profiles/all_subjects/tract_profiles_for_viz_combat_all_site.RData", output_root, "HCPD"))
-saveRDS(HBN_tp, sprintf("%1$s/%2$s/tract_profiles/all_subjects/tract_profiles_for_viz_combat_all_site.RData", output_root, "HBN"))
-saveRDS(PNC_tp, sprintf("%1$s/%2$s/tract_profiles/all_subjects/tract_profiles_for_viz_combat_all_site.RData", output_root, "PNC"))
+saveRDS(HCPD_tp, sprintf("%1$s/%2$s/tract_profiles/all_subjects/tract_profiles_for_viz.RData", output_root, "HCPD"))
+saveRDS(HBN_tp, sprintf("%1$s/%2$s/tract_profiles/all_subjects/tract_profiles_for_viz.RData", output_root, "HBN"))
+saveRDS(PNC_tp, sprintf("%1$s/%2$s/tract_profiles/all_subjects/tract_profiles_for_viz.RData", output_root, "PNC"))
 ```
+
+make tract profiles for viz: low p-factor HBN
+```{r}
+
+
+low_p_subs <- read.csv("/cbica/projects/luo_wm_dev/input/HBN/sample_selection_files/HBN_low_p_SampleDemoQC.csv")
+HBN_low_p <- merge(low_p_subs, HBN, by = "sub")
+HBN_low_p_tp <- format_tract_profiles(HBN_low_p)
+
+saveRDS(HBN_low_p_tp, sprintf("%1$s/%2$s/tract_profiles/all_subjects/tract_profiles_for_viz_low_p.RData", output_root, "HBN"))
+
+```
+

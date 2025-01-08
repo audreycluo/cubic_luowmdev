@@ -65,7 +65,6 @@ run_gam.fit.smooth <- function(gam_df, smooth.var, covs, k, set.fx) {
                                                                              knots = k, 
                                                                              set_fx = set.fx))}, mc.cores = 4) 
   GAM_dev_measures <- do.call(rbind, GAM_dev_measures)
-  #write.csv(GAM_dev_measures, sprintf("%1$s/%2$s_GAM_dev_measures_age_mat.csv", GAM_outputs_dir, dataset), quote = F, row.names =F)
   write.csv(GAM_dev_measures, sprintf("%1$s/%2$s_GAM_dev_measures.csv", GAM_outputs_dir, dataset), quote = F, row.names =F)
 }
 
@@ -190,7 +189,7 @@ if(dataset =="PNC") {
 
 # 1) run gam.fit.smooth to compute temporal measures + model checks
 print("Running gam.fit.smooth")
-run_gam.fit.smooth(gam_df, smooth.var, covs, k, set.fx)
+x <- run_gam.fit.smooth(gam_df, smooth.var, covs, k, set.fx)
 
 # 2) run gam.derivatives to compute derivatives for my smooth (age) at each age  
 print("Running gam.derivatives")

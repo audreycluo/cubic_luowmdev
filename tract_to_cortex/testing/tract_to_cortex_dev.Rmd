@@ -2717,14 +2717,20 @@ ifo_hcpd_1sided$pval
 ifo_hcpd_2sided$pval
 
 
-ifo_hcpd_2sided <- readRDS("/cbica/projects/luo_wm_dev/output/HCPD/tract_profiles/NEST/Inferior_Fronto_occipital_bin10_clip5_2sided_end_compare.RData")
-ifo_hcpd_1sided <- readRDS("/cbica/projects/luo_wm_dev/output/HCPD/tract_profiles/NEST/Inferior_Fronto_occipital_bin10_clip5_1sided_end_compare.RData")
+ifo_hcpd_2sided <- readRDS("/cbica/projects/luo_wm_dev/output/HCPD/tract_profiles/NEST/Inferior_Fronto_occipital_bin10_clip3_2sided_end_compare.RData")
+ifo_hcpd_1sided <- readRDS("/cbica/projects/luo_wm_dev/output/HCPD/tract_profiles/NEST/Inferior_Fronto_occipital_bin10_clip3_1sided_end_compare.RData")
 
 ifo_hcpd_1sided$pval
 ifo_hcpd_2sided$pval
 
-ifo_hbn_2sided <- readRDS("/cbica/projects/luo_wm_dev/output/HBN/tract_profiles/NEST/Inferior_Fronto_occipital_bin5_clip5_2sided_end_compare.RData")
-ifo_hbn_1sided <- readRDS("/cbica/projects/luo_wm_dev/output/HBN/tract_profiles/NEST/Inferior_Fronto_occipital_bin5_clip5_1sided_end_compare.RData")
+ifo_pnc_2sided <- readRDS("/cbica/projects/luo_wm_dev/output/PNC/tract_profiles/NEST/Inferior_Fronto_occipital_bin10_clip5_2sided_end_compare.RData")
+ifo_pnc_1sided <- readRDS("/cbica/projects/luo_wm_dev/output/PNC/tract_profiles/NEST/Inferior_Fronto_occipital_bin10_clip5_1sided_end_compare.RData")
+
+ifo_pnc_1sided$pval
+ifo_pnc_2sided$pval
+
+ifo_hbn_2sided <- readRDS("/cbica/projects/luo_wm_dev/output/HBN/tract_profiles/NEST/Inferior_Fronto_occipital_bin10_clip5_2sided_end_compare.RData")
+ifo_hbn_1sided <- readRDS("/cbica/projects/luo_wm_dev/output/HBN/tract_profiles/NEST/Inferior_Fronto_occipital_bin10_clip5_1sided_end_compare.RData")
 
 ifo_hbn_2sided$pval
 ifo_hbn_1sided$pval

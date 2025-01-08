@@ -41,7 +41,7 @@
             }
         },
         {
-            "name": "pyafq_tractometry_dki",
+            "name": "pyafq_tractometry_dti",
             "software": "pyAFQ",
             "action": "pyafq_tractometry",
             "input": "track_ifod2",

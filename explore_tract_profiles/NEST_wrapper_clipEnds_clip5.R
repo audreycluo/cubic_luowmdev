@@ -204,12 +204,11 @@ NEST_wrapper <- function(tract, df, bin_size, nodes_to_clip) {
 }
 
 #df <- readRDS(sprintf("%1$s/%2$s/tract_profiles/all_subjects/tract_profiles_for_viz.RData", outputs_root, dataset))
-df <- readRDS(sprintf("%1$s/%2$s/tract_profiles/all_subjects/tract_profiles_for_viz_covbat_all_site.RData", outputs_root, dataset)) # to check cross dataset harmonization
+df <- readRDS(sprintf("%1$s/%2$s/tract_profiles/all_subjects/tract_profiles_for_viz_low_p.RData", outputs_root, dataset))
+demographics <- read.csv("/cbica/projects/luo_wm_dev/input/HBN/sample_selection_files/HBN_low_p_SampleDemoQC.csv")
 
 print(paste0(dataset, " df loaded"))
 df$tract_label <- gsub(" ", "_", df$tract_label)
-#tracts <- unique(df$tract_label)  
-#write.table(tracts, "/cbica/projects/luo_wm_dev/input/tract_list/tract_list.txt", row.names=F, col.names=F, quote=F)
 
 # set var
 nodes_per_tract <- 100 # nodes per tract (nodeIDs from 0 to 99)
@@ -218,12 +217,12 @@ nodes_per_tract <- 100 # nodes per tract (nodeIDs from 0 to 99)
 ################### 
 # Run NEST
 ################### 
-NEST_wrapper(tract, df = df, bin_size = 5, nodes_to_clip = 3)
+#NEST_wrapper(tract, df = df, bin_size = 5, nodes_to_clip = 3)
 #NEST_wrapper(tract, df = df, bin_size = 10, nodes_to_clip = 3)
 #NEST_wrapper(tract, df = df, bin_size = 15, nodes_to_clip = 3)
 
 NEST_wrapper(tract, df = df, bin_size = 5, nodes_to_clip = 5)
-NEST_wrapper(tract, df = df, bin_size = 10, nodes_to_clip = 5)
+#NEST_wrapper(tract, df = df, bin_size = 10, nodes_to_clip = 5)
 #NEST_wrapper(tract, df = df, bin_size = 15, nodes_to_clip = 5)
 
 

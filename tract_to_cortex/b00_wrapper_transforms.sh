@@ -2,9 +2,7 @@
 
 # submit this with ./b00_wrapper_transforms.sh
 
-#datasets=("HCPD" "HBN" "PNC") 
-datasets=("PNC") 
-
+datasets=( "PNC" "HCPD" "HBN") 
 
 for dataset in "${datasets[@]}"; do
     config_file="/cbica/projects/luo_wm_dev/code/tract_profiles/config/config_${dataset}.json"

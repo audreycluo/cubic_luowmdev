@@ -2,13 +2,12 @@
 #SBATCH --job-name=babs_mergeds_tractprofiles
 #SBATCH --nodes=1
 #SBATCH --ntasks=1                           
-#SBATCH --cpus-per-task=5                   
-#SBATCH --array=1-2     
+#SBATCH --cpus-per-task=5                     
 #SBATCH --time=3:00:00                    
 #SBATCH --output=/dev/null    # suppress default output file
 #SBATCH --error=/dev/null     # suppress default error file
 
-datasets=("HCPD" "HBN" "PNC")
+datasets=("HBN")
 #datasets=("HCPD" "HBN")
 
 # get the dataset corresponding to this task

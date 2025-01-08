@@ -2,8 +2,7 @@
 
 # submit this with ./c00_wrapper_vol_to_surf.sh
 
-#datasets=("HCPD" "HBN" "PNC")  
-datasets=("PNC")  
+datasets=( "PNC" "HCPD" "HBN")  
 depths=(0.1 0.5 1.0 1.25 1.5 2.0 2.5)
 
 source /cbica/projects/luo_wm_dev/miniconda3/etc/profile.d/conda.sh
@@ -20,6 +19,12 @@ for dataset in "${datasets[@]}"; do
 
     # set dir
     data_root=$(jq -r '.data_root' ${config_file})
+    
+    # Create directory for group vol_to_surf outputs
+    if [ ! -d "${data_root}/derivatives/vol_to_surf/group" ]; then
+        mkdir -p ${data_root}/derivatives/vol_to_surf/group
+    fi
+
         
     for depth in "${depths[@]}"; do
         jid_d01=$(sbatch --parsable \

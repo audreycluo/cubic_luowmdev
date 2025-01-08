@@ -21,7 +21,9 @@ recipe:
 - load those files for my subject
 - do vol_to_surf for each tract 
 - save out.
-- End product of this script: binary maps of cortical endpoints for each tract (subject-level)
+
+output: 
+- binary maps of cortical endpoints for each tract (subject-level)
 - The goal later on is to get a group average for each tract -- cortical maps of tract endpoints that are weighted
 by the proportion of subjects whose tract terminates at region X
 """
@@ -41,9 +43,6 @@ derivs_dir = ospj(data_root, f"derivatives/vol_to_surf")
 out_dir = ospj(derivs_dir, subject, "native_acpc")
 
 # Create directory for vol_to_surf outputs
-if not os.path.exists(derivs_dir):
-    os.makedirs(derivs_dir)
-
 if not os.path.exists(ospj(derivs_dir, subject, "native_acpc")):
         os.makedirs(ospj(derivs_dir, subject, "native_acpc"))
         print(f"Directory derivatives/vol_to_surf/{subject}/native_acpc created.")
